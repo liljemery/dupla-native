@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import shutil
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 VALID_PROFILES = frozenset({"tortuga_c40", "serena18", "nasas09"})
 
@@ -160,15 +163,23 @@ def stage_project_inputs(
     for idx, entry in enumerate(file_entries):
         original_name = str(entry.get("original_name") or f"file_{idx + 1}.dwg")
         content = entry.get("content")
-        if not isinstance(content, (bytes, bytearray)):
+        file_path = entry.get("path")
+
+        if isinstance(content, (bytes, bytearray)):
+            file_bytes: bytes | None = bytes(content)
+        elif file_path and Path(file_path).is_file():
+            file_bytes = Path(file_path).read_bytes()
+        else:
+            logger.warning("Skipping entry %s: no content or valid path", original_name)
             continue
+
         bucket = _resolve_staging_bucket(entry)
         rel_dir = DISCIPLINE_STAGING_DIRS.get(bucket, DISCIPLINE_STAGING_DIRS["sin_clasificar"])
         dest_dir = inputs_dir / rel_dir
         dest_dir.mkdir(parents=True, exist_ok=True)
         safe_name = Path(original_name).name
         dest = dest_dir / safe_name
-        dest.write_bytes(bytes(content))
+        dest.write_bytes(file_bytes)
         staged.append({"file_name": safe_name, "path": str(dest), "discipline_bucket": bucket})
         analyzed_documents.append(
             {

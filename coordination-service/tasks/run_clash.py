@@ -14,7 +14,7 @@ def run_clash_job(
     project_name: str,
     correlation_id: str,
 ) -> dict[str, Any]:
-    output_root = Path(os.getenv("COORDINATION_OUTPUT_ROOT", "var/coord_outputs"))
+    output_root = Path(os.getenv("COORDINATION_OUTPUT_ROOT", "/app/output"))
     job_dir = output_root / correlation_id
     logger.info(
         "Starting clash job %s profile=%s files=%d",

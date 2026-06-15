@@ -4,6 +4,7 @@ from rq import Queue
 from rq.job import Job
 from typing import List, Optional
 from dotenv import load_dotenv
+from pathlib import Path
 import os
 import logging
 import uuid
@@ -14,9 +15,11 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Dupla Coordination Service")
-redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
+redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
 redis_conn = Redis.from_url(redis_url)
 q = Queue("dupla_coordination", connection=redis_conn)
+
+OUTPUT_ROOT = Path(os.getenv("COORDINATION_OUTPUT_ROOT", "/app/output"))
 
 
 @app.get("/health")
@@ -48,18 +51,26 @@ async def enqueue_clash_analysis(
             if isinstance(item, dict) and item.get("original_name"):
                 meta_by_name[str(item["original_name"])] = item
 
+        uploads_dir = OUTPUT_ROOT / correlation_id / "uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+
         file_entries: list[dict] = []
         for uf in files:
             name_lower = (uf.filename or "").lower()
-            content = await uf.read()
             if not (name_lower.endswith(".dwg") or name_lower.endswith(".dxf")):
+                await uf.read()  # drain to avoid connection issues
                 continue
             original_name = uf.filename or "upload.dwg"
             meta = meta_by_name.get(original_name, {})
+
+            safe_name = Path(original_name).name
+            dest = uploads_dir / safe_name
+            dest.write_bytes(await uf.read())
+
             file_entries.append(
                 {
-                    "original_name": uf.filename or meta.get("original_name") or "upload.dwg",
-                    "content": content,
+                    "original_name": original_name,
+                    "path": str(dest),
                     "discipline": meta.get("discipline"),
                     "discipline_bucket": meta.get("discipline_bucket"),
                     "folder_path": meta.get("folder_path"),

@@ -17,8 +17,92 @@ from adapters.report_mapper import load_json_if_exists, map_to_structural_analys
 logger = logging.getLogger(__name__)
 
 
+def _extract_filename_from_source_ref(ref: str) -> str:
+    """Extract just the basename from a source_ref path like '/tmp/.../inputs/PLANOS/.../file.dwg|...'."""
+    path_part = ref.split("|")[0]
+    return Path(path_part).name
+
+
+def _conflicts_to_primary_incidents(report: dict[str, Any]) -> dict[str, Any]:
+    """Convert clash_project_report (standard profile) conflicts → primary_incidents format."""
+    from collections import defaultdict
+    import math
+
+    conflicts: list[dict[str, Any]] = report.get("conflicts") or []
+
+    # Group conflicts by (file_a, file_b) pair — file names extracted from source_refs
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for c in conflicts:
+        refs = c.get("source_refs") or []
+        file_a = _extract_filename_from_source_ref(refs[0]) if len(refs) > 0 else c.get("discipline_a", "?")
+        file_b = _extract_filename_from_source_ref(refs[1]) if len(refs) > 1 else c.get("discipline_b", "?")
+        key = (file_a, file_b) if file_a <= file_b else (file_b, file_a)
+        groups[key].append(c)
+
+    incidents: list[dict[str, Any]] = []
+    for idx, ((file_a, file_b), members) in enumerate(
+        sorted(groups.items(), key=lambda kv: -sum(c.get("plan_intersection_area_mm2", 0) for c in kv[1])),
+        start=1,
+    ):
+        max_area = max((c.get("plan_intersection_area_mm2", 0) for c in members), default=0)
+        max_depth = max((c.get("overlap_depth_z_mm", 0) for c in members), default=0)
+        disciplines = {c.get("discipline_a") for c in members} | {c.get("discipline_b") for c in members}
+
+        # Priority: critical if large overlap, high otherwise (all are HARD clashes)
+        # Using 1m² = 1_000_000 mm² as threshold for critical
+        priority = "critical" if max_area >= 1_000_000 else "high"
+
+        rep = members[0]
+        rep_centroid = rep.get("plan_intersection_centroid_mm") or [0, 0]
+        level_id = (rep.get("level_ids") or ["NASAS_ARQ_P1_NPT"])[0]
+
+        incidents.append({
+            "incident_id": f"incident_{idx:04d}",
+            "file_pair": [file_a, file_b],
+            "disciplines": sorted(disciplines),
+            "level_id": level_id,
+            "priority": priority,
+            "member_count": len(members),
+            "max_area_mm2": round(max_area),
+            "max_overlap_depth_z_mm": round(max_depth),
+            "centroid_mm": [round(rep_centroid[0]), round(rep_centroid[1])],
+            "description": (
+                f"HARD: {' vs '.join(sorted(disciplines))} ({level_id}). "
+                f"Solapamiento vertical: {round(max_depth)} mm. "
+                f"Área en planta: {round(max_area):,} mm². "
+                f"Archivos: {file_a} ↔ {file_b}"
+            ),
+            "representative_conflict": {
+                "clash_type": rep.get("clash_type", "HARD"),
+                "discipline_a": rep.get("discipline_a"),
+                "discipline_b": rep.get("discipline_b"),
+                "overlap_depth_z_mm": rep.get("overlap_depth_z_mm"),
+                "plan_intersection_area_mm2": rep.get("plan_intersection_area_mm2"),
+                "plan_intersection_bounds_mm": rep.get("plan_intersection_bounds_mm"),
+                "plan_intersection_centroid_mm": rep.get("plan_intersection_centroid_mm"),
+                "confidence": rep.get("confidence"),
+            },
+        })
+
+    return {
+        "incidents": incidents,
+        "incident_count": len(incidents),
+        "incident_conflict_count": len(conflicts),
+        "generated_at": report.get("generated_at"),
+        "project_name": report.get("project_name"),
+        "analysis_profile": "standard",
+    }
+
+
 def _dupla_root() -> Path:
-    return Path(os.getenv("DUPLA_ROOT", "/dupla"))
+    env_val = os.getenv("DUPLA_ROOT", "").strip()
+    if env_val:
+        return Path(env_val)
+    # Auto-detect motor bundled inside the repo (local dev without env var)
+    bundled = Path(__file__).resolve().parents[2] / "motor"
+    if bundled.is_dir():
+        return bundled
+    return Path("/dupla")
 
 
 def _runner_script() -> Path:
@@ -61,6 +145,28 @@ def _smoke_primary_incidents(
     return adapt_smoke_primary(fallback, file_entries)
 
 
+def _generate_cohort_manifest(inputs_dir: Path, output_dir: Path) -> Path | None:
+    """Generate a cohort manifest with all DWG/DXF files in the inputs dir.
+
+    Required when files come from different date-based cohorts (different filenames
+    with no shared issue_key). The manifest forces the motor to treat them as a
+    single comparable set.
+    """
+    dwg_files = sorted(inputs_dir.rglob("*.dwg")) + sorted(inputs_dir.rglob("*.dxf"))
+    if not dwg_files:
+        return None
+
+    source_files = [str(p.relative_to(inputs_dir)) for p in dwg_files]
+    manifest = {
+        "cohort_name": "folder_run",
+        "source_files": source_files,
+    }
+    manifest_path = output_dir / "cohort_manifest.json"
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    logger.info("Cohort manifest generado: %d archivos → %s", len(source_files), manifest_path)
+    return manifest_path
+
+
 def _invoke_runner(
     *,
     inputs_dir: Path,
@@ -77,13 +183,16 @@ def _invoke_runner(
     output_dir.mkdir(parents=True, exist_ok=True)
     clash_report = output_dir / "clash_project_report.json"
 
+    # fast_compare uses accore (Windows-only) for DWG profiling.
+    # On non-Windows, fall back to the standard profile which supports --dwg-via-aps.
+    import platform as _platform
+    analysis_profile = "fast_compare" if _platform.system() == "Windows" else "standard"
+
     cmd = [
         sys.executable,
         str(script),
         "--analysis-profile",
-        "fast_compare",
-        "--stage",
-        "full",
+        analysis_profile,
         "--nasas-root",
         str(inputs_dir),
         "--registry",
@@ -92,11 +201,22 @@ def _invoke_runner(
         str(clash_report),
         "--dwg-via-aps",
         "--shared-site-origin",
+        "--mix-issues",
+        "--allow-proxy-hard-clashes",
     ]
+
+    if analysis_profile == "fast_compare":
+        cmd.extend(["--stage", "full"])
 
     cache_root = output_dir / "cache"
     cache_root.mkdir(parents=True, exist_ok=True)
     cmd.extend(["--cache-root", str(cache_root)])
+
+    # For folder-driven runs, files often have mismatched dates → generate a
+    # cohort manifest so the motor treats them as a single comparable set.
+    cohort_manifest = _generate_cohort_manifest(inputs_dir, output_dir)
+    if cohort_manifest:
+        cmd.extend(["--cohort-manifest", str(cohort_manifest)])
 
     if include_disciplines:
         cmd.extend(["--include-disciplines", ",".join(include_disciplines)])
@@ -119,7 +239,7 @@ def _invoke_runner(
         logger.warning("Runner stderr (tail): %s", proc.stderr[-4000:])
     if proc.returncode != 0:
         raise RuntimeError(
-            f"Coordination runner exited {proc.returncode}: {(proc.stderr or proc.stdout or '')[-800]}"
+            f"Coordination runner exited {proc.returncode}: {(proc.stderr or proc.stdout or '')[-800:]}"
         )
     return proc.returncode
 
@@ -145,8 +265,6 @@ def run_clash_analysis(
     inputs_dir = Path(staging["inputs_dir"])
 
     smoke_mode = os.getenv("COORDINATION_SMOKE_MODE", "").lower() in ("1", "true", "yes")
-    analysis_mode = "smoke" if smoke_mode else "real"
-    logger.info("Clash analysis starting: mode=%s profile=%s project=%s", analysis_mode, profile_slug, project_name)
     summary_payload: dict[str, Any] | None = None
     pair_schedule_payload: dict[str, Any] | None = None
 
@@ -160,15 +278,30 @@ def run_clash_analysis(
             output_dir=output_dir,
             include_disciplines=staging.get("include_disciplines") or None,
         )
-        primary = load_json_if_exists(output_dir / "primary_incidents.json") or {
-            "incidents": [],
-            "incident_count": 0,
-            "generated_at": None,
-            "project_name": project_name,
-            "analysis_profile": "fast_compare",
-        }
+        # If the runner used the standard profile (non-Windows), convert its
+        # clash_project_report.json (conflicts) → primary_incidents format.
+        clash_report = load_json_if_exists(output_dir / "clash_project_report.json")
+        if clash_report and clash_report.get("conflict_count", 0) > 0:
+            primary = _conflicts_to_primary_incidents(clash_report)
+            # Persist so subsequent reads are consistent
+            (output_dir / "primary_incidents.json").write_text(
+                json.dumps(primary, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            logger.info(
+                "Converted %d conflicts → %d primary incidents",
+                clash_report["conflict_count"],
+                primary["incident_count"],
+            )
+        else:
+            primary = load_json_if_exists(output_dir / "primary_incidents.json") or {
+                "incidents": [],
+                "incident_count": 0,
+                "generated_at": None,
+                "project_name": project_name,
+                "analysis_profile": "fast_compare",
+            }
         context = load_json_if_exists(output_dir / "coordination_report_context.json")
-        summary_payload = load_json_if_exists(output_dir / "clash_project_report.json")
+        summary_payload = clash_report
         pair_schedule_payload = load_json_if_exists(output_dir / "pair_schedule.json")
 
     artifact_bundle = generate_report_artifacts(
@@ -194,7 +327,6 @@ def run_clash_analysis(
         primary_incidents=primary,
         coordination_context=context,
         analyzed_documents=analyzed_documents,
-        analysis_mode=analysis_mode,
     )
 
     report_path = output_dir / "structural_analysis_report.json"

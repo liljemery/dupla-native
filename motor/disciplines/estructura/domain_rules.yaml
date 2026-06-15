@@ -1,0 +1,172 @@
+discipline_id: estructura
+display_name: Estructura
+version: "1.0"
+
+vision_elements:
+
+  beam:
+    belongs: true
+    description: "Viga de hormigon armado"
+    required_attributes:
+      - name: section_width_m
+        unit: m
+        description: "Ancho de seccion (ej: 0.30)"
+      - name: section_height_m
+        unit: m
+        description: "Alto de seccion (ej: 0.60)"
+      - name: count
+        unit: unit
+        description: "Cantidad de vigas de este tipo"
+      - name: concrete_grade
+        description: "Resistencia f'c (210, 250, 280 kg/cm2)"
+        expected_values: ["fc_210", "fc_250", "fc_280", "fc_350"]
+      - name: reinforcement_main_bars
+        description: "Armado longitudinal (ej: 4#6+2#5)"
+      - name: reinforcement_stirrups
+        description: "Estribos con separacion (ej: #3@0.15)"
+    optional_attributes:
+      - name: span_m
+        unit: m
+        description: "Luz libre entre apoyos"
+      - name: length_m
+        unit: m
+        description: "Longitud total si esta en plano"
+      - name: reinforcement_steel_grade
+        description: "Grado del acero (40 o 60)"
+        expected_values: ["grado_40", "grado_60"]
+
+  column:
+    belongs: true
+    description: "Columna de hormigon armado"
+    required_attributes:
+      - name: section_width_m
+        unit: m
+      - name: section_height_m
+        unit: m
+      - name: count
+        unit: unit
+      - name: concrete_grade
+        description: "Resistencia f'c"
+      - name: reinforcement_main_bars
+        description: "Armado longitudinal"
+      - name: reinforcement_stirrups
+        description: "Estribos"
+    optional_attributes:
+      - name: length_m
+        unit: m
+      - name: reinforcement_steel_grade
+
+  slab:
+    belongs: true
+    description: "Losa de hormigon armado (maciza, nervada, prefabricada)"
+    required_attributes:
+      - name: area_m2
+        unit: m2
+      - name: section_height_m
+        unit: m
+        description: "Espesor de losa"
+      - name: concrete_grade
+    optional_attributes:
+      - name: reinforcement_main_bars
+      - name: slab_type
+        description: "maciza, nervada, prefabricada"
+
+  footing:
+    belongs: true
+    description: "Zapata aislada o corrida"
+    required_attributes:
+      - name: section_width_m
+        unit: m
+      - name: section_height_m
+        unit: m
+        description: "Profundidad/peralte de zapata"
+      - name: count
+        unit: unit
+      - name: concrete_grade
+    optional_attributes:
+      - name: length_m
+        unit: m
+      - name: reinforcement_main_bars
+
+  shear_wall:
+    belongs: true
+    description: "Muro de corte en hormigon armado"
+    required_attributes:
+      - name: length_m
+        unit: m
+      - name: section_height_m
+        unit: m
+        description: "Espesor del muro"
+      - name: concrete_grade
+    optional_attributes:
+      - name: reinforcement_main_bars
+      - name: reinforcement_stirrups
+
+  stair:
+    belongs: true
+    description: "Escalera (componente estructural)"
+    required_attributes:
+      - name: count
+        unit: unit
+    optional_attributes:
+      - name: width_m
+      - name: slab_thickness_m
+
+  wall_masonry:
+    belongs: false
+    reason: "Muros de bloques son disciplina arquitectonica"
+  door:
+    belongs: false
+    reason: "Puertas son disciplina arquitectonica"
+  window:
+    belongs: false
+    reason: "Ventanas son disciplina arquitectonica"
+  wet_area:
+    belongs: false
+    reason: "Banos son disciplina arquitectonica"
+  kitchen:
+    belongs: false
+    reason: "Cocinas son disciplina arquitectonica"
+
+blacklisted_item_types:
+  - door_count
+  - window_count
+  - window_area
+  - floor_finish
+  - floor_area
+  - ceiling_area
+  - ceiling_finish_paint
+  - ceiling_finish_plaster
+  - wall_finish_paint
+  - wall_finish_plaster
+  - wall_waterproofing
+  - wall_net_area
+  - wall_volume
+  - wall_length
+  - kitchen_count
+  - kitchen_area
+  - wet_area_count
+  - wet_area_area
+
+budget_item_types:
+  - beam_concrete_volume
+  - beam_length
+  - beam_formwork_area_hint
+  - beam_reinforcement_kg
+  - column_concrete_volume
+  - column_length
+  - column_formwork_area_hint
+  - column_reinforcement_kg
+  - slab_concrete_volume
+  - slab_area
+  - slab_formwork_area_hint
+  - slab_reinforcement_kg
+  - footing_concrete_volume
+  - footing_area
+  - footing_formwork_area_hint
+  - footing_reinforcement_kg
+  - structural_count
+  - structural_length
+  - structural_area
+  - structural_volume
+  - stair_count

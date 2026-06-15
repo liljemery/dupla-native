@@ -10,12 +10,25 @@ VAR_DIR="$ROOT/var"
 PID_DIR="$VAR_DIR/pids"
 LOG_DIR="$VAR_DIR/logs"
 
-DUPLA_ROOT="${DUPLA_ROOT:-$ROOT/../Dupla}"
+DUPLA_ROOT="${DUPLA_ROOT:-$ROOT/motor}"
+
+load_env() {
+  if [[ -f "$BACKEND_DIR/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$BACKEND_DIR/.env"
+    set +a
+  fi
+}
+
+# Cargar backend/.env antes de fijar defaults (COORDINATION_SMOKE_MODE, APS, etc.)
+load_env
+
 export DUPLA_ROOT
 export COORDINATION_OUTPUT_ROOT="${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}"
 export DUPLA_CACHE_DIR="${DUPLA_CACHE_DIR:-$VAR_DIR/cache}"
 export DUPLA_ARTIFACT_DIR="${DUPLA_ARTIFACT_DIR:-$VAR_DIR/artifacts}"
-export COORDINATION_SMOKE_MODE="${COORDINATION_SMOKE_MODE:-true}"
+export COORDINATION_SMOKE_MODE="${COORDINATION_SMOKE_MODE:-false}"
 export PYTHONPATH="${DUPLA_ROOT}:${COORD_DIR}:${PYTHONPATH:-}"
 
 usage() {
@@ -31,19 +44,10 @@ Comandos:
   status     Muestra PIDs y URLs
 
 Variables útiles:
-  DUPLA_ROOT                 Ruta al repo Dupla (default: ../Dupla)
+  DUPLA_ROOT                 Ruta al motor de coordinación (default: motor/ en la raíz del repo)
   COORDINATION_OUTPUT_ROOT   Salida compartida clash (default: var/coord_outputs)
-  COORDINATION_SMOKE_MODE    true para demo sin AutoCAD (default: true)
+  COORDINATION_SMOKE_MODE    false para detección real vía APS (default: false; override en backend/.env)
 EOF
-}
-
-load_env() {
-  if [[ -f "$BACKEND_DIR/.env" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "$BACKEND_DIR/.env"
-    set +a
-  fi
 }
 
 port_open() {

@@ -15,7 +15,7 @@ Esta branch añade el **pipeline de detección de clashes** encima del trabajo d
 
 | Capa | Qué se entrega |
 |------|----------------|
-| **Motor (externo)** | Reutiliza el repo `Dupla` (motor de coordinación) vía `DUPLA_ROOT` |
+| **Motor (incluido)** | `motor/` en la raíz del monorepo — coordinación y clash detection |
 | **Backend FastAPI** | Modelo `ProjectClashJob`, migraciones 031/032, rutas REST `POST/GET /api/projects/{id}/clash/jobs/*`, generación PDF humano y técnico (ReportLab) |
 | **Microservicio nuevo** | `coordination-service` (HTTP API) + `coordination-worker` (RQ worker), ambos envuelven el motor Dupla |
 | **Frontend React** | Pestaña **Hallazgos** real (no mock): polling cada 5 s, selector de carpeta fuente, inventario CAD, descarga de PDF humano y técnico |
@@ -41,23 +41,21 @@ Si tu rama local diverge, hacé `git status` y revisalo antes de tocar nada.
 |-----------|---------|
 | **PostgreSQL 16** en `127.0.0.1:5432` | DB principal |
 | **Redis 7** en `127.0.0.1:6379` | Cola RQ y caché |
-| **Repo `Dupla` clonado localmente** | Motor de coordinación; sin él los jobs fallan |
+| **Repo `Dupla` clonado localmente** | ~~Motor externo~~ — ahora va en `motor/` dentro del monorepo |
 | **Archivo `backend/.env`** | Credenciales (no se commitea) |
 
-### 3.1 Clonar el motor Dupla (sólo una vez)
+### 3.1 Motor de coordinación (incluido)
 
-Por defecto `scripts/dev.sh` busca el repo Dupla en `../Dupla` (un nivel arriba de este repo):
+El motor vive en `motor/` en la raíz del monorepo. `scripts/dev.sh` usa por defecto:
 
 ```bash
-# Desde el directorio padre del monorepo
-git clone https://github.com/ChrisCip/Dupla.git Dupla
-git -C Dupla checkout refactor-clash-segmentado
+DUPLA_ROOT=$REPO_ROOT/motor
 ```
 
-Si lo querés en otra ubicación:
+Si lo movés a otra ubicación:
 
 ```bash
-export DUPLA_ROOT=/ruta/absoluta/a/Dupla
+export DUPLA_ROOT=/ruta/absoluta/a/motor
 ```
 
 ### 3.2 Crear `backend/.env`

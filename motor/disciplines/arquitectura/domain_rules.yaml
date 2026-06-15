@@ -1,0 +1,196 @@
+discipline_id: arquitectura
+display_name: Arquitectura
+version: "1.0"
+
+vision_elements:
+
+  wall_masonry:
+    belongs: true
+    description: "Muro de bloques (B-4, B-6, B-8)"
+    required_attributes:
+      - name: material
+        description: "block_6in, block_8in, block_4in"
+      - name: estimated_length_m
+        unit: m
+      - name: location
+        description: "interior o exterior"
+    optional_attributes:
+      - name: height_m
+        unit: m
+      - name: thickness_m
+        unit: m
+      - name: finish_interior
+      - name: finish_exterior
+
+  wall_concrete:
+    belongs: false
+    reason: "Muros de concreto armado son disciplina estructural"
+
+  door:
+    belongs: true
+    description: "Puertas (principal, interior, bano, closet)"
+    required_attributes:
+      - name: count
+        unit: unit
+      - name: type
+        description: "main_entry, interior, bathroom, closet, etc."
+      - name: material
+        description: "wood, metal, aluminum, pvc, glass"
+    optional_attributes:
+      - name: width_m
+        unit: m
+      - name: height_m
+        unit: m
+
+  window:
+    belongs: true
+    description: "Ventanas (corrediza, fija, celosia)"
+    required_attributes:
+      - name: count
+        unit: unit
+      - name: type
+      - name: material
+    optional_attributes:
+      - name: width_m
+        unit: m
+      - name: height_m
+        unit: m
+      - name: glazing
+
+  wet_area:
+    belongs: true
+    description: "Banos, lavanderias, areas humedas"
+    required_attributes:
+      - name: count
+        unit: unit
+      - name: kind
+        description: "full_bathroom, half_bathroom, laundry, etc."
+    optional_attributes:
+      - name: area_m2
+        unit: m2
+      - name: floor_finish
+      - name: wall_finish
+      - name: waterproofing_required
+
+  kitchen:
+    belongs: true
+    description: "Cocinas"
+    required_attributes:
+      - name: count
+        unit: unit
+    optional_attributes:
+      - name: area_m2
+        unit: m2
+      - name: has_upper_cabinets
+      - name: has_lower_cabinets
+
+  stair:
+    belongs: true
+    description: "Escaleras (componente arquitectonico)"
+    required_attributes:
+      - name: count
+        unit: unit
+    optional_attributes:
+      - name: width_m
+        unit: m
+      - name: flights
+      - name: material
+
+  fixture:
+    belongs: true
+    description: "Luminarias, tomacorrientes, aparatos sanitarios visibles en plano arq"
+    required_attributes:
+      - name: count
+        unit: unit
+      - name: fixture_type
+    optional_attributes:
+      - name: location
+
+  floor_finish:
+    belongs: true
+    description: "Acabados de piso (ceramica, porcelanato, etc.)"
+    required_attributes:
+      - name: type
+      - name: area_m2
+        unit: m2
+    optional_attributes:
+      - name: location
+
+  ceiling_finish:
+    belongs: true
+    description: "Acabados de cielo (yeso, suspendido, etc.)"
+    required_attributes:
+      - name: type
+    optional_attributes:
+      - name: area_m2
+        unit: m2
+      - name: location
+
+  beam:
+    belongs: false
+    reason: "Vigas se presupuestan desde planos estructurales"
+  column:
+    belongs: false
+    reason: "Columnas se presupuestan desde planos estructurales"
+  slab:
+    belongs: false
+    reason: "Losas se presupuestan desde planos estructurales"
+  footing:
+    belongs: false
+    reason: "Zapatas se presupuestan desde planos estructurales"
+  shear_wall:
+    belongs: false
+    reason: "Muros de corte se presupuestan desde planos estructurales"
+
+blacklisted_item_types:
+  - beam_concrete_volume
+  - beam_reinforcement_kg
+  - beam_formwork_area_hint
+  - beam_length
+  - beam_area
+  - beam_count
+  - column_concrete_volume
+  - column_reinforcement_kg
+  - column_formwork_area_hint
+  - column_length
+  - column_area
+  - column_count
+  - slab_concrete_volume
+  - slab_reinforcement_kg
+  - slab_formwork_area_hint
+  - footing_concrete_volume
+  - footing_reinforcement_kg
+  - footing_formwork_area_hint
+  - structural_volume
+  - structural_count
+  - structural_length
+  - structural_area
+
+budget_item_types:
+  - wall_net_area
+  - wall_volume
+  - wall_length
+  - wall_finish_paint
+  - wall_finish_plaster
+  - wall_waterproofing
+  - floor_area
+  - floor_finish
+  - floor_waterproofing
+  - floor_screed
+  - ceiling_area
+  - ceiling_finish_paint
+  - ceiling_finish_plaster
+  - door_count
+  - door_leaf_wood_count
+  - door_frame_count
+  - door_hardware_set_count
+  - window_count
+  - window_area
+  - wet_area_count
+  - wet_area_area
+  - wet_area_fixture_count
+  - kitchen_count
+  - kitchen_area
+  - stair_count
+  - fixture_count
+  - pres_reference_line

@@ -65,18 +65,10 @@ def _description_from_incident(incident: dict[str, Any]) -> str:
 
 
 def _summary_from_clashes(clashes: list[dict[str, Any]], doc_count: int) -> dict[str, int]:
-    total = len(clashes)
-    critical = sum(1 for c in clashes if c.get("priority") == "critical")
-    non_critical = max(total - critical, 0)
-    # Legacy keys kept for backward compatibility; Hallazgos maps them to Total/Críticos/No críticos.
-    return {
-        "errors": total,
-        "warnings": critical,
-        "ok": non_critical,
-        "total_clashes": total,
-        "critical": critical,
-        "non_critical": non_critical,
-    }
+    errors = sum(1 for c in clashes if c.get("priority") == "critical")
+    warnings = sum(1 for c in clashes if c.get("priority") in ("high", "warning"))
+    ok = sum(1 for c in clashes if c.get("priority") == "info")
+    return {"errors": errors, "warnings": warnings, "ok": ok}
 
 
 def _ai_insight_from_context(context: dict[str, Any] | None, incident_count: int) -> str:
@@ -109,7 +101,6 @@ def map_to_structural_analysis_report(
     primary_incidents: dict[str, Any],
     coordination_context: dict[str, Any] | None,
     analyzed_documents: list[dict[str, Any]],
-    analysis_mode: str = "real",
 ) -> dict[str, Any]:
     incidents = primary_incidents.get("incidents") or []
     if not isinstance(incidents, list):
@@ -138,7 +129,6 @@ def map_to_structural_analysis_report(
 
     return {
         "run_status": run_status,
-        "analysis_mode": analysis_mode,
         "title": f"Informe de coordinación — {project_name}",
         "subtitle": f"{project_name} · {incident_count} incidencia(s) primaria(s)",
         "summary": summary,

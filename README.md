@@ -70,7 +70,7 @@ Variables clave:
 | `REDIS_URL` | `redis://127.0.0.1:6379/0` |
 | `PROCESSOR_URL` | `http://localhost:8001` |
 | `COORDINATION_URL` | `http://localhost:8002` |
-| `DUPLA_ROOT` | `../Dupla` (repo motor clash) |
+| `DUPLA_ROOT` | `motor/` (motor de coordinación incluido en el repo) |
 | `COORDINATION_OUTPUT_ROOT` | `var/coord_outputs` |
 | `COORDINATION_SMOKE_MODE` | `true` (demo sin AutoCAD) |
 
@@ -106,7 +106,7 @@ python worker.py                         # terminal 2
 ### Coordination + worker
 
 ```bash
-export DUPLA_ROOT=../Dupla
+export DUPLA_ROOT=./motor
 export PYTHONPATH=$DUPLA_ROOT:$(pwd)
 export COORDINATION_OUTPUT_ROOT=../var/coord_outputs
 export COORDINATION_SMOKE_MODE=true
@@ -150,7 +150,7 @@ find var/artifacts -path "*/vision/*" -delete 2>/dev/null
 | `JWT_SECRET` | Obligatorio; generar con `openssl rand -hex 32` (no usar el demo) |
 | `SMTP_HOST` + `EMAIL_FROM` | Obligatorio para restablecimiento de contraseña |
 | `COORDINATION_SMOKE_MODE` | Debe ser `false` (detección real de clashes) |
-| `DUPLA_ROOT` | Repo Dupla clonado para motor de coordinación |
+| `DUPLA_ROOT` | Motor de coordinación en `motor/` (incluido en el monorepo) |
 | `OPENAI_API_KEY` | Recomendado para presupuesto IA y asistente |
 
 CI: GitHub Actions en `.github/workflows/ci.yml` (backend, processor, frontend).
@@ -164,6 +164,7 @@ CI: GitHub Actions en `.github/workflows/ci.yml` (backend, processor, frontend).
 - `frontend/src` — UI, stores Zustand, esquemas Zod
 - `processor/` — microservicio presupuesto/vision + worker RQ
 - `coordination-service/` — clash detection + worker RQ
+- `motor/` — motor de coordinación y clash detection (incluido en el monorepo)
 - `scripts/dev.sh` — orquestación local
 - `var/` — uploads, cache, artifacts, salidas clash (gitignored)
 - `docs/` — documentación de producto

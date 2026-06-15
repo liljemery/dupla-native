@@ -1,0 +1,154 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dupla
+      POSTGRES_PASSWORD: dupla
+      POSTGRES_DB: dupla
+    ports:
+      - "5432:5432"
+    volumes:
+      - dupla_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dupla -d dupla"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Entrypoint: alembic upgrade → python -m app.seed → uvicorn
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides .env local (127.0.0.1). Inside Compose the DB host is the service name.
+      DATABASE_URL: postgresql+asyncpg://dupla:dupla@postgres:5432/dupla
+      REDIS_URL: redis://redis:6379/0
+      PROCESSOR_URL: http://processor:8000
+      COORDINATION_URL: http://coordination-service:8000
+      JWT_SECRET: demo-secret-change-in-production-min-32-chars!!
+
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://frontend:80,http://app.grupodupla.com
+      FRONTEND_URL: http://app.grupodupla.com
+    ports:
+      - "8000:8000"
+    volumes:
+      - dupla_uploads:/app/var/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      coordination-service:
+        condition: service_started
+
+  processor:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+      - ./processor/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DUPLA_CACHE_DIR: /app/cache
+      DUPLA_ARTIFACT_DIR: /app/artifacts
+      DUPLA_JOB_TIMEOUT_SECONDS: "10800"
+    ports:
+      - "8001:8000"
+    volumes:
+      - dupla_outputs:/app/output
+      - dupla_cache:/app/cache
+      - dupla_artifacts:/app/artifacts
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  processor-worker:
+    build:
+      context: ./processor
+      dockerfile: Dockerfile
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+      - ./processor/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DUPLA_CACHE_DIR: /app/cache
+      DUPLA_ARTIFACT_DIR: /app/artifacts
+      DUPLA_JOB_TIMEOUT_SECONDS: "10800"
+    volumes:
+      - dupla_outputs:/app/output
+      - dupla_cache:/app/cache
+      - dupla_artifacts:/app/artifacts
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  coordination-service:
+    build:
+      context: .
+      dockerfile: ./coordination-service/Dockerfile
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DUPLA_ROOT: /motor
+      COORDINATION_OUTPUT_ROOT: /app/output
+      PYTHONPATH: /motor:/app
+    ports:
+      - "8002:8000"
+    volumes:
+      - dupla_coord_outputs:/app/output
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  coordination-worker:
+    build:
+      context: .
+      dockerfile: ./coordination-service/Dockerfile
+    command: ["python", "worker.py"]
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DUPLA_ROOT: /motor
+      COORDINATION_OUTPUT_ROOT: /app/output
+      PYTHONPATH: /motor:/app
+    volumes:
+      - dupla_coord_outputs:/app/output
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+volumes:
+  dupla_pg:
+  dupla_uploads:
+  dupla_outputs:
+  dupla_coord_outputs:
+  dupla_cache:
+  dupla_artifacts:
