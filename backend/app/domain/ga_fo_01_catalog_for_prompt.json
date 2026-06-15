@@ -1,0 +1,747 @@
+[
+  {
+    "id": "5.1",
+    "nombre": "Contrato de construcción de obra",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.2",
+    "nombre": "Acuerdo marco para desarrollo",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.3",
+    "nombre": "Acuerdo de sociedad de hecho",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.4",
+    "nombre": "Contrato privado",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.5",
+    "nombre": "Sin cliente",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.6",
+    "nombre": "Fianzas de construcción",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.7",
+    "nombre": "Contrato de compra venta de inmueble",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.8",
+    "nombre": "Contrato de compra venta de acciones",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "5.9",
+    "nombre": "Contrato de construcción de obra",
+    "seccion": "5 — Contratos y acuerdos"
+  },
+  {
+    "id": "6.1",
+    "nombre": "Avance inicial",
+    "seccion": "6 — Fianzas"
+  },
+  {
+    "id": "6.2",
+    "nombre": "Fiel cumplimiento",
+    "seccion": "6 — Fianzas"
+  },
+  {
+    "id": "6.3",
+    "nombre": "Todo riesgo de construcción",
+    "seccion": "6 — Fianzas"
+  },
+  {
+    "id": "6.4",
+    "nombre": "Vicios ocultos",
+    "seccion": "6 — Fianzas"
+  },
+  {
+    "id": "7.1",
+    "nombre": "Póliza de accidentes laborales",
+    "seccion": "7 — Pólizas"
+  },
+  {
+    "id": "7.2",
+    "nombre": "Otras pólizas",
+    "seccion": "7 — Pólizas"
+  },
+  {
+    "id": "2.1.",
+    "nombre": "Carta de autorización y aprobación de planos",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.2.",
+    "nombre": "Certificado de no objeción",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.3.",
+    "nombre": "Certificado de no objeción",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.4.",
+    "nombre": "Certificación de registro de impacto mínimo",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.5.",
+    "nombre": "Licencia de construcción",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.6.",
+    "nombre": "Certificación (gestión de costos Y presupuestos)",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.7.",
+    "nombre": "Ítem 2.7.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.8.",
+    "nombre": "Ítem 2.8.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.9.",
+    "nombre": "Ítem 2.9.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "3.1.",
+    "nombre": "Memoria descriptiva del proyecto:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.2.",
+    "nombre": "Memoria de materiales del proyecto:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.3.",
+    "nombre": "Especificaciones de equipos sanitarios, eléctricos y de mecánicos:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.4.",
+    "nombre": "Listado de materiales:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.5.",
+    "nombre": "Dossier de aparatos sanitarios:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.6.",
+    "nombre": "Dossier de herrajes:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.8.",
+    "nombre": "Localización y ubicación:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.9.",
+    "nombre": "Plano de conjunto:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "2.10.",
+    "nombre": "Ítem 2.10.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.11.",
+    "nombre": "Ítem 2.11.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "3.10.",
+    "nombre": "Planta arquitectónica de conjunto (Por niveles):",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.11.",
+    "nombre": "Plano de paisajismo esquemático:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.12.",
+    "nombre": "Plano de paisajismo definitivo:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.14.",
+    "nombre": "Plantas dimensionadas (por nivel):",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.15.",
+    "nombre": "Plantas de pisos (por nivel):",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.16.",
+    "nombre": "Elevaciones con especificaciones de materiales:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.17.",
+    "nombre": "Secciones con especificaciones de materiales:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.18.",
+    "nombre": "Ubicación de cuarto para equipos sanitarios:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.19.",
+    "nombre": "Ubicación de compresores:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.20.",
+    "nombre": "Ubicación en planos del contenedor de basura:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.21.",
+    "nombre": "Ubicación en planos del tanque de gas:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.22.",
+    "nombre": "Ubicación en planos del área para calentadores:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.23.",
+    "nombre": "Plantas de plafones (por nivel):",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.24.",
+    "nombre": "Secciones de plafones:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.25.",
+    "nombre": "Plantas de ubicación de iluminación e interruptores:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.26.",
+    "nombre": "Plantas de ubicación de tomacorrientes:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.27.",
+    "nombre": "Plantas de ubicación de audio, TV y previsiones eléctricas para cortinas:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.28.",
+    "nombre": "Plantas de ubicación de cámaras:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.29.",
+    "nombre": "Plantas de ubicación para previsiones de automatización:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.30.",
+    "nombre": "Ubicación en planos del sistema de osmosis:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.31.",
+    "nombre": "Tabla de puertas y ventanas:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.32.",
+    "nombre": "Detalle de cuarto de data:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.33.",
+    "nombre": "Detalle de cuarto de eléctrico:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.34.",
+    "nombre": "Detalle de cuarto de calentadores:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.35.",
+    "nombre": "Ubicación y detalle de vertedero:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.37.",
+    "nombre": "Detalles de puertas y ventanas:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.38.",
+    "nombre": "Especificaciones de herrajes:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.39.",
+    "nombre": "Detalles de baños principales:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.40.",
+    "nombre": "Detalles de baños de servicio:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.41.",
+    "nombre": "Detalles de muebles de baños principales:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.42.",
+    "nombre": "Detalles de muebles de baños de servicio:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.43.",
+    "nombre": "Detalles de cocina principal:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.44.",
+    "nombre": "Detalles de cocina secundaria:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.45.",
+    "nombre": "Detalles de cocina servicios:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.46.",
+    "nombre": "Detalles de cocina kitchenette:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.47.",
+    "nombre": "Detalles de muebles de cocina principal:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.48.",
+    "nombre": "Detalles de muebles de cocina secundaria:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.49.",
+    "nombre": "Detalles de muebles de cocina servicios:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.50.",
+    "nombre": "Detalles de muebles de cocina kitchenette:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.51.",
+    "nombre": "Detalles de gazebo:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.52.",
+    "nombre": "Detalles de cornisas:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.53.",
+    "nombre": "Detalles de parqueos:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.54.",
+    "nombre": "Detalles de zócalos:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.55.",
+    "nombre": "Detalles de lavandería:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.56.",
+    "nombre": "Esquema de iluminación y tomacorrientes:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.57.",
+    "nombre": "Detalles deck, jacuzzi y piscina:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.58.",
+    "nombre": "Detalles de espejos de agua:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.59.",
+    "nombre": "Detalles de fuentes:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.60.",
+    "nombre": "Detalles de escaleras:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.61.",
+    "nombre": "Detalles de barandas:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.62.",
+    "nombre": "Detalles de bar:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.63.",
+    "nombre": "Detalles de bbq:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.64.",
+    "nombre": "Detalles de ducha de exterior:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.65.",
+    "nombre": "Detalles de rampas:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.66.",
+    "nombre": "Detalles de techos:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "3.67.",
+    "nombre": "Detalles de vuelos:",
+    "seccion": "3 — Planos y documentación arquitectónica"
+  },
+  {
+    "id": "4.1.1",
+    "nombre": "Detalles generales",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.2",
+    "nombre": "Planta de cimientos",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.3",
+    "nombre": "Detalles de cimientos (zapatas, muros de mampostería, espejo de agua, pisos, etc.)",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.4",
+    "nombre": "Detalle de columnas y muros",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.5",
+    "nombre": "Detalles de vigas y columnas sismoresistentes",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.6",
+    "nombre": "Detalle de piscina y jacuzzi",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.7",
+    "nombre": "Plantas estructurales (incluye detalles de losas, especificacion de armado y junta de construcción)",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.8",
+    "nombre": "Detalle de vigas y pórticos",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.9",
+    "nombre": "Detalle de escaleras",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.2.1",
+    "nombre": "Plano de alimentadores y paneles eléctricos:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.2",
+    "nombre": "Plantas de iluminación exterior:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.3",
+    "nombre": "Plantas de iluminación (por nivel):",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.4",
+    "nombre": "Plantas de tomacorrientes (por nivel):",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.5",
+    "nombre": "Plantas de instalaciones audio y data (por nivel):",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.6",
+    "nombre": "Detalles de paneles:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.7",
+    "nombre": "Detalles de interruptores:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.8",
+    "nombre": "Detalles de tomacorrientes:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.9",
+    "nombre": "Detalles de alimentación eléctrica",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.3.1",
+    "nombre": "Plantas de suministro de agua (por nivel):",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.2",
+    "nombre": "Plantas de aguas negras (por nivel):",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.3",
+    "nombre": "Plantas de desagües pluviales (por nivel):",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.4",
+    "nombre": "Plantas de instalaciones de gas (por nivel):",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.5",
+    "nombre": "Plantas de extracciones (por nivel):",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.6",
+    "nombre": "Detalles de instalaciones para piscina/jacuzzi/espejos de agua:",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.7",
+    "nombre": "Isométricas (por nivel):",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.8",
+    "nombre": "Detalles sanitarios:",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.9",
+    "nombre": "Detalles y ubicación de manifolds:",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.4.1",
+    "nombre": "Plantas de instalaciones de aires acondicionados (por nivel):",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.2",
+    "nombre": "Detalles de ductos:",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.3",
+    "nombre": "Especificaciones de maquinas:",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.4",
+    "nombre": "Ubicación de compresores:",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.5",
+    "nombre": "Especificaciones de rejillas de suministro, retorno y extracciones:",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.6",
+    "nombre": "Especificaciones de conexiones eléctricas:",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.7",
+    "nombre": "Especificaciones de desagües:",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.8",
+    "nombre": "Isométricas (por nivel):",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.4.9",
+    "nombre": "Detalles de paneles:",
+    "seccion": "4.4 — Climatización y extracción"
+  },
+  {
+    "id": "4.5.1",
+    "nombre": "Plantas de cámaras (por nivel):",
+    "seccion": "4.5 — Telecomunicaciones y audio"
+  },
+  {
+    "id": "4.5.2",
+    "nombre": "Plantas de audio (por nivel):",
+    "seccion": "4.5 — Telecomunicaciones y audio"
+  },
+  {
+    "id": "4.5.3",
+    "nombre": "Plantas de antenas de internet (por nivel):",
+    "seccion": "4.5 — Telecomunicaciones y audio"
+  },
+  {
+    "id": "4.5.4",
+    "nombre": "Detalles de paneles:",
+    "seccion": "4.5 — Telecomunicaciones y audio"
+  },
+  {
+    "id": "4.5.5",
+    "nombre": "Ubicación de registros:",
+    "seccion": "4.5 — Telecomunicaciones y audio"
+  },
+  {
+    "id": "4.5.6",
+    "nombre": "Especificaciones de conexiones eléctricas:",
+    "seccion": "4.5 — Telecomunicaciones y audio"
+  },
+  {
+    "id": "2.2.1.",
+    "nombre": "Plano de coordenadas / solar.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.2.2.",
+    "nombre": "Plano curvas de nivel.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.2.3.",
+    "nombre": "Plano puntos de sondeo.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.2.4.",
+    "nombre": "Estudio de suelo.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "2.2.5.",
+    "nombre": "Planta de Charrancha y Ejes.",
+    "seccion": "2 — Permisologías y estudios previos"
+  },
+  {
+    "id": "4.1.10",
+    "nombre": "Detalle de encofrado",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.11",
+    "nombre": "Modelos estructurales",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.1.12",
+    "nombre": "Memoria de cálculo",
+    "seccion": "4.1 — Estructural"
+  },
+  {
+    "id": "4.2.10",
+    "nombre": "Detalles de instalaciones sanitarias y de aires acondicionados:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.11",
+    "nombre": "Memoria de cálculos eléctricos:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.12",
+    "nombre": "Diagrama unifilar:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.13",
+    "nombre": "Plantas de salidas de Iluminación:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.2.14",
+    "nombre": "Plantas coordinadas de techo:",
+    "seccion": "4.2 — Instalaciones eléctricas"
+  },
+  {
+    "id": "4.3.10",
+    "nombre": "Detalles de extracciones:",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.11",
+    "nombre": "Ubicación de registros sanitarios/ trampa de grasa/ cámara séptica/ cisterna:",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.3.12",
+    "nombre": "Memoria de cálculos hidráulicos:",
+    "seccion": "4.3 — Instalaciones sanitarias e hidráulicas"
+  },
+  {
+    "id": "4.4.10",
+    "nombre": "Especificaciones de rejillas de inspección:",
+    "seccion": "4.4 — Climatización y extracción"
+  }
+]

@@ -1,0 +1,77 @@
+discipline_id: electrico
+display_name: "El\xc3\xa9ctrico"
+version: "1.0"
+
+vision_elements:
+
+  electrical:
+    belongs: true
+    description: "Puntos electricos (tomacorrientes, interruptores, luminarias, etc.)"
+    required_attributes:
+      - name: type
+        description: "outlet_110v, switch_single, luminaire_ceiling, panel_breaker, etc."
+      - name: count
+        unit: unit
+    optional_attributes:
+      - name: location
+
+  fixture:
+    belongs: true
+    description: "Equipos y accesorios electricos"
+    required_attributes:
+      - name: count
+        unit: unit
+      - name: fixture_type
+    optional_attributes:
+      - name: location
+
+  beam:
+    belongs: false
+    reason: "Vigas son disciplina estructural"
+  column:
+    belongs: false
+    reason: "Columnas son disciplina estructural"
+  slab:
+    belongs: false
+    reason: "Losas son disciplina estructural"
+  footing:
+    belongs: false
+    reason: "Zapatas son disciplina estructural"
+  wall_masonry:
+    belongs: false
+    reason: "Muros de bloques son disciplina arquitectonica"
+  door:
+    belongs: false
+    reason: "Puertas son disciplina arquitectonica"
+  window:
+    belongs: false
+    reason: "Ventanas son disciplina arquitectonica"
+  wet_area:
+    belongs: false
+    reason: "Banos son disciplina arquitectonica"
+  kitchen:
+    belongs: false
+    reason: "Cocinas son disciplina arquitectonica"
+
+blacklisted_item_types:
+  - wall_net_area
+  - wall_volume
+  - wall_length
+  - wall_finish_paint
+  - wall_finish_plaster
+  - floor_area
+  - floor_finish
+  - ceiling_area
+  - door_count
+  - window_count
+  - wet_area_count
+  - kitchen_count
+  - beam_concrete_volume
+  - column_concrete_volume
+  - slab_concrete_volume
+  - footing_concrete_volume
+  - structural_volume
+
+budget_item_types:
+  - fixture_count
+  - pres_reference_line

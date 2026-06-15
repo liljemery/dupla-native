@@ -1,0 +1,49 @@
+{
+  "generated_at": "2026-05-22T00:00:00+00:00",
+  "project_name": "TORTUGA C40 — coordinación 2.5D",
+  "analysis_profile": "fast_compare",
+  "incident_count": 2,
+  "incident_conflict_count": 2,
+  "incidents": [
+    {
+      "incident_id": "incident_0001",
+      "file_pair": ["ARQ-PLANTA.dwg", "EST-LOSAS.dwg"],
+      "level_id": "NPT_P1",
+      "member_count": 1,
+      "plan_centroid_mm": [48765, 35327],
+      "plan_bounds_mm": [-3441.9684, 103882.64404, 145019.0, 160819.0],
+      "representative_conflict": {
+        "discipline_a": "ARQUITECTURA",
+        "discipline_b": "ESTRUCTURA",
+        "clash_type": "HARD",
+        "overlap_depth_z_mm": 220.0,
+        "plan_intersection_area_mm2": 85000.0,
+        "source_refs": [
+          "ARQ-PLANTA.dwg|SOLAR|Polyline|3F6B08",
+          "EST-LOSAS.dwg|SOLAR|Line|30A5BD"
+        ]
+      },
+      "confidence": "high"
+    },
+    {
+      "incident_id": "incident_0002",
+      "file_pair": ["ARQ-PLAFON.dwg", "EST-VIGAS.dwg"],
+      "level_id": "TECHO",
+      "member_count": 1,
+      "plan_centroid_mm": [153019, -158375],
+      "plan_bounds_mm": [145019, -165499, 160819, -151252],
+      "representative_conflict": {
+        "discipline_a": "ARQUITECTURA",
+        "discipline_b": "ESTRUCTURA",
+        "clash_type": "HARD",
+        "overlap_depth_z_mm": 80.0,
+        "plan_intersection_area_mm2": 42000.0,
+        "source_refs": [
+          "ARQ-PLAFON.dwg|PLAFON|Polyline|A1B2C3",
+          "EST-VIGAS.dwg|SOLAR|Line|D4E5F6"
+        ]
+      },
+      "confidence": "medium"
+    }
+  ]
+}

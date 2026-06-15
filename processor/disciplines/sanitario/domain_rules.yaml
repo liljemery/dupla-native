@@ -1,0 +1,100 @@
+discipline_id: sanitario
+display_name: "Sanitario / Plomer\xc3\xada"
+version: "1.0"
+
+vision_elements:
+
+  wet_area:
+    belongs: true
+    description: "Banos, lavanderias, areas humedas"
+    required_attributes:
+      - name: count
+        unit: unit
+      - name: kind
+        description: "full_bathroom, half_bathroom, laundry, etc."
+    optional_attributes:
+      - name: area_m2
+        unit: m2
+      - name: floor_finish
+      - name: wall_finish
+      - name: waterproofing_required
+
+  plumbing:
+    belongs: true
+    description: "Puntos de plomeria (agua, drenaje, ventilacion, etc.)"
+    required_attributes:
+      - name: type
+        description: "water_supply_point, drain_point, vent_pipe, etc."
+      - name: count
+        unit: unit
+    optional_attributes:
+      - name: pipe_diameter_in
+      - name: material
+      - name: location
+
+  fixture:
+    belongs: true
+    description: "Aparatos sanitarios (inodoro, lavamanos, ducha, etc.)"
+    required_attributes:
+      - name: count
+        unit: unit
+      - name: fixture_type
+    optional_attributes:
+      - name: location
+      - name: quality
+
+  beam:
+    belongs: false
+    reason: "Vigas son disciplina estructural"
+  column:
+    belongs: false
+    reason: "Columnas son disciplina estructural"
+  slab:
+    belongs: false
+    reason: "Losas son disciplina estructural"
+  footing:
+    belongs: false
+    reason: "Zapatas son disciplina estructural"
+  wall_masonry:
+    belongs: false
+    reason: "Muros de bloques son disciplina arquitectonica"
+  door:
+    belongs: false
+    reason: "Puertas son disciplina arquitectonica"
+  window:
+    belongs: false
+    reason: "Ventanas son disciplina arquitectonica"
+  kitchen:
+    belongs: false
+    reason: "Cocinas son disciplina arquitectonica"
+  stair:
+    belongs: false
+    reason: "Escaleras son disciplina arquitectonica/estructural"
+
+blacklisted_item_types:
+  - wall_net_area
+  - wall_volume
+  - wall_length
+  - wall_finish_paint
+  - wall_finish_plaster
+  - floor_area
+  - floor_finish
+  - ceiling_area
+  - ceiling_finish_paint
+  - door_count
+  - window_count
+  - kitchen_count
+  - beam_concrete_volume
+  - column_concrete_volume
+  - slab_concrete_volume
+  - footing_concrete_volume
+  - structural_volume
+  - stair_count
+
+budget_item_types:
+  - wet_area_count
+  - wet_area_area
+  - wet_area_fixture_count
+  - fixture_count
+  - floor_waterproofing
+  - pres_reference_line

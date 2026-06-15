@@ -1,0 +1,192 @@
+{
+  "title": "Dupla — Arquitectura frontend + backend",
+  "version": "1",
+  "description": "Documentación: SPA React/Vite (nginx), API FastAPI (uvicorn), PostgreSQL (SQLAlchemy/asyncpg), Redis (caché de módulos). El cliente nunca accede a Postgres/Redis directamente; JWT Bearer en /api/* excepto POST /api/auth/token.",
+  "icons": [
+    {
+      "id": "ic-dupla-browser",
+      "name": "browser",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/server.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-dupla-nginx",
+      "name": "edge",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/server.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-dupla-spa",
+      "name": "app",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/server.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-dupla-api",
+      "name": "api",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/server.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-dupla-pg",
+      "name": "database",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/server.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-dupla-redis",
+      "name": "cache",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/server.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    }
+  ],
+  "colors": [
+    { "id": "__DEFAULT__", "value": "#a5b8f3" },
+    { "id": "c-fe", "value": "#3498db" },
+    { "id": "c-be", "value": "#e67e22" },
+    { "id": "c-data", "value": "#27ae60" }
+  ],
+  "items": [
+    {
+      "id": "mi-dupla-user",
+      "name": "Usuario / navegador",
+      "description": "HTML/JS en el cliente; fetch con apiFetch + Bearer salvo login (form OAuth2).",
+      "icon": "ic-dupla-browser"
+    },
+    {
+      "id": "mi-dupla-nginx",
+      "name": "Vite dev server",
+      "description": "Sirve la SPA en desarrollo (:5173) con proxy /api → backend :8000.",
+      "icon": "ic-dupla-nginx"
+    },
+    {
+      "id": "mi-dupla-spa",
+      "name": "SPA React (Vite)",
+      "description": "Rutas: /login, /app/projects, /app/projects/:uuid, /app/chat, /app/tasks, /app/admin (MASTER). Base API: VITE_API_BASE.",
+      "icon": "ic-dupla-spa"
+    },
+    {
+      "id": "mi-dupla-fastapi",
+      "name": "FastAPI (uvicorn)",
+      "description": "Routers: auth, users, modules, projects, project_lifecycle, admin, chat, tasks. CORS desde config.",
+      "icon": "ic-dupla-api"
+    },
+    {
+      "id": "mi-dupla-postgres",
+      "name": "PostgreSQL 16",
+      "description": "DATABASE_URL postgresql+asyncpg. Alembic migraciones; modelos SQLAlchemy.",
+      "icon": "ic-dupla-pg"
+    },
+    {
+      "id": "mi-dupla-redis",
+      "name": "Redis 7",
+      "description": "Caché JSON de módulos (ModuleService); TTL en settings.",
+      "icon": "ic-dupla-redis"
+    }
+  ],
+  "views": [
+    {
+      "id": "view-dupla-main-001",
+      "name": "Despliegue y conexiones",
+      "description": "Desarrollo nativo: postgres :5432, redis :6379, backend :8000, frontend Vite :5173, processor :8001, coordination :8002.",
+      "lastUpdated": "2026-04-12T00:00:00Z",
+      "items": [
+        { "id": "mi-dupla-user", "tile": { "x": 0, "y": 4 }, "labelHeight": 80 },
+        { "id": "mi-dupla-nginx", "tile": { "x": 2, "y": 4 }, "labelHeight": 80 },
+        { "id": "mi-dupla-spa", "tile": { "x": 4, "y": 4 }, "labelHeight": 80 },
+        { "id": "mi-dupla-fastapi", "tile": { "x": 7, "y": 4 }, "labelHeight": 80 },
+        { "id": "mi-dupla-postgres", "tile": { "x": 10, "y": 6 }, "labelHeight": 80 },
+        { "id": "mi-dupla-redis", "tile": { "x": 10, "y": 2 }, "labelHeight": 80 }
+      ],
+      "rectangles": [
+        {
+          "id": "rect-fe-zone",
+          "color": "c-fe",
+          "from": { "x": -1, "y": 3 },
+          "to": { "x": 6, "y": 5 }
+        },
+        {
+          "id": "rect-be-zone",
+          "color": "c-be",
+          "from": { "x": 6, "y": 1 },
+          "to": { "x": 12, "y": 7 }
+        }
+      ],
+      "connectors": [
+        {
+          "id": "conn-static",
+          "description": "Primera carga: GET HTML/JS/CSS (puerto front)",
+          "color": "__DEFAULT__",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "a-conn-static-from", "ref": { "item": "mi-dupla-user" } },
+            { "id": "a-conn-static-to", "ref": { "item": "mi-dupla-nginx" } }
+          ]
+        },
+        {
+          "id": "conn-spa-api",
+          "description": "fetch JSON /api/* ; Authorization: Bearer (401 → /login)",
+          "color": "__DEFAULT__",
+          "width": 12,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "a-conn-spa-api-from", "ref": { "item": "mi-dupla-spa" } },
+            { "id": "a-conn-spa-api-to", "ref": { "item": "mi-dupla-fastapi" } }
+          ]
+        },
+        {
+          "id": "conn-api-pg",
+          "description": "SQLAlchemy async → Postgres",
+          "color": "c-data",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "a-conn-api-pg-from", "ref": { "item": "mi-dupla-fastapi" } },
+            { "id": "a-conn-api-pg-to", "ref": { "item": "mi-dupla-postgres" } }
+          ]
+        },
+        {
+          "id": "conn-api-redis",
+          "description": "cache_get_json / cache_set_json (módulos)",
+          "color": "__DEFAULT__",
+          "width": 10,
+          "style": "DOTTED",
+          "anchors": [
+            { "id": "a-conn-api-redis-from", "ref": { "item": "mi-dupla-fastapi" } },
+            { "id": "a-conn-api-redis-to", "ref": { "item": "mi-dupla-redis" } }
+          ]
+        }
+      ],
+      "textBoxes": [
+        {
+          "id": "tb-api-auth",
+          "tile": { "x": 7, "y": 7 },
+          "content": "POST /api/auth/token (form: username=email, password). GET /api/me, notificaciones /api/me/notifications.",
+          "fontSize": 0.55,
+          "orientation": "X"
+        },
+        {
+          "id": "tb-api-projects",
+          "tile": { "x": 0, "y": 8 },
+          "content": "/api/projects — lista, CRUD, members, architecture, files, exports (xlsx/pdf), lifecycle (transitions, revisions, subcontracts, events, bootstrap, specs, workflow-meta).",
+          "fontSize": 0.5,
+          "orientation": "X"
+        },
+        {
+          "id": "tb-api-rest",
+          "tile": { "x": 0, "y": 0 },
+          "content": "/api/modules (catálogo+módulos usuario). /api/chat — conversaciones y mensajes. /api/tasks — tablero y cards. /api/admin — usuarios (MASTER).",
+          "fontSize": 0.5,
+          "orientation": "X"
+        }
+      ]
+    }
+  ]
+}

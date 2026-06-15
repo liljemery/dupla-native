@@ -1,0 +1,295 @@
+{
+  "title": "Dupla — Flujo de proyecto (workflow)",
+  "version": "1",
+  "description": "Fases lineales en projects.workflow_phase (LINEAR_NEXT). Cada avance registra WORKFLOW_TRANSITION en project_events. Persistencia: PostgreSQL (proyecto, archivos, revisiones, workflow_meta, specifications_document). API: rutas bajo /api/projects (ProjectLifecycleService.transition_phase y sub-recursos).",
+  "icons": [
+    {
+      "id": "ic-pwf-bootstrap",
+      "name": "bootstrap",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/block.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-await-files",
+      "name": "document",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/document.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-files-ingested",
+      "name": "cache",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/cache.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-arch-review",
+      "name": "router",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/router.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-specs",
+      "name": "mail",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/mail.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-budget-pipe",
+      "name": "printer",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/printer.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-management",
+      "name": "firewall",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/firewall.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-approved",
+      "name": "user",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/user.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-api",
+      "name": "server",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/server.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    },
+    {
+      "id": "ic-pwf-db",
+      "name": "storage",
+      "url": "https://isoflow-public.s3.eu-west-2.amazonaws.com/isopacks/isoflow/storage.svg",
+      "collection": "isoflow",
+      "isIsometric": true
+    }
+  ],
+  "colors": [
+    { "id": "__DEFAULT__", "value": "#a5b8f3" },
+    { "id": "c-flow", "value": "#5dade2" },
+    { "id": "c-gate", "value": "#f5b041" }
+  ],
+  "items": [
+    {
+      "id": "mi-pwf-bootstrap",
+      "name": "BOOTSTRAPPING",
+      "description": "Checklist inicial: project_bootstrap_criteria — todos los ítems required deben estar done antes de pasar a AWAITING_FILES.",
+      "icon": "ic-pwf-bootstrap"
+    },
+    {
+      "id": "mi-pwf-await-files",
+      "name": "AWAITING_FILES",
+      "description": "Espera de cargas de planos/documentos vía API de archivos del proyecto.",
+      "icon": "ic-pwf-await-files"
+    },
+    {
+      "id": "mi-pwf-files-ingested",
+      "name": "FILES_INGESTED",
+      "description": "Transición desde AWAITING_FILES requiere ≥1 archivo en el proyecto.",
+      "icon": "ic-pwf-files-ingested"
+    },
+    {
+      "id": "mi-pwf-arch-review",
+      "name": "ARCHITECTURE_REVIEW",
+      "description": "Revisiones de arquitectura (architecture_revisions); decisión APPROVED obligatoria para pasar a SPECIFICATIONS.",
+      "icon": "ic-pwf-arch-review"
+    },
+    {
+      "id": "mi-pwf-specs",
+      "name": "SPECIFICATIONS",
+      "description": "Pliego en specifications_document; resumen (summary) mínimo 10 caracteres para BUDGETING_PIPELINE. Al entrar: notificación arquitectura completa.",
+      "icon": "ic-pwf-specs"
+    },
+    {
+      "id": "mi-pwf-budget-pipe",
+      "name": "BUDGETING_PIPELINE",
+      "description": "workflow_meta.budget_pipeline: subcontratos, volumetría, cost_analysis, budget_marked_complete (sin etiqueta de cliente aún).",
+      "icon": "ic-pwf-budget-pipe"
+    },
+    {
+      "id": "mi-pwf-management",
+      "name": "MANAGEMENT_APPROVAL",
+      "description": "Aprobación de gerencia. Transición desde BUDGETING_PIPELINE: COORDINATOR o MASTER; pipeline interno completo. Luego MASTER + client_approved_version_label → BUDGET_APPROVED.",
+      "icon": "ic-pwf-management"
+    },
+    {
+      "id": "mi-pwf-budget-approved",
+      "name": "BUDGET_APPROVED",
+      "description": "Fase terminal. Solo MASTER: pipeline completo + client_approved_version_label. Notificación presupuesto aprobado.",
+      "icon": "ic-pwf-approved"
+    },
+    {
+      "id": "mi-pwf-api",
+      "name": "FastAPI — ciclo de vida",
+      "description": "ProjectLifecycleService: transiciones validadas, eventos WORKFLOW_TRANSITION, uploads con restricción por fase.",
+      "icon": "ic-pwf-api"
+    },
+    {
+      "id": "mi-pwf-postgres",
+      "name": "PostgreSQL",
+      "description": "projects (workflow_phase, workflow_meta, specifications_document, …), project_files, architecture_revisions, project_events.",
+      "icon": "ic-pwf-db"
+    }
+  ],
+  "views": [
+    {
+      "id": "view-pwf-pipeline-001",
+      "name": "Pipeline de fases",
+      "description": "Camino lineal único (LINEAR_NEXT). Flechas = orden permitido de transición.",
+      "lastUpdated": "2026-04-12T12:00:00Z",
+      "items": [
+        { "id": "mi-pwf-bootstrap", "tile": { "x": 0, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-await-files", "tile": { "x": 2, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-files-ingested", "tile": { "x": 4, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-arch-review", "tile": { "x": 6, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-specs", "tile": { "x": 8, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-budget-pipe", "tile": { "x": 10, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-management", "tile": { "x": 12, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-budget-approved", "tile": { "x": 14, "y": 4 }, "labelHeight": 72 },
+        { "id": "mi-pwf-api", "tile": { "x": 6, "y": 8 }, "labelHeight": 72 },
+        { "id": "mi-pwf-postgres", "tile": { "x": 10, "y": 8 }, "labelHeight": 72 }
+      ],
+      "rectangles": [
+        {
+          "id": "rect-pwf-phases",
+          "color": "c-flow",
+          "from": { "x": -1, "y": 3 },
+          "to": { "x": 16, "y": 6 }
+        },
+        {
+          "id": "rect-pwf-persist",
+          "color": "c-gate",
+          "from": { "x": 3, "y": 7 },
+          "to": { "x": 14, "y": 10 }
+        }
+      ],
+      "connectors": [
+        {
+          "id": "conn-pwf-01",
+          "description": "Guarda: checklist bootstrap completo",
+          "color": "c-flow",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "anch-pwf-01-a", "ref": { "item": "mi-pwf-bootstrap" } },
+            { "id": "anch-pwf-01-b", "ref": { "item": "mi-pwf-await-files" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-02",
+          "description": "Guarda: ≥1 archivo de proyecto",
+          "color": "c-flow",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "anch-pwf-02-a", "ref": { "item": "mi-pwf-await-files" } },
+            { "id": "anch-pwf-02-b", "ref": { "item": "mi-pwf-files-ingested" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-03",
+          "description": "Sin guarda adicional en código",
+          "color": "c-flow",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "anch-pwf-03-a", "ref": { "item": "mi-pwf-files-ingested" } },
+            { "id": "anch-pwf-03-b", "ref": { "item": "mi-pwf-arch-review" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-04",
+          "description": "Guarda: revisión APPROVED",
+          "color": "c-flow",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "anch-pwf-04-a", "ref": { "item": "mi-pwf-arch-review" } },
+            { "id": "anch-pwf-04-b", "ref": { "item": "mi-pwf-specs" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-05",
+          "description": "Guarda: resumen pliego ≥10 caracteres",
+          "color": "c-flow",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "anch-pwf-05-a", "ref": { "item": "mi-pwf-specs" } },
+            { "id": "anch-pwf-05-b", "ref": { "item": "mi-pwf-budget-pipe" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-06",
+          "description": "Guarda: pipeline interno completo; COORDINATOR o MASTER",
+          "color": "c-flow",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "anch-pwf-06-a", "ref": { "item": "mi-pwf-budget-pipe" } },
+            { "id": "anch-pwf-06-b", "ref": { "item": "mi-pwf-management" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-07",
+          "description": "Guarda: pipeline + client_approved_version_label; solo MASTER",
+          "color": "c-flow",
+          "width": 10,
+          "style": "SOLID",
+          "anchors": [
+            { "id": "anch-pwf-07-a", "ref": { "item": "mi-pwf-management" } },
+            { "id": "anch-pwf-07-b", "ref": { "item": "mi-pwf-budget-approved" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-api-db",
+          "description": "SQLAlchemy async — estado y artefactos",
+          "color": "__DEFAULT__",
+          "width": 8,
+          "style": "DASHED",
+          "anchors": [
+            { "id": "anch-pwf-api-a", "ref": { "item": "mi-pwf-api" } },
+            { "id": "anch-pwf-db-b", "ref": { "item": "mi-pwf-postgres" } }
+          ]
+        },
+        {
+          "id": "conn-pwf-phases-api",
+          "description": "PATCH transición / uploads / revisiones",
+          "color": "__DEFAULT__",
+          "width": 8,
+          "style": "DOTTED",
+          "anchors": [
+            { "id": "anch-pwf-p-mid", "ref": { "item": "mi-pwf-specs" } },
+            { "id": "anch-pwf-api-up", "ref": { "item": "mi-pwf-api" } }
+          ]
+        }
+      ],
+      "textBoxes": [
+        {
+          "id": "tb-pwf-guards",
+          "tile": { "x": 0, "y": 11 },
+          "content": "Guardas (409/403): (1) Bootstrap: ítems required en project_bootstrap_criteria. (2) Awaiting→Ingested: count_project_files ≥ 1. (3) Arch review→Specs: última architecture_revision con decision APPROVED. (4) Specs→Budget: specifications_document.summary ≥ 10 chars. (5) Budget pipe→Gerencia: flags subcontratos, volumetría, cost_analysis, budget completo; rol COORDINATOR o MASTER. (6) Gerencia→Aprobado cliente: MASTER + client_approved_version_label además de los flags.",
+          "fontSize": 0.48,
+          "orientation": "X"
+        },
+        {
+          "id": "tb-pwf-api",
+          "tile": { "x": 0, "y": 0 },
+          "content": "Routers: project_lifecycle bajo /api/projects (transiciones, archivos, revisiones, subcontratos, eventos, workflow-meta, especificaciones). Sin saltos: solo LINEAR_NEXT[current]. Eventos WORKFLOW_TRANSITION en project_events.",
+          "fontSize": 0.5,
+          "orientation": "X"
+        }
+      ]
+    }
+  ]
+}

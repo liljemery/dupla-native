@@ -1,0 +1,2 @@
+# Scripts ejecutados en Linux: CRLF rompe shebangs (#!/usr/bin/env sh).
+*.sh text eol=lf
