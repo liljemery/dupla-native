@@ -22,14 +22,14 @@ class Settings(BaseSettings):
                 "Async SQLAlchemy URL. Default targets localhost (run Postgres on port 5432)."
             ),
         ),
-    ]
+    ] = "postgresql+asyncpg://dupla:dupla@127.0.0.1:5432/dupla"
     redis_url: Annotated[
         str,
         Field(
             default="redis://127.0.0.1:6379/0",
             description="Redis URL. Default targets localhost on port 6379.",
         ),
-    ]
+    ] = "redis://127.0.0.1:6379/0"
     processor_url: Annotated[
         str,
         Field(
@@ -75,21 +75,23 @@ class Settings(BaseSettings):
             description="Solo development: incluir token de reset en la respuesta API (QA local sin SMTP).",
         ),
     ] = False
-    jwt_secret: Annotated[str, Field(default=DEMO_JWT_SECRET)]
-    jwt_algorithm: Annotated[str, Field(default="HS256")]
-    access_token_expire_minutes: Annotated[int, Field(default=60, ge=1, le=60 * 24 * 7)]
-    cors_origins: Annotated[str, Field(default="http://localhost:5173,http://127.0.0.1:5173")]
-    cache_ttl_seconds: Annotated[int, Field(default=300, ge=1)]
-    architecture_module_id: Annotated[int, Field(default=1, ge=1)]
+    jwt_secret: Annotated[str, Field(default=DEMO_JWT_SECRET)] = DEMO_JWT_SECRET
+    jwt_algorithm: Annotated[str, Field(default="HS256")] = "HS256"
+    access_token_expire_minutes: Annotated[int, Field(default=60, ge=1, le=60 * 24 * 7)] = 60
+    cors_origins: Annotated[str, Field(default="http://localhost:5173,http://127.0.0.1:5173")] = (
+        "http://localhost:5173,http://127.0.0.1:5173"
+    )
+    cache_ttl_seconds: Annotated[int, Field(default=300, ge=1)] = 300
+    architecture_module_id: Annotated[int, Field(default=1, ge=1)] = 1
 
-    templates_dir: Annotated[str, Field(default="app/templates")]
+    templates_dir: Annotated[str, Field(default="app/templates")] = "app/templates"
     upload_root: Annotated[
         str,
         Field(
             default="var/uploads",
             description="Directorio raíz para archivos de proyecto (DWG/DXF, etc.).",
         ),
-    ]
+    ] = "var/uploads"
     project_file_max_mb: Annotated[
         int,
         Field(
@@ -98,7 +100,7 @@ class Settings(BaseSettings):
             le=2048,
             description="Tamaño máximo por archivo de proyecto (MB). CAD/BIM suele superar 50 MB.",
         ),
-    ]
+    ] = 200
     openai_api_key: Annotated[
         Optional[str],
         Field(default=None, description="API key OpenAI: clasificación de archivos y Dupla Assistant (léela desde backend/.env)."),
