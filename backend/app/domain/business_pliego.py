@@ -89,6 +89,9 @@ def transition_blockers_for_business_pliego(spec: dict[str, Any] | None) -> Opti
                 "y guardá en la pestaña Pliego."
             )
         if not ga_fo_block_approved(spec):
+            block = get_business_pliego_block(spec)
+            if bool(block.get("approved")):
+                return None
             return "El pliego de condiciones debe estar aprobado antes de iniciar el presupuesto."
         return None
 

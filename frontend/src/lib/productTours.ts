@@ -337,7 +337,7 @@ export function startWorkspaceTour(navigate: NavigateFunction): void {
           popover: {
             title: 'Accesos del workspace',
             description:
-              'Desde el inicio eliges la tarjeta de cada área (detalles, flujo, presupuesto maestro, archivos, control de entregas, revisiones, hallazgos, pliego, eventos). El pipeline operativo sigue en Flujo; el presupuesto maestro (takeoff) tiene su propia pestaña. «Volver al inicio» te regresa a las tarjetas.',
+              'Desde el inicio eliges la tarjeta de cada área (detalles, flujo, presupuesto maestro, archivos, control de entregas, revisiones, hallazgos, pliego, eventos). El pipeline operativo sigue en Flujo; el presupuesto maestro (takeoff IA) tiene su propia pestaña. «Volver al inicio» te regresa a las tarjetas.',
             side: 'right',
             align: 'start',
           },
@@ -347,7 +347,7 @@ export function startWorkspaceTour(navigate: NavigateFunction): void {
           popover: {
             title: 'Contenido de la sección',
             description:
-              'Aquí cambia el contenido según la sección que elijas: en Flujo verás el paso activo y el pipeline; en Presupuesto maestro, la cuadrilla takeoff demo; en Pliego, el checklist GA-FO-01 de documentos; en el resto, archivos, revisiones, hallazgos, etc. El ejemplo «Tutorial · Workspace Dupla» sirve para practicar sin tocar obras reales.',
+              'Aquí cambia el contenido según la sección que elijas: en Flujo verás el paso activo y el pipeline; en Presupuesto maestro, el takeoff generado por IA; en Pliego, el checklist GA-FO-01 de documentos; en el resto, archivos, revisiones, hallazgos, etc. El ejemplo «Tutorial · Workspace Dupla» sirve para practicar sin tocar obras reales.',
             side: 'top',
             align: 'start',
           },

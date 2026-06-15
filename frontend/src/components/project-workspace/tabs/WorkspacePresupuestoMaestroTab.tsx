@@ -1,13 +1,14 @@
 import { AlertCircle, Cpu, Loader2, Play, RefreshCw } from 'lucide-react'
-import { useMemo, useEffect, useRef, useState } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 
 import { useBudgetJob } from '../../../hooks/useBudgetJob'
+import type { BudgetRow } from '../../../types/budget'
 import type { Project } from '../../../types/project'
 import { PrimaryButton } from '../../PrimaryButton'
 import { WorkspaceActionButton } from '../WorkspaceActionButton'
 
 // ─── formatters ───────────────────────────────────────────────────────────────
-function fmtDop(n: any): string {
+function fmtDop(n: unknown): string {
   const num = Number(n) || 0
   return new Intl.NumberFormat('es-DO', {
     style: 'currency',
@@ -17,7 +18,7 @@ function fmtDop(n: any): string {
   }).format(num)
 }
 
-function fmtUsd(n: any, tcRate = 58.5): string {
+function fmtUsd(n: unknown, tcRate = 58.5): string {
   const num = Number(n) || 0
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -27,7 +28,7 @@ function fmtUsd(n: any, tcRate = 58.5): string {
   }).format(num / tcRate)
 }
 
-function fmtQty(q: any): string {
+function fmtQty(q: unknown): string {
   if (q == null || q === '') return ''
   if (typeof q === 'string' && q.startsWith('=')) return ''
   const num = Number(q) || 0
@@ -124,16 +125,28 @@ function EnqueueModal({ onSubmit, onClose }: EnqueueModalProps) {
 // ─── Elapsed timer ────────────────────────────────────────────────────────────
 function useElapsedSeconds(startIso: string | undefined): number {
   const [elapsed, setElapsed] = useState(0)
-  const ref = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    if (!startIso) { setElapsed(0); return }
+    if (!startIso) return
     const start = new Date(startIso).getTime()
-    ref.current = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000)
-    return () => { if (ref.current) clearInterval(ref.current) }
+    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000))
+    update()
+    const id = setInterval(update, 1000)
+    return () => clearInterval(id)
   }, [startIso])
 
-  return elapsed
+  return startIso ? elapsed : 0
+}
+
+type ProcessedBudgetRow = BudgetRow & {
+  row_type?: string
+  computed_amount?: number
+  computed_unit_price?: number
+  computed_quantity?: number | string | null
+  metadata?: {
+    source_row_indices?: number[]
+    subtotal_row_index?: number
+  }
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -150,9 +163,9 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
     job?.status === 'queued' || job?.status === 'processing' ? job.created_at : undefined,
   )
 
-  const processedRows = useMemo(() => {
+  const processedRows = useMemo((): ProcessedBudgetRow[] => {
     if (!result?.rows) return []
-    const newRows = result.rows.map(r => ({ ...r })) as any[]
+    const newRows = result.rows.map((r) => ({ ...r })) as ProcessedBudgetRow[]
     
     for (const r of newRows) {
       if (r.row_type === 'line') {
@@ -182,7 +195,7 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
       }
     }
     return newRows
-  }, [result?.rows])
+  }, [result])
 
   const direct = useMemo(
     () => processedRows.reduce((sum, r) => sum + (r.row_type === 'line' ? (r.computed_amount || 0) : 0), 0),
@@ -266,6 +279,39 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
         >
           Verificar estado
         </button>
+      </div>
+    )
+  }
+
+  // ── Partial (base extraction only) ──
+  if (job?.status === 'completed_partial' || (job?.status === 'completed' && !result && !isPolling)) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
+        {modalOpen && (
+          <EnqueueModal
+            onSubmit={handleEnqueueSubmit}
+            onClose={() => setModalOpen(false)}
+          />
+        )}
+        <div className="flex size-20 items-center justify-center rounded-full bg-primary/10">
+          <Cpu className="size-10 text-primary" strokeWidth={1.5} />
+        </div>
+        <div className="max-w-md space-y-2">
+          <h2 className="text-xl font-bold text-ink">Extracción base completada</h2>
+          <p className="text-sm leading-relaxed text-muted">
+            Esta corrida solo generó artefactos de extracción y no contiene partidas de presupuesto.
+            Re-procesa seleccionando una disciplina o todas las disciplinas.
+          </p>
+        </div>
+        <PrimaryButton
+          id="retry-budget-partial-btn"
+          type="button"
+          className="gap-2 px-6 py-3 text-sm font-bold"
+          onClick={() => setModalOpen(true)}
+        >
+          <RefreshCw className="size-4" strokeWidth={2.5} aria-hidden />
+          Re-procesar con disciplina
+        </PrimaryButton>
       </div>
     )
   }

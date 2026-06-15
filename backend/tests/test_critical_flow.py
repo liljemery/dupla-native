@@ -173,9 +173,34 @@ async def test_tender_project_starts_in_architecture_review_with_file(
     assert create.status_code == 201, create.text
     created = create.json()
     assert created["project_kind"] == "TENDER"
-    assert created["workflow_phase"] == "ARCHITECTURE_REVIEW"
-
+    assert created["workflow_phase"] == "BOOTSTRAPPING"
     pid = created["uuid"]
+
+    boot = await client.put(
+        f"/api/projects/{pid}/bootstrap",
+        headers={**master_auth_headers_async, "Content-Type": "application/json"},
+        json={"criteria": [{"id": "a", "label": "Pliego", "required": True, "done": True}]},
+    )
+    assert boot.status_code == 200, boot.text
+
+    t1 = await client.post(
+        f"/api/projects/{pid}/transitions",
+        headers={**master_auth_headers_async, "Content-Type": "application/json"},
+        json={"target_phase": "AWAITING_FILES"},
+    )
+    assert t1.status_code == 200, t1.text
+
+    t2 = await client.post(
+        f"/api/projects/{pid}/transitions",
+        headers={**master_auth_headers_async, "Content-Type": "application/json"},
+        json={"target_phase": "ARCHITECTURE_REVIEW"},
+    )
+    assert t2.status_code == 200, t2.text
+
+    get_p = await client.get(f"/api/projects/{pid}", headers=master_auth_headers_async)
+    assert get_p.status_code == 200
+    assert get_p.json()["workflow_phase"] == "ARCHITECTURE_REVIEW"
+
     rewind = await client.post(
         f"/api/projects/{pid}/transitions",
         headers={**master_auth_headers_async, "Content-Type": "application/json"},

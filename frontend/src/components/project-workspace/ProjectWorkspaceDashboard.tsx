@@ -206,7 +206,7 @@ export function ProjectWorkspaceDashboard({
       key,
       label: workflowPhaseLabelForRole(key, role as import('../../constants/userRoles').UserRole | null),
     }))
-  }, [orderedTemplateSteps, project.current_workflow_step_uuid])
+  }, [orderedTemplateSteps, project.current_workflow_step_uuid, role])
 
   const activeStepIdx = useMemo(() => {
     if (orderedTemplateSteps?.length && project.current_workflow_step_uuid) {

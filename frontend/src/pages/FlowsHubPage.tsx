@@ -7,11 +7,13 @@ import { Card } from '../components/Card'
 import { PrimaryButton } from '../components/PrimaryButton'
 import {
   FlowStepsEditor,
+} from '../components/flows/FlowStepsEditor'
+import {
   type DraftWorkflowStep,
   normalizeActionsFromApi,
   newDraftId,
   syncStableKeysForSteps,
-} from '../components/flows/FlowStepsEditor'
+} from '../components/flows/flowStepsEditorUtils'
 import { FlowTemplateIcon } from '../components/flows/FlowTemplateIcon'
 import { coerceFlowTemplateIconKey, DEFAULT_FLOW_TEMPLATE_ICON } from '../constants/flowTemplateIcons'
 import type { WorkflowTemplateDetail, WorkflowTemplateListItem } from '../types/workflowTemplate'

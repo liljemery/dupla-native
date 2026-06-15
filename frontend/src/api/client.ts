@@ -1,5 +1,5 @@
 import { AUTH_PERSIST_KEY } from '../store/authConstants'
-import { emitToast } from '../components/ToastProvider'
+import { emitToast } from '../lib/toastEmitter'
 import { getActiveWorkspaceUuidFromStorage } from '../lib/workspaceSession'
 
 const base = import.meta.env.VITE_API_BASE ?? ''

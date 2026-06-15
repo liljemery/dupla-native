@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
@@ -11,7 +12,7 @@ from app.security.password import hash_password
 from app.security.reset_token import generate_reset_token, hash_reset_token
 from app.services.email_service import EmailService
 
-settings = get_settings()
+logger = logging.getLogger(__name__)
 
 GENERIC_RESET_MESSAGE = (
     "Si el correo está registrado, recibirás un enlace para restablecer tu contraseña."
@@ -25,10 +26,11 @@ class PasswordResetService:
         self._tokens = PasswordResetTokenRepository(session)
         self._email = EmailService()
 
-    async def request_reset(self, email: str) -> str:
+    async def request_reset(self, email: str) -> tuple[str, str | None]:
+        settings = get_settings()
         user = await self._users.get_by_email(email.strip())
         if user is None:
-            return GENERIC_RESET_MESSAGE
+            return GENERIC_RESET_MESSAGE, None
 
         await self._tokens.invalidate_unused_for_user(user.id)
 
@@ -46,9 +48,27 @@ class PasswordResetService:
         await self._session.commit()
 
         reset_url = f"{settings.frontend_url.rstrip('/')}/reset-password?token={plain_token}"
-        await self._email.send_password_reset(user.email, reset_url)
+        dev_token: str | None = None
 
-        return GENERIC_RESET_MESSAGE
+        if not self._email.is_configured:
+            if settings.app_env != "development":
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=(
+                        "Servicio de correo no disponible. Contacta al administrador "
+                        "para restablecer tu contraseña."
+                    ),
+                )
+            logger.warning(
+                "SMTP not configured; password reset email not sent to %s (development mode)",
+                user.email,
+            )
+            if settings.dev_expose_reset_token:
+                dev_token = plain_token
+        else:
+            await self._email.send_password_reset(user.email, reset_url)
+
+        return GENERIC_RESET_MESSAGE, dev_token
 
     async def reset_password(self, token: str, new_password: str) -> None:
         token_hash = hash_reset_token(token.strip())

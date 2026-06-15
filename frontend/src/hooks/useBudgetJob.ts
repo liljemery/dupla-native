@@ -43,6 +43,9 @@ export function useBudgetJob(projectUuid: string, token: string | null): UseBudg
     if (latest.status === 'completed') {
       stopPolling()
       await fetchResult()
+    } else if (latest.status === 'completed_partial') {
+      stopPolling()
+      setResult(null)
     } else if (latest.status === 'failed') {
       stopPolling()
       setError(latest.error ?? 'El procesamiento falló')
@@ -69,6 +72,8 @@ export function useBudgetJob(projectUuid: string, token: string | null): UseBudg
         startPolling()
       } else if (latest.status === 'completed') {
         await fetchResult()
+      } else if (latest.status === 'completed_partial') {
+        setResult(null)
       } else if (latest.status === 'failed') {
         setError(latest.error ?? 'El procesamiento falló')
       }

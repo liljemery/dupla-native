@@ -93,7 +93,9 @@ async def list_projects(
         "member_user_uuids opcional como JSON string de UUIDs, "
         "responsible_external_name / responsible_external_email opcional (contacto fuera del equipo), "
         "files opcional (múltiples). "
-        "Licitación (TENDER): fase inicial revisión de arquitectura y obligatorio al menos un archivo."
+        "Licitación (TENDER): inicia en el primer paso de la plantilla de flujo del workspace "
+        "(BOOTSTRAPPING) y requiere al menos un archivo al crear el proyecto; no puede retroceder "
+        "por debajo de revisión de arquitectura una vez alcanzada esa fase."
     ),
 )
 async def create_project(

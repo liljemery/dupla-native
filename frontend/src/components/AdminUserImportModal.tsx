@@ -29,6 +29,15 @@ type ImportResponse = {
 type Step = 'input' | 'preview' | 'result'
 
 export function AdminUserImportModal({ token, open, onClose, onImported }: Props) {
+  if (!open) return null
+  return <AdminUserImportModalBody token={token} onClose={onClose} onImported={onImported} />
+}
+
+function AdminUserImportModalBody({
+  token,
+  onClose,
+  onImported,
+}: Omit<Props, 'open'>) {
   const [step, setStep] = useState<Step>('input')
   const [rawText, setRawText] = useState('')
   const [parseErrors, setParseErrors] = useState<string[]>([])
@@ -38,24 +47,12 @@ export function AdminUserImportModal({ token, open, onClose, onImported }: Props
   const [result, setResult] = useState<ImportResponse | null>(null)
 
   useEffect(() => {
-    if (!open) return
-    setStep('input')
-    setRawText('')
-    setParseErrors([])
-    setRows([])
-    setSubmitError(null)
-    setSubmitting(false)
-    setResult(null)
-  }, [open])
-
-  useEffect(() => {
-    if (!open) return
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [onClose])
 
   const validRows = useMemo(() => validImportRows(rows), [rows])
 
@@ -113,8 +110,6 @@ export function AdminUserImportModal({ token, open, onClose, onImported }: Props
       onImported()
     }
   }
-
-  if (!open) return null
 
   return (
     <div

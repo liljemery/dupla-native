@@ -86,8 +86,8 @@ async def forgot_password(
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> ForgotPasswordResponse:
     service = PasswordResetService(session)
-    message = await service.request_reset(body.email)
-    return ForgotPasswordResponse(message=message)
+    message, dev_token = await service.request_reset(body.email)
+    return ForgotPasswordResponse(message=message, dev_reset_token=dev_token)
 
 
 @router.post(

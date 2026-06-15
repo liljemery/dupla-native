@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 
 import { apiFetch } from '../api/client'
 import { invalidateAdminUsersDirectoryCache } from '../lib/adminUsersDirectoryCache'
@@ -59,6 +59,7 @@ export function AdminUserModal({ token, open, mode, user, onClose, onSaved }: Pr
       architectureAccess: true,
     },
   })
+  const createRole = useWatch({ control: createForm.control, name: 'role' })
 
   const editForm = useForm<AdminEditUserForm>({
     resolver: zodResolver(adminEditUserSchema),
@@ -72,6 +73,7 @@ export function AdminUserModal({ token, open, mode, user, onClose, onSaved }: Pr
       isTeamLeader: false,
     },
   })
+  const editRole = useWatch({ control: editForm.control, name: 'role' })
 
   useEffect(() => {
     if (!open || !canAssignWorkspaces) return
@@ -335,7 +337,7 @@ export function AdminUserModal({ token, open, mode, user, onClose, onSaved }: Pr
               <input type="checkbox" className="rounded border-black/20" {...createForm.register('architectureAccess')} />
               Acceso a proyectos y workspace
             </label>
-            {workspaceAssignmentBlock(createForm.watch('role'))}
+            {workspaceAssignmentBlock(createRole ?? 'ARQUITECTURA')}
             {createForm.formState.errors.root ? (
               <p className="text-sm text-primary">{createForm.formState.errors.root.message}</p>
             ) : null}
@@ -429,7 +431,7 @@ export function AdminUserModal({ token, open, mode, user, onClose, onSaved }: Pr
                 Líder de equipo (permisos elevados excepto crear usuarios)
               </label>
             ) : null}
-            {workspaceAssignmentBlock(editForm.watch('role'))}
+            {workspaceAssignmentBlock(editRole ?? 'ARQUITECTURA')}
             {editForm.formState.errors.root ? (
               <p className="text-sm text-primary">{editForm.formState.errors.root.message}</p>
             ) : null}

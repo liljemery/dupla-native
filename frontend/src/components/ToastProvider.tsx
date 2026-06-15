@@ -1,45 +1,17 @@
-import { createContext, useCallback, useContext, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export type ToastVariant = 'error' | 'warning' | 'success' | 'info'
+import { ToastContext } from '../lib/toastContext'
+import { registerToastEmitter, unregisterToastEmitter } from '../lib/toastEmitter'
+import type { Toast, ToastVariant } from '../lib/toastTypes'
 
-export interface Toast {
-  id: string
-  message: string
-  variant: ToastVariant
-}
+export type { Toast, ToastVariant }
 
-interface ToastContextValue {
-  addToast: (message: string, variant?: ToastVariant) => void
-}
-
-// ─── Context ──────────────────────────────────────────────────────────────────
-const ToastContext = createContext<ToastContextValue>({
-  addToast: () => undefined,
-})
-
-export function useToast() {
-  return useContext(ToastContext)
-}
-
-// ─── Singleton emitter (used by apiFetch outside React tree) ──────────────────
-let _emit: ((message: string, variant?: ToastVariant) => void) | null = null
-
-export function emitToast(message: string, variant: ToastVariant = 'error') {
-  _emit?.(message, variant)
-}
-
-// ─── Toast item ───────────────────────────────────────────────────────────────
 const VARIANT_STYLES: Record<ToastVariant, string> = {
-  error:
-    'border-red-500/20 bg-red-50 text-red-900',
-  warning:
-    'border-amber-500/20 bg-amber-50 text-amber-900',
-  success:
-    'border-emerald-500/20 bg-emerald-50 text-emerald-900',
-  info:
-    'border-primary/20 bg-primary/[0.06] text-ink',
+  error: 'border-red-500/20 bg-red-50 text-red-900',
+  warning: 'border-amber-500/20 bg-amber-50 text-amber-900',
+  success: 'border-emerald-500/20 bg-emerald-50 text-emerald-900',
+  info: 'border-primary/20 bg-primary/[0.06] text-ink',
 }
 
 const PROGRESS_COLOR: Record<ToastVariant, string> = {
@@ -69,7 +41,6 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
           <path d="M4.22 4.22a.75.75 0 0 1 1.06 0L8 6.94l2.72-2.72a.75.75 0 1 1 1.06 1.06L9.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L8 9.06l-2.72 2.72a.75.75 0 0 1-1.06-1.06L6.94 8 4.22 5.28a.75.75 0 0 1 0-1.06Z" />
         </svg>
       </button>
-      {/* progress bar */}
       <span
         className={`absolute bottom-0 left-0 h-[2px] ${PROGRESS_COLOR[toast.variant]}`}
         style={{ animation: `du-toast-shrink ${AUTO_DISMISS_MS}ms linear forwards` }}
@@ -78,7 +49,6 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: string)
   )
 }
 
-// ─── Provider ─────────────────────────────────────────────────────────────────
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const timerMap = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
@@ -102,8 +72,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss],
   )
 
-  // Expose to singleton emitter so apiFetch can call it
-  _emit = addToast
+  useEffect(() => {
+    registerToastEmitter(addToast)
+    return () => unregisterToastEmitter()
+  }, [addToast])
 
   return (
     <ToastContext.Provider value={{ addToast }}>

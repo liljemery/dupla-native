@@ -78,6 +78,22 @@ def _parse_concepts(records: list[str]) -> dict[str, dict[str, Any]]:
     return concepts
 
 
+def _parse_decomposition_tokens(tokens: list[str]) -> list[tuple[str, float | None, float | None]]:
+    """Parse ~D child tokens: code, optional factor, optional yield (FIEBDC stride 3)."""
+    children: list[tuple[str, float | None, float | None]] = []
+    index = 0
+    while index < len(tokens):
+        child_code = tokens[index].replace("#", "").strip()
+        if not child_code:
+            index += 1
+            continue
+        factor = _to_float(tokens[index + 1]) if index + 1 < len(tokens) else None
+        yield_value = _to_float(tokens[index + 2]) if index + 2 < len(tokens) else None
+        children.append((child_code, factor, yield_value))
+        index += 3 if index + 2 < len(tokens) else 1
+    return children
+
+
 def _iter_decomposition_child_edges(records: list[str]) -> list[tuple[str, str]]:
     """Direct (parent_code, child_code) edges from ~D decomposition lines."""
     edges: list[tuple[str, str]] = []
@@ -95,9 +111,7 @@ def _iter_decomposition_child_edges(records: list[str]) -> list[tuple[str, str]]
         if not parent_code or not tokens:
             continue
 
-        # TODO: Expand this parser for the full FIEBDC decomposition grammar.
-        for index in range(0, len(tokens), 3):
-            child_code = tokens[index].replace("#", "").strip()
+        for child_code, _, _ in _parse_decomposition_tokens(tokens):
             if child_code:
                 edges.append((parent_code, child_code))
 
@@ -120,11 +134,7 @@ def _parse_hierarchy(records: list[str]) -> dict[str, list[dict[str, Any]]]:
         if not parent_code or not tokens:
             continue
 
-        # TODO: Expand this parser for the full FIEBDC decomposition grammar.
-        for index in range(0, len(tokens), 3):
-            child_code = tokens[index].replace("#", "").strip()
-            factor = _to_float(tokens[index + 1]) if index + 1 < len(tokens) else None
-            yield_value = _to_float(tokens[index + 2]) if index + 2 < len(tokens) else None
+        for child_code, factor, yield_value in _parse_decomposition_tokens(tokens):
             hierarchy[parent_code].append(
                 {
                     "code": child_code,

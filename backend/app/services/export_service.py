@@ -39,6 +39,7 @@ def _control_days_display(row: PlanDeliveryRequest) -> str:
 class ExportService:
     def __init__(self, session: AsyncSession, workspace_id: UUID) -> None:
         self._session = session
+        self._workspace_id = workspace_id
         self._project_service = ProjectService(session, workspace_id)
 
     async def _load_payload(self, user: User, project_uuid: UUID) -> dict:
@@ -141,14 +142,14 @@ class ExportService:
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 14)
-        pdf.multi_cell(0, 8, "Informe documental — checklist y archivos", new_x=XPos.LMARGIN)
+        pdf.multi_cell(0, 8, "Informe documental - checklist y archivos", new_x=XPos.LMARGIN)
         pdf.set_font("Helvetica", size=10)
         pdf.ln(2)
         meta_lines = [
             f"Proyecto: {project_name}",
-            f"Código: {project_code or '—'}",
-            f"Cliente: {client_name or '—'}",
-            f"Ubicación: {location_text or '—'}",
+            f"Código: {project_code or '-'}",
+            f"Cliente: {client_name or '-'}",
+            f"Ubicación: {location_text or '-'}",
         ]
         for line in meta_lines:
             pdf.multi_cell(0, 6, line, new_x=XPos.LMARGIN)
@@ -193,7 +194,7 @@ class ExportService:
             pdf.multi_cell(0, 6, "No hay archivos registrados.", new_x=XPos.LMARGIN)
         else:
             for f in files:
-                disc = f.discipline or "—"
+                disc = f.discipline or "-"
                 pdf.multi_cell(
                     0,
                     5,
@@ -247,7 +248,7 @@ class ExportService:
         return self.build_pliego_xlsx(payload), f"pliego-{project_uuid}.xlsx"
 
     async def export_control_xlsx(self, user: User, project_uuid: UUID) -> bytes:
-        pds = PlanDeliveryService(self._session)
+        pds = PlanDeliveryService(self._session, self._workspace_id)
         project_name, rows = await pds.list_models_for_export(user, project_uuid)
         return self.build_control_planos_xlsx(project_name, rows)
 
@@ -256,7 +257,7 @@ class ExportService:
         return self.build_pdf("Pliego de Condiciones - Arquitectura", payload)
 
     async def export_control_pdf(self, user: User, project_uuid: UUID) -> bytes:
-        pds = PlanDeliveryService(self._session)
+        pds = PlanDeliveryService(self._session, self._workspace_id)
         project_name, rows = await pds.list_models_for_export(user, project_uuid)
         return self.build_control_planos_pdf(project_name, rows)
 
@@ -265,7 +266,7 @@ class ExportService:
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 12)
-        pdf.multi_cell(0, 8, f"Control Entrega de Planos — {project_name}", new_x=XPos.LMARGIN)
+        pdf.multi_cell(0, 8, f"Control Entrega de Planos - {project_name}", new_x=XPos.LMARGIN)
         pdf.ln(2)
         pdf.set_font("Helvetica", size=8)
         if not rows:
@@ -276,17 +277,17 @@ class ExportService:
                 pdf.multi_cell(
                     0,
                     5,
-                    f"{idx}. {row.request_number} — {row.status}",
+                    f"{idx}. {row.request_number} - {row.status}",
                     new_x=XPos.LMARGIN,
                 )
                 pdf.set_font("Helvetica", size=8)
                 line = (
-                    f"Solicitud: {row.request_date.isoformat() if row.request_date else '—'} | "
-                    f"Entrega: {row.delivery_date.isoformat() if row.delivery_date else '—'} | "
-                    f"Días: {_control_days_display(row) or '—'}"
+                    f"Solicitud: {row.request_date.isoformat() if row.request_date else '-'} | "
+                    f"Entrega: {row.delivery_date.isoformat() if row.delivery_date else '-'} | "
+                    f"Días: {_control_days_display(row) or '-'}"
                 )
                 pdf.multi_cell(0, 4, line, new_x=XPos.LMARGIN)
-                desc = (row.description or "").strip() or "—"
+                desc = (row.description or "").strip() or "-"
                 pdf.multi_cell(0, 4, desc, new_x=XPos.LMARGIN)
                 pdf.ln(1)
         out = pdf.output()

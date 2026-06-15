@@ -5,9 +5,14 @@ export async function requestPasswordReset(email: string): Promise<string> {
     method: 'POST',
     body: JSON.stringify({ email }),
   })
-  const body = (await res.json().catch(() => ({}))) as { detail?: string; message?: string }
+  const body = (await res.json().catch(() => ({}))) as {
+    detail?: string
+    message?: string
+    dev_reset_token?: string
+  }
   if (!res.ok) {
-    throw new Error(body.detail ?? 'No se pudo enviar la solicitud')
+    const detail = typeof body.detail === 'string' ? body.detail : 'No se pudo enviar la solicitud'
+    throw new Error(detail)
   }
   return body.message ?? 'Si el correo está registrado, recibirás un enlace para restablecer tu contraseña.'
 }

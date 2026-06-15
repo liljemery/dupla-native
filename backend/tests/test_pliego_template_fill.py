@@ -72,7 +72,7 @@ def test_suggested_filename_contains_uuid():
 
 
 def test_resolve_pliego_template_missing(tmp_path):
-    assert resolve_pliego_template_path(tmp_path) is None
+    assert resolve_pliego_template_path(tmp_path, search_repo_fallback=False) is None
 
 
 def test_roundtrip_bytes():

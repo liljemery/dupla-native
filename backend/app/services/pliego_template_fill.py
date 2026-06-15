@@ -45,11 +45,17 @@ HEADER_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
-def resolve_pliego_template_path(templates_dir: Path) -> Optional[Path]:
+def resolve_pliego_template_path(
+    templates_dir: Path,
+    *,
+    search_repo_fallback: bool = True,
+) -> Optional[Path]:
     for name in PLIEGO_TEMPLATE_FILENAMES:
         p = templates_dir / name
         if p.is_file():
             return p
+    if not search_repo_fallback:
+        return None
     # Repo: docs/provided_docs (plantilla oficial si aún no está copiada a app/templates)
     repo_root = Path(__file__).resolve().parent.parent.parent.parent
     docs_provided = repo_root / "docs" / "provided_docs"

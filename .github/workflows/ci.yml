@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  backend-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dupla
+          POSTGRES_PASSWORD: dupla
+          POSTGRES_DB: dupla
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dupla -d dupla"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://dupla:dupla@127.0.0.1:5432/dupla
+      REDIS_URL: redis://127.0.0.1:6379/0
+      APP_ENV: development
+      JWT_SECRET: ci-test-jwt-secret-minimum-32-characters-long
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install backend dependencies
+        run: pip install -r backend/requirements.txt
+      - name: Run backend tests
+        working-directory: backend
+        run: pytest tests/ -q
+
+  processor-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install processor dependencies
+        run: pip install -r processor/requirements.txt
+      - name: Run processor tests
+        working-directory: processor
+        run: pytest tests/ -q
+
+  frontend-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+      - name: Lint frontend
+        working-directory: frontend
+        run: pnpm lint
+      - name: Test frontend
+        working-directory: frontend
+        run: pnpm test
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm build

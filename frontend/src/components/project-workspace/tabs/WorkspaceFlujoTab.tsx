@@ -282,16 +282,29 @@ export function WorkspaceFlujoTab({
                       ['cost_analysis_done', 'Análisis de costo completado'],
                       ['budget_marked_complete', 'Presupuesto interno completado'],
                     ] as const
-                  ).map(([key, label]) => (
-                    <label key={key} className="flex items-center gap-2 text-sm">
+                  ).map(([key, label]) => {
+                    const isVolumetry = key === 'volumetry_done'
+                    const volumetryLocked = isVolumetry && role !== 'GERENCIA'
+                    return (
+                    <label key={key} className={`flex items-center gap-2 text-sm ${volumetryLocked ? 'opacity-80' : ''}`}>
                       <input
                         type="checkbox"
                         checked={!!bpDraft[key]}
+                        disabled={volumetryLocked}
+                        title={
+                          volumetryLocked
+                            ? 'Se marca automáticamente al completar presupuesto maestro con partidas'
+                            : undefined
+                        }
                         onChange={(e) => setBpDraft((d) => ({ ...d, [key]: e.target.checked }))}
                       />
                       {label}
+                      {volumetryLocked ? (
+                        <span className="text-xs text-muted">(automático)</span>
+                      ) : null}
                     </label>
-                  ))}
+                    )
+                  })}
                 </div>
                 <div className="space-y-2 border-l-2 border-primary/35 pl-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-muted">Control</p>

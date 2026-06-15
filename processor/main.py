@@ -128,6 +128,17 @@ async def process_project(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+def _resolve_finished_status(result: object) -> str:
+    """Map processor result to API job status."""
+    if not isinstance(result, dict):
+        return "completed"
+    rows = result.get("rows") or []
+    mode = (result.get("output") or {}).get("mode") or (result.get("extraction") or {}).get("mode")
+    if mode == "base_extraction" and not rows:
+        return "completed_partial"
+    return "completed"
+
+
 @app.get("/jobs/{job_id}")
 def get_job_status(job_id: str, x_correlation_id: Optional[str] = Header(None)):
     correlation_id = x_correlation_id or "unknown"
@@ -138,7 +149,8 @@ def get_job_status(job_id: str, x_correlation_id: Optional[str] = Header(None)):
         raise HTTPException(status_code=404, detail="Job not found")
 
     if job.is_finished:
-        return {"job_id": job_id, "status": "completed", "result": job.result}
+        status = _resolve_finished_status(job.result)
+        return {"job_id": job_id, "status": status, "result": job.result}
     elif job.is_failed:
         return {"job_id": job_id, "status": "failed", "error": str(job.exc_info)}
     else:

@@ -729,6 +729,7 @@ def _base_extraction_result(
             "run_dir": str(artifacts.artifact_dir),
             "disciplines": [],
             "archive": archive_path,
+            "requires_rerun": True,
             "artifacts": {
                 "manifest": str(artifacts.artifact_dir / "manifest.json"),
                 "raw_json": str(artifacts.raw_json_path),

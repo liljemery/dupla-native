@@ -21,13 +21,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.domain.budget_pipeline_meta import (
+    budget_result_qualifies_for_volumetry,
+    sync_volumetry_from_completed_job,
+)
 from app.models.project_budget_job import ProjectBudgetJob
 from app.models.project_file import ProjectFile
 from app.models.user import User
 from app.services.project_service import ProjectService
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 _BUDGET_ALL_DISCIPLINE_ALIASES = {
     "todas",
@@ -176,7 +179,7 @@ class BudgetService:
 
         budget_discipline = _normalize_budget_discipline(discipline, budget_files)
 
-        upload_root = Path(settings.upload_root)
+        upload_root = Path(get_settings().upload_root)
         multipart_files: list[tuple[str, tuple[str, bytes, str]]] = []
         for pf in budget_files:
             disk_path = Path(pf.storage_key)
@@ -189,7 +192,7 @@ class BudgetService:
         if not multipart_files:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No se encontraron archivos en disco")
 
-        processor_url = settings.processor_url
+        processor_url = get_settings().processor_url
         correlation_id = str(uuid.uuid4())
         logger.info(
             "Enqueuing budget job for project %s with correlation ID: %s discipline=%s",
@@ -248,10 +251,10 @@ class BudgetService:
 
     async def sync_job_status(self, job: ProjectBudgetJob) -> ProjectBudgetJob:
         """Refresh job status from processor. Mutates job in-place; caller must commit."""
-        if job.status in ("completed", "failed"):
+        if job.status in ("completed", "failed", "completed_partial"):
             return job
 
-        processor_url = settings.processor_url
+        processor_url = get_settings().processor_url
         correlation_id = str(uuid.uuid4())
         logger.info(f"Polling job status for {job.job_id} with correlation ID: {correlation_id}")
         try:
@@ -275,9 +278,11 @@ class BudgetService:
         data = resp.json()
         remote_status = data.get("status", "")
 
-        if remote_status == "completed":
-            job.status = "completed"
+        if remote_status in ("completed", "completed_partial"):
+            job.status = remote_status
             job.result = data.get("result")
+            if remote_status == "completed":
+                await sync_volumetry_from_completed_job(self._session, job)
         elif remote_status == "failed":
             job.status = "failed"
             job.error = str(data.get("error") or "Unknown error")
@@ -290,4 +295,9 @@ class BudgetService:
         job = await self.get_latest_job(user, project_uuid)
         if job is None or job.status != "completed" or job.result is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No completed budget found")
+        if not budget_result_qualifies_for_volumetry(job.result if isinstance(job.result, dict) else None):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Presupuesto incompleto: ejecuta de nuevo con una disciplina",
+            )
         return job.result

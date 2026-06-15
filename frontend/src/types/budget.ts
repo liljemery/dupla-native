@@ -1,4 +1,4 @@
-export type BudgetJobStatus = 'queued' | 'processing' | 'completed' | 'failed'
+export type BudgetJobStatus = 'queued' | 'processing' | 'completed' | 'completed_partial' | 'failed'
 
 export interface BudgetJob {
   id: string

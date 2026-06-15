@@ -91,6 +91,7 @@ def _is_cad_filename(name: str) -> bool:
 class ClashService:
     def __init__(self, session: AsyncSession, workspace_id: UUID) -> None:
         self._session = session
+        self._workspace_id = workspace_id
         self._project_svc = ProjectService(session, workspace_id)
 
     async def _all_folders(self, project_id: UUID) -> list[ProjectFileFolder]:
@@ -494,7 +495,7 @@ class ClashService:
             try:
                 from app.services.clash_workflow_service import ClashWorkflowService
 
-                wf = ClashWorkflowService(self._session)
+                wf = ClashWorkflowService(self._session, self._workspace_id)
                 await wf.ensure_ingested(job, actor="system")
             except Exception as exc:
                 logger.warning("Clash workflow ingest after job complete failed: %s", exc)

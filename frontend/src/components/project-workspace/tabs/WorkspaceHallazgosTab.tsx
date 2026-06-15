@@ -351,7 +351,7 @@ export function WorkspaceHallazgosTab({
     }
   }, [token, projectUuid, discipline, severity, title, description, evidenceRef, onRefresh])
 
-  const onDocRetry = useCallback((_docId: string) => {
+  const onDocRetry = useCallback(() => {
     // Re-análisis por documento: pendiente de endpoint dedicado.
   }, [])
 
@@ -363,6 +363,15 @@ export function WorkspaceHallazgosTab({
 
   return (
     <div className="space-y-8">
+      {report.analysis_mode === 'smoke' ? (
+        <div
+          className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950"
+          role="status"
+        >
+          Modo demo — la detección de clashes está simulada. Los hallazgos provienen de fixtures de desarrollo, no
+          del motor Dupla geométrico.
+        </div>
+      ) : null}
       <Card className="border-primary/20 bg-primary/[0.04] p-4">
         <h3 className="text-sm font-semibold text-ink">Información de coordinación</h3>
         <p className="mt-1 text-xs text-muted">

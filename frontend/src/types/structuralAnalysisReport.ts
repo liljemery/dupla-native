@@ -49,6 +49,8 @@ export type StructuralClashRelationship = {
 /** Payload esperado de GET /api/projects/.../structural-analysis-report (nombre tentativo). */
 export type StructuralAnalysisReport = {
   run_status: StructuralAnalysisRunStatus
+  /** real = motor Dupla; smoke = fixture de desarrollo */
+  analysis_mode?: 'real' | 'smoke'
   title: string
   subtitle: string
   summary: {

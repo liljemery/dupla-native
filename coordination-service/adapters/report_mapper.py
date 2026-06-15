@@ -109,6 +109,7 @@ def map_to_structural_analysis_report(
     primary_incidents: dict[str, Any],
     coordination_context: dict[str, Any] | None,
     analyzed_documents: list[dict[str, Any]],
+    analysis_mode: str = "real",
 ) -> dict[str, Any]:
     incidents = primary_incidents.get("incidents") or []
     if not isinstance(incidents, list):
@@ -137,6 +138,7 @@ def map_to_structural_analysis_report(
 
     return {
         "run_status": run_status,
+        "analysis_mode": analysis_mode,
         "title": f"Informe de coordinación — {project_name}",
         "subtitle": f"{project_name} · {incident_count} incidencia(s) primaria(s)",
         "summary": summary,

@@ -115,7 +115,7 @@ def test_build_export_filename_format():
 
 
 def test_clash_pdf_builders_return_pdf_bytes():
-    svc = ClashExportService(session=MagicMock())
+    svc = ClashExportService(session=MagicMock(), workspace_id=uuid.uuid4())
     meta = {
         "project_name": "Tutorial · Workspace Dupla",
         "folder_name": "TEST_01",
@@ -165,6 +165,6 @@ def test_resolve_tiles_root_prefers_uploads_when_coordination_has_no_svgs(tmp_pa
     (upload_root / "incident_0001.svg").write_text("<svg/>", encoding="utf-8")
 
     job = ProjectClashJob(id=job_id, output_dir=str(coord_root))
-    svc = ClashWorkflowService(session=MagicMock())
+    svc = ClashWorkflowService(session=MagicMock(), workspace_id=uuid.uuid4())
     assert svc.resolve_tiles_root(job) == str(upload_root.parent)
     assert svc.tile_path_for_export(job, "incident_0001", annotated=False) == upload_root / "incident_0001.svg"

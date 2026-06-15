@@ -142,6 +142,19 @@ rm -rf var/cache/vision_analyze_plan
 find var/artifacts -path "*/vision/*" -delete 2>/dev/null
 ```
 
+## Producción (checklist mínimo)
+
+| Variable | Requisito |
+|----------|-----------|
+| `APP_ENV` | `staging` o `production` |
+| `JWT_SECRET` | Obligatorio; generar con `openssl rand -hex 32` (no usar el demo) |
+| `SMTP_HOST` + `EMAIL_FROM` | Obligatorio para restablecimiento de contraseña |
+| `COORDINATION_SMOKE_MODE` | Debe ser `false` (detección real de clashes) |
+| `DUPLA_ROOT` | Repo Dupla clonado para motor de coordinación |
+| `OPENAI_API_KEY` | Recomendado para presupuesto IA y asistente |
+
+CI: GitHub Actions en `.github/workflows/ci.yml` (backend, processor, frontend).
+
 ## Estructura
 
 - `backend/app/routes` — rutas HTTP

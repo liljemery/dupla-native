@@ -269,7 +269,16 @@ Si está vacío, exportá `DUPLA_ROOT` con la ruta absoluta correcta y reiniciá
 
 ---
 
-## 10. Próximos pasos sugeridos
+## 11. Matriz de entornos (smoke vs real)
+
+| Entorno | `APP_ENV` | `COORDINATION_SMOKE_MODE` | Comportamiento |
+|---------|-----------|---------------------------|----------------|
+| Desarrollo local | `development` | `true` (default en `scripts/dev.sh`) | Fixtures JSON; banner «Modo demo» en pestaña Hallazgos |
+| Staging / producción | `staging` / `production` | **`false` obligatorio** | Motor Dupla real; backend rechaza arranque si smoke=true |
+
+La respuesta API incluye `analysis_mode: "smoke" | "real"` en el informe estructural para distinguir corridas simuladas.
+
+---
 
 - [ ] `DUPLA_ROOT` documentado en `backend/.env.example` (hecho).
 - [ ] Cuando el motor real esté disponible, desactivar `COORDINATION_SMOKE_MODE` y agregar un host con accore para clash real.

@@ -1,8 +1,10 @@
 from functools import lru_cache
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEMO_JWT_SECRET = "demo-secret-change-in-production-min-32-chars!!"
 
 
 class Settings(BaseSettings):
@@ -49,7 +51,31 @@ class Settings(BaseSettings):
             description="Fallback coordination profile slug when project has none (tortuga_c40, serena18, nasas09).",
         ),
     ] = None
-    jwt_secret: Annotated[str, Field(default="demo-secret-change-in-production-min-32-chars!!")]
+    app_env: Annotated[
+        Literal["development", "staging", "production"],
+        Field(
+            default="development",
+            validation_alias=AliasChoices("APP_ENV"),
+            description="Entorno de despliegue; en staging/production se validan secretos y smoke mode.",
+        ),
+    ] = "development"
+    coordination_smoke_mode: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices("COORDINATION_SMOKE_MODE"),
+            description="Si true, coordination-service usa fixtures en lugar del motor Dupla.",
+        ),
+    ] = False
+    dev_expose_reset_token: Annotated[
+        bool,
+        Field(
+            default=False,
+            validation_alias=AliasChoices("DEV_EXPOSE_RESET_TOKEN"),
+            description="Solo development: incluir token de reset en la respuesta API (QA local sin SMTP).",
+        ),
+    ] = False
+    jwt_secret: Annotated[str, Field(default=DEMO_JWT_SECRET)]
     jwt_algorithm: Annotated[str, Field(default="HS256")]
     access_token_expire_minutes: Annotated[int, Field(default=60, ge=1, le=60 * 24 * 7)]
     cors_origins: Annotated[str, Field(default="http://localhost:5173,http://127.0.0.1:5173")]
@@ -262,6 +288,20 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.app_env != "development":
+            if self.jwt_secret == DEMO_JWT_SECRET:
+                raise ValueError(
+                    "JWT_SECRET must be changed from the demo default when APP_ENV is staging or production. "
+                    "Generate one with: openssl rand -hex 32"
+                )
+            if self.coordination_smoke_mode:
+                raise ValueError(
+                    "COORDINATION_SMOKE_MODE must be false when APP_ENV is staging or production."
+                )
+        return self
 
 
 @lru_cache

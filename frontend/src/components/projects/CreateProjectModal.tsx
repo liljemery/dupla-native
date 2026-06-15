@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { DuplaLogo } from '../DuplaLogo'
 import { PrimaryButton } from '../PrimaryButton'
@@ -185,16 +185,13 @@ export function CreateProjectModal({
   workflowTemplateUuid,
   setWorkflowTemplateUuid,
 }: CreateProjectModalProps) {
-  const [step, setStep] = useState(1)
+  const [rawStep, setStep] = useState(1)
   const [tenderFileRejectNote, setTenderFileRejectNote] = useState<string | null>(null)
 
   const maxStep = projectKindMaxStep(projectKind)
   const hasWorkflowTemplates = workflowTemplates.length > 0
   const stepNumbers = useMemo(() => Array.from({ length: maxStep }, (_, i) => i + 1), [maxStep])
-
-  useEffect(() => {
-    setStep((s) => (s > maxStep ? maxStep : s))
-  }, [maxStep])
+  const step = Math.min(rawStep, maxStep)
 
   const canGoNextFromStep1 = name.trim().length > 0
   const stepMeta = getStepMeta(step, projectKind)

@@ -32,6 +32,10 @@ class ForgotPasswordRequest(BaseModel):
 
 class ForgotPasswordResponse(BaseModel):
     message: str
+    dev_reset_token: str | None = Field(
+        default=None,
+        description="Solo development con DEV_EXPOSE_RESET_TOKEN=true y sin SMTP.",
+    )
 
 
 class ResetPasswordRequest(BaseModel):

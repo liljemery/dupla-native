@@ -13,6 +13,7 @@ from sqlalchemy import and_, cast, func, or_, select
 from sqlalchemy.types import Text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import get_settings
 from app.domain.file_discipline import FileIngestStatus, parse_discipline
@@ -23,6 +24,11 @@ from app.domain.workflow_automation_tasks import (
     append_automation_card_uuid,
     automation_card_uuids,
     legacy_automation_titles,
+)
+from app.domain.budget_pipeline_meta import (
+    get_budget_pipeline as _budget_pipeline,
+    project_has_volumetry_qualifying_job,
+    set_budget_pipeline as _set_budget_pipeline,
 )
 from app.domain.business_pliego import (
     BUSINESS_PLIEGO_KEY,
@@ -159,6 +165,7 @@ class ProjectLifecycleService:
                     detail="Se requiere una revisión de arquitectura aprobada",
                 )
         if current == WorkflowPhase.SPECIFICATIONS and target == WorkflowPhase.BUDGETING_PIPELINE:
+            await self._session.refresh(project, attribute_names=["specifications_document"])
             spec = project.specifications_document or {}
             if not isinstance(spec, dict):
                 spec = {}
@@ -793,6 +800,7 @@ class ProjectLifecycleService:
             apply_approval(block, user.id)
             spec[BUSINESS_PLIEGO_KEY] = block
         project.specifications_document = spec
+        flag_modified(project, "specifications_document")
         await self._projects.record_event(
             project_id=project.id,
             actor_user_id=user.id,
@@ -819,6 +827,14 @@ class ProjectLifecycleService:
                 )
             bp_old = _budget_pipeline(meta)
             incoming = patch["budget_pipeline"]
+            wants_volumetry = bool(incoming.get("volumetry_done"))
+            had_volumetry = bool(bp_old.get("volumetry_done"))
+            if wants_volumetry and not had_volumetry and user.role != UserRole.GERENCIA:
+                if not await project_has_volumetry_qualifying_job(self._session, project.id):
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail="Ejecuta presupuesto maestro primero y espera a que genere partidas.",
+                    )
             wants_true = bool(incoming.get("control_review_done"))
             had_true = bool(bp_old.get("control_review_done"))
             if wants_true and not had_true:
@@ -827,7 +843,7 @@ class ProjectLifecycleService:
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Solo Control, Gerencia o Líder de equipo pueden marcar la revisión de Control",
                     )
-            bp = _budget_pipeline(meta)
+            bp = dict(bp_old)
             bp.update(incoming)
             _set_budget_pipeline(meta, bp)
         project.workflow_meta = meta
@@ -1581,30 +1597,3 @@ class ProjectLifecycleService:
         await self._session.refresh(row)
         return row
 
-
-def _budget_pipeline_defaults() -> dict[str, Any]:
-    return {
-        "subcontracts_done": False,
-        "volumetry_done": False,
-        "cost_analysis_done": False,
-        "budget_marked_complete": False,
-        "control_review_done": False,
-        "client_approved_version_label": None,
-        "volumetry": {},
-        "cost_analysis": {},
-        "budget_versions": [],
-    }
-
-
-def _budget_pipeline(meta: dict[str, Any]) -> dict[str, Any]:
-    raw = meta.get("budget_pipeline")
-    base = _budget_pipeline_defaults()
-    if not isinstance(raw, dict):
-        return dict(base)
-    merged = dict(base)
-    merged.update(raw)
-    return merged
-
-
-def _set_budget_pipeline(meta: dict[str, Any], bp: dict[str, Any]) -> None:
-    meta["budget_pipeline"] = bp

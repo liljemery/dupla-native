@@ -49,6 +49,8 @@ export function TutorialesReference({ activeFilter }: TutorialesReferenceProps) 
 
   const visibleIds = TUTORIALS_TOC_IDS_BY_FILTER[activeFilter]
   const visibleToc = TUTORIALS_TOC.filter((t) => visibleIds.includes(t.id))
+  const activeExpandedId =
+    expandedId && visibleIds.includes(expandedId) ? expandedId : null
 
   const toggleSection = useCallback((id: string) => {
     setExpandedId((prev) => (prev === id ? null : id))
@@ -76,12 +78,6 @@ export function TutorialesReference({ activeFilter }: TutorialesReferenceProps) 
     window.addEventListener('hashchange', onHashChange)
     return () => window.removeEventListener('hashchange', onHashChange)
   }, [visibleIds])
-
-  useEffect(() => {
-    if (expandedId && !visibleIds.includes(expandedId)) {
-      setExpandedId(null)
-    }
-  }, [activeFilter, expandedId, visibleIds])
 
   const sectionBodies: Record<string, ReactNode> = {
     navegacion: (
@@ -378,7 +374,7 @@ export function TutorialesReference({ activeFilter }: TutorialesReferenceProps) 
 
       <div className="space-y-3">
         {visibleToc.map((item) => {
-          const isOpen = expandedId === item.id
+          const isOpen = activeExpandedId === item.id
           return (
             <div key={item.id} id={item.id} className={accordionItemClass}>
               <h2 className="m-0">

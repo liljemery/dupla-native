@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import {
   Background,
   BaseEdge,
@@ -22,30 +22,17 @@ import {
   flowTemplateIconLabelEs,
   type FlowTemplateIconKey,
 } from '../../constants/flowTemplateIcons'
-import { generateUuid } from '../../lib/uuid'
 import { ROLE_LABELS, USER_ROLES, type UserRole } from '../../constants/userRoles'
-
-export type EnterActionType = 'notify_role' | 'create_task' | 'project_chat_message'
-
-export type DraftWorkflowStep = {
-  /** Id estable solo en el cliente; no se envía al API. Evita que React mezcle inputs al reordenar. */
-  draft_id: string
-  /** UUID del paso tras cargar desde el servidor (solo referencia local; el PUT reemplaza todo el flujo). */
-  server_step_uuid?: string | null
-  stable_key: string
-  title: string
-  icon_key: FlowTemplateIconKey
-  requires_approval_role: string | null
-  on_enter_actions: Record<string, unknown>[]
-}
+import {
+  type DraftWorkflowStep,
+  type EnterActionType,
+  newDraftId,
+  syncStableKeysForSteps,
+} from './flowStepsEditorUtils'
 
 type FlowStepsEditorProps = {
   steps: DraftWorkflowStep[]
   onChange: (next: DraftWorkflowStep[]) => void
-}
-
-function newDraftId(): string {
-  return generateUuid()
 }
 
 function emptyActionForType(t: EnterActionType): Record<string, unknown> {
@@ -59,61 +46,6 @@ function emptyActionForType(t: EnterActionType): Record<string, unknown> {
     default:
       return { type: 'notify_role', role: 'CONTROL', title: '', body: '' }
   }
-}
-
-function normalizeActionsFromApi(raw: unknown): Record<string, unknown>[] {
-  if (!Array.isArray(raw)) return []
-  const out: Record<string, unknown>[] = []
-  for (const item of raw) {
-    if (!item || typeof item !== 'object') continue
-    const o = item as Record<string, unknown>
-    const t = String(o.type ?? '')
-    if (t === 'notify_role') {
-      out.push({
-        type: 'notify_role',
-        role: String(o.role ?? 'CONTROL'),
-        title: String(o.title ?? ''),
-        body: String(o.body ?? ''),
-      })
-    } else if (t === 'create_task') {
-      out.push({
-        type: 'create_task',
-        role: String(o.role ?? 'CONTROL'),
-        title: String(o.title ?? ''),
-        description: String(o.description ?? ''),
-      })
-    } else if (t === 'project_chat_message') {
-      out.push({
-        type: 'project_chat_message',
-        body: String(o.body ?? ''),
-      })
-    }
-  }
-  return out
-}
-
-const STABLE_KEY_MAX = 128
-
-/** Espacios → `_`, todo minúsculas; título vacío → `paso_{índice}`. */
-export function stableKeyFromTitle(title: string, index: number): string {
-  const t = title.trim()
-  if (!t) return `paso_${index + 1}`
-  return t.replace(/\s+/g, '_').toLowerCase().slice(0, STABLE_KEY_MAX)
-}
-
-export function syncStableKeysForSteps(steps: DraftWorkflowStep[]): DraftWorkflowStep[] {
-  const used = new Set<string>()
-  return steps.map((s, i) => {
-    let base = stableKeyFromTitle(s.title, i)
-    let candidate = base
-    let n = 2
-    while (used.has(candidate)) {
-      candidate = `${base}_${n}`
-      n += 1
-    }
-    used.add(candidate)
-    return { ...s, stable_key: candidate }
-  })
 }
 
 function DotArrowEdge(props: EdgeProps) {
@@ -329,16 +261,14 @@ function EnterActionsBlock({
 export function FlowStepsEditor({ steps, onChange }: FlowStepsEditorProps) {
   const [selectedDraftId, setSelectedDraftId] = useState('')
 
-  useEffect(() => {
-    if (steps.length === 0) return
-    setSelectedDraftId((prev) => {
-      if (prev && steps.some((s) => s.draft_id === prev)) return prev
-      return steps[0].draft_id
-    })
-  }, [steps])
+  const effectiveSelectedDraftId =
+    selectedDraftId && steps.some((s) => s.draft_id === selectedDraftId)
+      ? selectedDraftId
+      : (steps[0]?.draft_id ?? '')
 
   const selected =
-    steps.find((s) => s.draft_id === selectedDraftId) ?? (steps.length > 0 ? steps[0] : undefined)
+    steps.find((s) => s.draft_id === effectiveSelectedDraftId) ??
+    (steps.length > 0 ? steps[0] : undefined)
 
   const updateStep = useCallback(
     (draftId: string, patch: Partial<DraftWorkflowStep>) => {
@@ -528,5 +458,3 @@ export function FlowStepsEditor({ steps, onChange }: FlowStepsEditorProps) {
     </div>
   )
 }
-
-export { normalizeActionsFromApi, newDraftId }

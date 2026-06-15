@@ -428,7 +428,7 @@ export function ProjectWorkspacePage() {
     return () => {
       cancelled = true
     }
-  }, [token, role, projectUuid])
+  }, [token, elevated, projectUuid])
 
   useEffect(() => {
     if (!projectUuid) return

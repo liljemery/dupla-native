@@ -6,24 +6,23 @@ from datetime import datetime, timezone
 
 import pytest
 import pytest_asyncio
+import redis.asyncio as redis
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.config import get_settings
+
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
-from app.models.chat_conversation import (
-    GENERAL_CONVERSATION_UUID,
-    ChatConversation,
-    ChatConversationKind,
-)
 from app.models.module import Module
 from app.models.plan_delivery_request import PlanDeliveryRequest  # noqa: F401 — metadata for create_all
 from app.models.project_member import ProjectMember  # noqa: F401 — metadata for create_all
-from app.models.task_board import TaskList
 from app.models.user import User, UserModule, UserRole
+from app.models.workspace import DEFAULT_WORKSPACE_UUID, Workspace, WorkspaceMember
 from app.security.password import hash_password
+from app.services.workspace_bootstrap_service import bootstrap_workspace_resources
 
 MODULE_ID = 1
 
@@ -58,6 +57,34 @@ async def engine(database_url: str):
     await eng.dispose()
 
 
+def _add_user(
+    session: AsyncSession,
+    *,
+    email: str,
+    first_name: str,
+    last_name: str,
+    password: str,
+    role: UserRole,
+    workspace_id: uuid.UUID,
+) -> uuid.UUID:
+    user_id = uuid.uuid4()
+    session.add(
+        User(
+            id=user_id,
+            email=email,
+            first_name=first_name,
+            last_name=last_name,
+            password_hash=hash_password(password),
+            role=role,
+            must_change_password=False,
+            active_workspace_id=workspace_id,
+        )
+    )
+    session.add(UserModule(user_id=user_id, module_id=MODULE_ID))
+    session.add(WorkspaceMember(workspace_id=workspace_id, user_id=user_id))
+    return user_id
+
+
 @pytest_asyncio.fixture()
 async def session(engine) -> AsyncGenerator[AsyncSession, None]:
     async_session = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
@@ -65,8 +92,10 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
         await s.execute(
             text(
                 "TRUNCATE subcontract_quote_lines, subcontract_quotes, user_notifications, architecture_revisions, "
-                "plan_delivery_requests, project_clash_jobs, project_files, project_events, project_members, chat_messages, chat_conversation_members, chat_conversations, "
-                "task_cards, task_lists, project_architecture_data, projects, user_modules, users, modules "
+                "plan_delivery_requests, project_clash_jobs, project_budget_jobs, project_files, project_events, project_members, "
+                "chat_messages, chat_conversation_members, chat_conversations, task_cards, task_lists, "
+                "workflow_template_steps, workflow_templates, project_architecture_data, projects, "
+                "workspace_members, workspaces, user_modules, users, modules "
                 "RESTART IDENTITY CASCADE"
             )
         )
@@ -74,89 +103,53 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
 
         s.add(Module(id=MODULE_ID, name="Arquitectura"))
         s.add(
-            TaskList(
-                id=uuid.UUID("a0000001-0000-4000-8000-000000000001"),
-                title="Por hacer",
-                position=0,
-            )
-        )
-        s.add(
-            TaskList(
-                id=uuid.UUID("a0000001-0000-4000-8000-000000000004"),
-                title="Bloqueado",
-                position=1,
-            )
-        )
-        s.add(
-            TaskList(
-                id=uuid.UUID("a0000001-0000-4000-8000-000000000002"),
-                title="En progreso",
-                position=2,
-            )
-        )
-        s.add(
-            TaskList(
-                id=uuid.UUID("a0000001-0000-4000-8000-000000000005"),
-                title="En revisión",
-                position=3,
-            )
-        )
-        s.add(
-            TaskList(
-                id=uuid.UUID("a0000001-0000-4000-8000-000000000003"),
-                title="Hecho",
-                position=4,
-            )
-        )
-        master_id = uuid.uuid4()
-        s.add(
-            User(
-                id=master_id,
-                email="master@dupla.demo",
-                first_name="María",
-                last_name="López",
-                password_hash=hash_password("master123"),
-                role=UserRole.GERENCIA,
-                must_change_password=False,
-            )
-        )
-        s.add(UserModule(user_id=master_id, module_id=MODULE_ID))
-        tester_id = uuid.uuid4()
-        s.add(
-            User(
-                id=tester_id,
-                email="tester@dupla.demo",
-                first_name="Carlos",
-                last_name="Ruiz",
-                password_hash=hash_password("testpass123"),
-                role=UserRole.CONTROL,
-                must_change_password=False,
-            )
-        )
-        s.add(UserModule(user_id=tester_id, module_id=MODULE_ID))
-        worker_id = uuid.uuid4()
-        s.add(
-            User(
-                id=worker_id,
-                email="worker@dupla.demo",
-                first_name="Ana",
-                last_name="Martín",
-                password_hash=hash_password("workerpass123"),
-                role=UserRole.PRESUPUESTO,
-                must_change_password=False,
-            )
-        )
-        s.add(UserModule(user_id=worker_id, module_id=MODULE_ID))
-        s.add(
-            ChatConversation(
-                id=GENERAL_CONVERSATION_UUID,
-                kind=ChatConversationKind.GENERAL,
-                title=None,
+            Workspace(
+                id=DEFAULT_WORKSPACE_UUID,
+                name="Workspace demo",
                 created_at=datetime.now(timezone.utc),
-                last_message_at=None,
+                updated_at=datetime.now(timezone.utc),
             )
         )
+        await s.flush()
+
+        _add_user(
+            s,
+            email="master@dupla.demo",
+            first_name="María",
+            last_name="López",
+            password="master123",
+            role=UserRole.GERENCIA,
+            workspace_id=DEFAULT_WORKSPACE_UUID,
+        )
+        _add_user(
+            s,
+            email="tester@dupla.demo",
+            first_name="Carlos",
+            last_name="Ruiz",
+            password="testpass123",
+            role=UserRole.CONTROL,
+            workspace_id=DEFAULT_WORKSPACE_UUID,
+        )
+        _add_user(
+            s,
+            email="worker@dupla.demo",
+            first_name="Ana",
+            last_name="Martín",
+            password="workerpass123",
+            role=UserRole.PRESUPUESTO,
+            workspace_id=DEFAULT_WORKSPACE_UUID,
+        )
+
+        await bootstrap_workspace_resources(s, DEFAULT_WORKSPACE_UUID)
         await s.commit()
+
+        settings = get_settings()
+        redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+        try:
+            await redis_client.flushdb()
+        finally:
+            await redis_client.aclose()
+
         yield s
 
 

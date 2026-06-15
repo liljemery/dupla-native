@@ -535,6 +535,10 @@ class TaskBoardService:
                 if ids:
                     assignee = ids[0]
                     break
+        project = await self._projects.get_by_uuid(project_id)
+        if assignee is not None and project is not None:
+            if not await self._projects.user_is_project_team_member(project, assignee):
+                assignee = None
         body = TaskCardCreateRequest(
             list_uuid=task_list_uuid_for_workspace(self._workspace_id, 0),
             title=title.strip(),

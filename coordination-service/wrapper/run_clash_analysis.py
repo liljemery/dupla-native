@@ -145,6 +145,8 @@ def run_clash_analysis(
     inputs_dir = Path(staging["inputs_dir"])
 
     smoke_mode = os.getenv("COORDINATION_SMOKE_MODE", "").lower() in ("1", "true", "yes")
+    analysis_mode = "smoke" if smoke_mode else "real"
+    logger.info("Clash analysis starting: mode=%s profile=%s project=%s", analysis_mode, profile_slug, project_name)
     summary_payload: dict[str, Any] | None = None
     pair_schedule_payload: dict[str, Any] | None = None
 
@@ -192,6 +194,7 @@ def run_clash_analysis(
         primary_incidents=primary,
         coordination_context=context,
         analyzed_documents=analyzed_documents,
+        analysis_mode=analysis_mode,
     )
 
     report_path = output_dir / "structural_analysis_report.json"
