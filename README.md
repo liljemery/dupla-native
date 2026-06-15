@@ -43,6 +43,13 @@ createdb -O dupla dupla 2>/dev/null || true
 
 Otros comandos: `./scripts/dev.sh check | stop | status`
 
+Tras `start`, puedes comprobar que los microservicios responden:
+
+```bash
+curl -sf http://localhost:8001/health && echo "processor OK"
+curl -sf http://localhost:8002/health && echo "coordination OK"
+```
+
 Usuarios semilla (tras `bootstrap`):
 
 | Usuario | Nombre | Contraseña | Rol | Uso |
