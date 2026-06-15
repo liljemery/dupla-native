@@ -244,6 +244,47 @@ def _invoke_runner(
     return proc.returncode
 
 
+def _enrich_analyzed_documents(
+    analyzed_documents: list[dict[str, Any]],
+    *,
+    output_dir: Path,
+    clash_report: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    element_counts: dict[str, int] = {}
+    plan_geometry = load_json_if_exists(output_dir / "plan_geometry.json")
+    if isinstance(plan_geometry, dict):
+        for file_name, payload in (plan_geometry.get("files") or {}).items():
+            if isinstance(payload, dict):
+                element_counts[str(file_name)] = int(payload.get("element_count") or 0)
+
+    if clash_report:
+        for group in clash_report.get("issue_groups") or []:
+            if not isinstance(group, dict):
+                continue
+            count = int(group.get("element_count") or 0)
+            for source in group.get("source_files") or []:
+                element_counts[Path(str(source)).name] = count
+
+    enriched: list[dict[str, Any]] = []
+    for doc in analyzed_documents:
+        if not isinstance(doc, dict):
+            continue
+        file_name = str(doc.get("file_name") or doc.get("original_name") or "")
+        element_count = int(doc.get("element_count") or element_counts.get(file_name) or 0)
+        status = str(doc.get("status") or "ok")
+        if element_count <= 0 and status == "ok":
+            status = "warning"
+        enriched.append(
+            {
+                **doc,
+                "element_count": element_count,
+                "status": status,
+                "retryable": status in {"error", "warning"},
+            }
+        )
+    return enriched
+
+
 def run_clash_analysis(
     *,
     file_entries: list[dict[str, Any]],
@@ -283,23 +324,28 @@ def run_clash_analysis(
         clash_report = load_json_if_exists(output_dir / "clash_project_report.json")
         if clash_report and clash_report.get("conflict_count", 0) > 0:
             primary = _conflicts_to_primary_incidents(clash_report)
-            # Persist so subsequent reads are consistent
-            (output_dir / "primary_incidents.json").write_text(
-                json.dumps(primary, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
             logger.info(
                 "Converted %d conflicts → %d primary incidents",
                 clash_report["conflict_count"],
                 primary["incident_count"],
             )
         else:
-            primary = load_json_if_exists(output_dir / "primary_incidents.json") or {
+            primary = {
                 "incidents": [],
                 "incident_count": 0,
-                "generated_at": None,
+                "incident_conflict_count": int((clash_report or {}).get("conflict_count") or 0),
+                "generated_at": (clash_report or {}).get("generated_at"),
                 "project_name": project_name,
-                "analysis_profile": "fast_compare",
+                "analysis_profile": "standard",
             }
+        (output_dir / "primary_incidents.json").write_text(
+            json.dumps(primary, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        analyzed_documents = _enrich_analyzed_documents(
+            analyzed_documents,
+            output_dir=output_dir,
+            clash_report=clash_report,
+        )
         context = load_json_if_exists(output_dir / "coordination_report_context.json")
         summary_payload = clash_report
         pair_schedule_payload = load_json_if_exists(output_dir / "pair_schedule.json")
@@ -327,6 +373,7 @@ def run_clash_analysis(
         primary_incidents=primary,
         coordination_context=context,
         analyzed_documents=analyzed_documents,
+        analysis_mode="smoke" if smoke_mode else "real",
     )
 
     report_path = output_dir / "structural_analysis_report.json"

@@ -30,6 +30,8 @@ DEFAULT_MAX_PROPERTY_WAIT_SECONDS = 3600
 DEFAULT_FAILED_MANIFEST_GRACE_POLLS = 3
 DEFAULT_FAILED_MANIFEST_GRACE_SLEEP_SECONDS = 20
 REQUEST_TIMEOUT_SECONDS = 60
+DEFAULT_SHALLOW_PROPERTY_THRESHOLD = 20
+DEFAULT_PROPERTY_QUERY_BATCH_SIZE = 100
 
 
 def _get_headers(token: str) -> dict[str, str]:
@@ -362,6 +364,154 @@ def _filter_requested_views(views_payload: list[dict], normalized_views: list[st
     return views_payload
 
 
+def flatten_model_tree(tree_payload: dict | list | None) -> list[int]:
+    """Collect all object IDs from an APS model tree (recursive)."""
+    object_ids: list[int] = []
+    seen: set[int] = set()
+
+    def walk(node: dict | list | None) -> None:
+        if isinstance(node, list):
+            for item in node:
+                walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        for key in ("objectid", "objectId"):
+            raw_id = node.get(key)
+            if raw_id is not None:
+                try:
+                    oid = int(raw_id)
+                except (TypeError, ValueError):
+                    oid = None
+                if oid is not None and oid not in seen:
+                    seen.add(oid)
+                    object_ids.append(oid)
+        for child in node.get("objects") or []:
+            walk(child)
+        for child in node.get("children") or []:
+            walk(child)
+
+    if isinstance(tree_payload, dict):
+        data = tree_payload.get("data") or tree_payload
+        if isinstance(data, dict):
+            collection = data.get("collection") or data.get("objects")
+            if collection is not None:
+                walk(collection)
+            else:
+                walk(data)
+        else:
+            walk(data)
+    else:
+        walk(tree_payload)
+    return object_ids
+
+
+def _count_objects_with_area(objects: list[dict]) -> int:
+    count = 0
+    for obj in objects:
+        props = obj.get("properties")
+        if not isinstance(props, dict):
+            continue
+        geo = props.get("Geometry") or {}
+        area = geo.get("Area")
+        if area is not None and str(area).strip() not in {"", "0", "0.0"}:
+            count += 1
+    return count
+
+
+def _merge_property_collections(collections: list[list[dict]]) -> list[dict]:
+    merged: dict[int, dict] = {}
+    for collection in collections:
+        for obj in collection:
+            raw_id = obj.get("objectid")
+            if raw_id is None:
+                continue
+            try:
+                oid = int(raw_id)
+            except (TypeError, ValueError):
+                continue
+            merged[oid] = obj
+    return list(merged.values())
+
+
+def _fetch_properties_for_view(
+    token: str | dict[str, object],
+    urn: str,
+    guid: str,
+    *,
+    max_property_wait_seconds: int,
+    poll_interval_seconds: int,
+    shallow_threshold: int = DEFAULT_SHALLOW_PROPERTY_THRESHOLD,
+    query_batch_size: int = DEFAULT_PROPERTY_QUERY_BATCH_SIZE,
+) -> tuple[list[dict], dict[str, int]]:
+    """Fetch properties for a view, deep-walking the object tree when shallow."""
+    properties = get_all_properties(
+        token,
+        urn,
+        guid,
+        max_wait_seconds=max_property_wait_seconds,
+        poll_interval_seconds=poll_interval_seconds,
+    )
+    collection = properties.get("data", {}).get("collection", [])
+    diagnostics: dict[str, int] = {
+        "shallow_object_count": len(collection),
+        "tree_object_count": 0,
+        "properties_fetched": len(collection),
+        "objects_with_area": _count_objects_with_area(collection),
+        "deep_fetch_used": 0,
+    }
+
+    if len(collection) >= shallow_threshold:
+        return collection, diagnostics
+
+    try:
+        tree_payload = get_model_tree(token, urn, guid)
+        tree_ids = flatten_model_tree(tree_payload)
+        diagnostics["tree_object_count"] = len(tree_ids)
+        if not tree_ids:
+            return collection, diagnostics
+
+        missing_ids = [
+            oid
+            for oid in tree_ids
+            if oid not in {int(o.get("objectid")) for o in collection if o.get("objectid") is not None}
+        ]
+        if not missing_ids and collection:
+            return collection, diagnostics
+
+        ids_to_query = missing_ids or tree_ids
+        batch_size = max(int(query_batch_size), 1)
+        deep_collections: list[list[dict]] = [collection] if collection else []
+        for start in range(0, len(ids_to_query), batch_size):
+            batch = ids_to_query[start : start + batch_size]
+            try:
+                batch_result = query_specific_properties(token, urn, guid, batch)
+                batch_collection = batch_result.get("data", {}).get("collection", [])
+                if batch_collection:
+                    deep_collections.append(batch_collection)
+            except Exception as exc:
+                print(
+                    f"[WARN] Property batch query failed | guid={guid[:8]}... | "
+                    f"batch={start // batch_size + 1} | {exc}"
+                )
+
+        if deep_collections:
+            merged = _merge_property_collections(deep_collections)
+            diagnostics["deep_fetch_used"] = 1
+            diagnostics["properties_fetched"] = len(merged)
+            diagnostics["objects_with_area"] = _count_objects_with_area(merged)
+            print(
+                f"[MODEL DERIVATIVE] Deep property fetch | guid={guid[:8]}... | "
+                f"tree={diagnostics['tree_object_count']} | fetched={diagnostics['properties_fetched']} | "
+                f"with_area={diagnostics['objects_with_area']}"
+            )
+            return merged, diagnostics
+    except Exception as exc:
+        print(f"[WARN] Deep property fetch failed for guid={guid[:8]}...: {exc}")
+
+    return collection, diagnostics
+
+
 def _extract_view_results(
     token: str | dict[str, object],
     urn: str,
@@ -370,6 +520,8 @@ def _extract_view_results(
     *,
     max_property_wait_seconds: int,
     poll_interval_seconds: int,
+    shallow_threshold: int = DEFAULT_SHALLOW_PROPERTY_THRESHOLD,
+    query_batch_size: int = DEFAULT_PROPERTY_QUERY_BATCH_SIZE,
 ) -> tuple[list[dict], int]:
     extracted_views: list[dict] = []
     successful_view_count = 0
@@ -381,14 +533,15 @@ def _extract_view_results(
         role = view.get("role", "")
         print(f"\n--- Processing view: {view_name} ({role}) | guid={guid[:8]}... ---")
         try:
-            properties = get_all_properties(
+            collection, diagnostics = _fetch_properties_for_view(
                 token,
                 urn,
                 guid,
-                max_wait_seconds=max_property_wait_seconds,
+                max_property_wait_seconds=max_property_wait_seconds,
                 poll_interval_seconds=poll_interval_seconds,
+                shallow_threshold=shallow_threshold,
+                query_batch_size=query_batch_size,
             )
-            collection = properties.get("data", {}).get("collection", [])
             extracted_views.append(
                 {
                     "name": view_name,
@@ -396,6 +549,7 @@ def _extract_view_results(
                     "role": role,
                     "object_count": len(collection),
                     "objects": collection,
+                    **diagnostics,
                 }
             )
             successful_view_count += 1

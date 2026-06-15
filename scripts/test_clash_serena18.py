@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Smoke-test del pipeline completo de clash identification con planos reales de SERENA 18.
-Usa smoke mode (sin motor Dupla) para validar la integración end-to-end.
 
 Uso:
     python scripts/test_clash_serena18.py
@@ -10,6 +9,7 @@ Requiere backend en :8000 y coordination-service en :8002 corriendo localmente.
 """
 
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -21,49 +21,74 @@ BASE_URL = "http://127.0.0.1:8000"
 EMAIL = "master@dupla.demo"
 PASSWORD = "master123"
 
-SERENA_ROOT = Path("/Users/samuelfernandez/Downloads/SERENA 18/PLANOS RECIBIDOS")
+DOWNLOADS = Path(os.environ.get("SERENA18_DOWNLOADS", "/Users/thewizard/Downloads"))
 
-# Un DWG representativo por disciplina (el más reciente / final de cada una)
 TEST_FILES = [
     {
-        "path": SERENA_ROOT / "ARQUITECTONICOS/06. JUNIO 2024/2208-Serena18-ID-Base.dwg",
+        "path": DOWNLOADS / "2208-Serena18-ID-Base-UpperFloor.dwg",
         "discipline": "arquitectura",
-        "label": "ARQ — Planta base",
+        "label": "ARQ — Upper Floor ID",
     },
     {
-        "path": SERENA_ROOT / "TECNICOS/ESTRUCTURAL/01. ENERO 2023/EST. SERENA 18 - E09 - PLANTA EST. LOSAS DE PISO SOBRE TERRENO  Y DETALLES  CASA.dwg",
+        "path": DOWNLOADS / "EST. SERENA 18 - E05 - PLANTA EST. CIMIENTOS Y DETALLES  SOTANO.dwg",
         "discipline": "estructura",
-        "label": "EST — Losas de piso",
+        "label": "EST — Cimientos / sótano",
     },
     {
-        "path": SERENA_ROOT / "TECNICOS/ELECTRICOS/11. NOVIEMBRE 2024/20.01.2025 SERENA 18 PLANOS ELECTRICOS FINALES (MAVA).dwg",
+        "path": DOWNLOADS / "20.01.2025 SERENA 18 PLANOS ELECTRICOS FINALES (MAVA).dwg",
         "discipline": "electrica",
         "label": "ELC — Planos eléctricos finales",
     },
     {
-        "path": SERENA_ROOT / "TECNICOS/MECANICOS/09. SEPTIEMBRE 2024/27.09.2024 SE 18 PLANTA MECANICA FINALES.dwg",
-        "discipline": "mecanica",
-        "label": "MEC — Planta mecánica final",
+        "path": DOWNLOADS / "S-100, S-101 PLANTAS SUMINISTRO DE AGUA.dwg",
+        "discipline": "plomeria",
+        "label": "PLO — Suministro de agua",
     },
 ]
 
-POLL_INTERVAL = 10   # segundos entre polls
-POLL_TIMEOUT  = 900  # 15 min — APS puede tardar hasta 5 min por DWG
+POLL_INTERVAL = 15
+POLL_TIMEOUT = 2400
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
 def ok(msg: str) -> None:
     print(f"  ✓ {msg}")
+
 
 def fail(msg: str) -> None:
     print(f"  ✗ {msg}", file=sys.stderr)
     sys.exit(1)
 
+
 def step(msg: str) -> None:
     print(f"\n── {msg}")
 
 
-# ── Pasos ──────────────────────────────────────────────────────────────────────
+def main() -> None:
+    print("=" * 60)
+    print("  SERENA 18 — Test pipeline clash identification (4 planos)")
+    print("=" * 60)
+
+    missing = [e["path"] for e in TEST_FILES if not e["path"].is_file()]
+    if missing:
+        print("Archivos no encontrados:")
+        for p in missing:
+            print(f"  {p}")
+        sys.exit(1)
+
+    headers = login()
+    project_uuid = create_project(headers)
+    folder_uuid = create_folder(headers, project_uuid)
+    upload_and_tag_files(headers, project_uuid, folder_uuid)
+    verify_inventory(headers, project_uuid, folder_uuid)
+    enqueue_job(headers, project_uuid, folder_uuid)
+    poll_job(headers, project_uuid)
+    get_report(headers, project_uuid)
+
+    print("\n" + "=" * 60)
+    print("  Pipeline completado exitosamente")
+    print("=" * 60)
+
+
 def login() -> dict:
     step("1. Login")
     r = requests.post(
@@ -84,7 +109,7 @@ def create_project(headers: dict) -> str:
     step("2. Crear proyecto SERENA 18")
     r = requests.post(
         f"{BASE_URL}/api/projects",
-        data={"name": "SERENA 18 — Test Clashes", "project_kind": "CLIENT"},
+        data={"name": "SERENA 18 — Test Clashes 4 planos", "project_kind": "CLIENT"},
         headers=headers,
     )
     if r.status_code not in (200, 201):
@@ -108,16 +133,10 @@ def create_folder(headers: dict, project_uuid: str) -> str:
     return uuid
 
 
-def upload_and_tag_files(headers: dict, project_uuid: str, folder_uuid: str) -> list[str]:
+def upload_and_tag_files(headers: dict, project_uuid: str, folder_uuid: str) -> None:
     step("4. Subir DWGs y asignar disciplinas")
-    file_uuids = []
-
     for entry in TEST_FILES:
         path = entry["path"]
-        if not path.is_file():
-            fail(f"Archivo no encontrado: {path}")
-
-        # Upload
         with open(path, "rb") as fh:
             r = requests.post(
                 f"{BASE_URL}/api/projects/{project_uuid}/files",
@@ -129,8 +148,6 @@ def upload_and_tag_files(headers: dict, project_uuid: str, folder_uuid: str) -> 
             fail(f"Upload falló ({path.name}) {r.status_code}: {r.text[:300]}")
 
         file_uuid = r.json()["uuid"]
-
-        # Asignar disciplina
         r2 = requests.patch(
             f"{BASE_URL}/api/projects/{project_uuid}/files/{file_uuid}",
             json={"discipline": entry["discipline"]},
@@ -138,15 +155,27 @@ def upload_and_tag_files(headers: dict, project_uuid: str, folder_uuid: str) -> 
         )
         if r2.status_code not in (200, 201):
             fail(f"Patch disciplina falló ({path.name}) {r2.status_code}: {r2.text[:300]}")
-
-        ok(f"{entry['label']}  →  discipline={entry['discipline']}  uuid={file_uuid}")
-        file_uuids.append(file_uuid)
-
-    return file_uuids
+        ok(f"{entry['label']}  →  discipline={entry['discipline']}")
 
 
-def enqueue_job(headers: dict, project_uuid: str, folder_uuid: str) -> str:
-    step("5. Encolar clash job")
+def verify_inventory(headers: dict, project_uuid: str, folder_uuid: str) -> None:
+    step("5. Verificar inventario")
+    r = requests.get(
+        f"{BASE_URL}/api/projects/{project_uuid}/coordination/inventory",
+        params={"folder_uuid": folder_uuid},
+        headers=headers,
+    )
+    if r.status_code != 200:
+        fail(f"Inventario falló {r.status_code}: {r.text}")
+    inv = r.json()
+    ok(f"ready={inv.get('ready')} disciplinas={inv.get('summary', {}).get('discipline_count')}")
+    if inv.get("blockers"):
+        for blocker in inv["blockers"]:
+            print(f"     blocker: {blocker}")
+
+
+def enqueue_job(headers: dict, project_uuid: str, folder_uuid: str) -> None:
+    step("6. Encolar clash job")
     r = requests.post(
         f"{BASE_URL}/api/projects/{project_uuid}/clash/jobs",
         json={"folder_uuid": folder_uuid},
@@ -155,12 +184,11 @@ def enqueue_job(headers: dict, project_uuid: str, folder_uuid: str) -> str:
     if r.status_code not in (200, 201, 202):
         fail(f"Enqueue falló {r.status_code}: {r.text}")
     data = r.json()
-    ok(f"Job encolado: id={data['id']}  job_id={data['job_id']}  status={data['status']}")
-    return data["id"]
+    ok(f"Job encolado: id={data['id']} status={data['status']}")
 
 
-def poll_job(headers: dict, project_uuid: str) -> dict:
-    step("6. Polling hasta completar")
+def poll_job(headers: dict, project_uuid: str) -> None:
+    step("7. Polling hasta completar")
     deadline = time.time() + POLL_TIMEOUT
     last_status = None
     while time.time() < deadline:
@@ -177,7 +205,7 @@ def poll_job(headers: dict, project_uuid: str) -> dict:
             last_status = status
         if status == "completed":
             ok("Job completado")
-            return data
+            return
         if status == "failed":
             fail(f"Job falló: {data.get('error')}")
         time.sleep(POLL_INTERVAL)
@@ -185,7 +213,7 @@ def poll_job(headers: dict, project_uuid: str) -> dict:
 
 
 def get_report(headers: dict, project_uuid: str) -> None:
-    step("7. Obtener reporte de coordinación")
+    step("8. Obtener reporte de coordinación")
     r = requests.get(
         f"{BASE_URL}/api/projects/{project_uuid}/structural-analysis-report",
         headers=headers,
@@ -194,53 +222,30 @@ def get_report(headers: dict, project_uuid: str) -> None:
         fail(f"Reporte falló {r.status_code}: {r.text}")
     report = r.json()
 
-    run_status = report.get("run_status")
-    summary    = report.get("summary", {})
-    clashes    = report.get("clashes", [])
-    docs       = report.get("analyzed_documents", [])
+    summary = report.get("summary", {})
+    clashes = report.get("clashes", [])
+    docs = report.get("analyzed_documents", [])
 
-    ok(f"run_status={run_status}")
-    ok(f"summary    errors={summary.get('errors')} warnings={summary.get('warnings')} ok={summary.get('ok')}")
-    ok(f"clashes    {len(clashes)} incidencia(s)")
-    ok(f"docs       {len(docs)} documento(s) analizados")
+    ok(f"run_status={report.get('run_status')} analysis_mode={report.get('analysis_mode')}")
+    ok(f"errors={summary.get('errors')} warnings={summary.get('warnings')} ok={summary.get('ok')}")
+    ok(f"clashes={len(clashes)} docs={len(docs)}")
+
+    if docs:
+        print("\n  Documentos analizados:")
+        for d in docs:
+            count = d.get("element_count", "?")
+            print(f"    - {d.get('file_name')} [{d.get('discipline_label')}] status={d.get('status')} elements={count}")
 
     if clashes:
         print("\n  Primeras incidencias:")
         for c in clashes[:3]:
             print(f"    [{c.get('priority')}] {c.get('title')}")
-            print(f"           {c.get('description', '')[:100]}")
 
-    print("\n  JSON completo del reporte guardado en /tmp/serena18_clash_report.json")
     Path("/tmp/serena18_clash_report.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(report, ensure_ascii=False, indent=2),
+        encoding="utf-8",
     )
-
-
-# ── Main ───────────────────────────────────────────────────────────────────────
-def main() -> None:
-    print("=" * 60)
-    print("  SERENA 18 — Test pipeline clash identification")
-    print("=" * 60)
-
-    # Verificar que los archivos existen antes de empezar
-    missing = [e["path"] for e in TEST_FILES if not e["path"].is_file()]
-    if missing:
-        print("Archivos no encontrados:")
-        for p in missing:
-            print(f"  {p}")
-        sys.exit(1)
-
-    headers = login()
-    project_uuid = create_project(headers)
-    folder_uuid  = create_folder(headers, project_uuid)
-    upload_and_tag_files(headers, project_uuid, folder_uuid)
-    enqueue_job(headers, project_uuid, folder_uuid)
-    poll_job(headers, project_uuid)
-    get_report(headers, project_uuid)
-
-    print("\n" + "=" * 60)
-    print("  Pipeline completado exitosamente")
-    print("=" * 60)
+    ok("Reporte guardado en /tmp/serena18_clash_report.json")
 
 
 if __name__ == "__main__":

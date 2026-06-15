@@ -58,10 +58,35 @@ BUCKET_TO_RUNNER: dict[str, str] = {
 }
 
 
+DISCIPLINE_ALIASES: dict[str, str] = {
+    "fontaneria": "plomeria",
+    "fontanería": "plomeria",
+    "sanitario": "plomeria",
+    "sanitaria": "plomeria",
+    "hidrosanitario": "plomeria",
+    "hidrosanitaria": "plomeria",
+    "plomería": "plomeria",
+    "electrico": "electrica",
+    "eléctrico": "electrica",
+    "electricidad": "electrica",
+    "estructural": "estructura",
+    "arquitectonico": "arquitectura",
+    "arquitectónico": "arquitectura",
+    "arquitectonica": "arquitectura",
+    "arquitectónica": "arquitectura",
+    "mecanico": "mecanica",
+    "mecánico": "mecanica",
+    "mecánica": "mecanica",
+    "climatizacion": "mecanica",
+    "climatización": "mecanica",
+}
+
+
 def parse_discipline(raw: str | None) -> FileDiscipline | None:
     if raw is None or raw.strip() == "":
         return None
     v = raw.strip().lower()
+    v = DISCIPLINE_ALIASES.get(v, v)
     for d in FileDiscipline:
         if d.value == v:
             return d
@@ -74,7 +99,7 @@ def discipline_bucket(raw: str | None) -> str:
     parsed = parse_discipline(str(raw).strip())
     if parsed is not None:
         return parsed.value
-    key = str(raw).strip().lower()
+    key = DISCIPLINE_ALIASES.get(str(raw).strip().lower(), str(raw).strip().lower())
     if key in CLASSIFIED_BUCKETS:
         return key
     return "sin_clasificar"

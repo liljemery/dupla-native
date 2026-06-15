@@ -74,6 +74,7 @@ export function useStructuralAnalysisJob(
   const startPolling = useCallback(() => {
     if (intervalRef.current) return
     setIsPolling(true)
+    void pollOnce()
     intervalRef.current = setInterval(() => {
       void pollOnce()
     }, POLL_INTERVAL_MS)

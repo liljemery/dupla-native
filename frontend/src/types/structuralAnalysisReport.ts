@@ -21,8 +21,9 @@ export type StructuralAnalyzedDocument = {
   id: string
   file_name: string
   discipline_label: string
-  status: 'ok' | 'error' | 'pending'
+  status: 'ok' | 'error' | 'pending' | 'warning'
   retryable: boolean
+  element_count?: number
 }
 
 /** Fila de la tabla de zonificación / cumplimiento por zona. */

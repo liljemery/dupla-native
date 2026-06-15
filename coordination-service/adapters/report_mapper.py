@@ -3,18 +3,40 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
+_DISCIPLINE_LABELS = {
+    "ARQUITECTURA": "Arquitectura",
+    "ESTRUCTURA": "Estructura",
+    "ELECTRICIDAD": "Eléctrica",
+    "ELECTRICA": "Eléctrica",
+    "MECANICA": "Mecánica",
+    "CLIMATIZACION": "Mecánica",
+    "FONTANERIA": "Plomería",
+    "PLOMERIA": "Plomería",
+}
+
+
+def _format_discipline_label(raw: str) -> str:
+    key = str(raw or "").strip().upper()
+    if not key:
+        return "Coordinación"
+    return _DISCIPLINE_LABELS.get(key, raw.strip().title())
+
 
 def _priority_from_incident(incident: dict[str, Any]) -> str:
+    explicit = str(incident.get("priority") or "").lower()
+    if explicit in {"critical", "high", "warning", "info"}:
+        return explicit
+
     rep = incident.get("representative_conflict") or {}
     clash_type = str(rep.get("clash_type") or "").upper()
-    overlap = float(rep.get("overlap_depth_z_mm") or 0)
-    confidence = str(incident.get("confidence") or rep.get("confidence") or "").lower()
-    area = float(rep.get("plan_intersection_area_mm2") or 0)
+    overlap = float(rep.get("overlap_depth_z_mm") or incident.get("max_overlap_depth_z_mm") or 0)
+    area = float(rep.get("plan_intersection_area_mm2") or incident.get("max_area_mm2") or 0)
 
-    if clash_type == "HARD" and overlap >= 200 and confidence == "high":
+    if clash_type == "HARD" and area >= 1_000_000:
         return "critical"
     if clash_type == "HARD" or overlap >= 100:
         return "high"
@@ -24,31 +46,51 @@ def _priority_from_incident(incident: dict[str, Any]) -> str:
 
 
 def _disciplines_from_incident(incident: dict[str, Any]) -> list[str]:
+    explicit = incident.get("disciplines")
+    if isinstance(explicit, list) and explicit:
+        out: list[str] = []
+        for item in explicit:
+            label = _format_discipline_label(str(item))
+            if label not in out:
+                out.append(label)
+        if out:
+            return out
+
     rep = incident.get("representative_conflict") or {}
-    out: list[str] = []
+    out = []
     for key in ("discipline_a", "discipline_b"):
         val = str(rep.get(key) or "").strip()
-        if val and val not in out:
-            out.append(val.title())
+        if val:
+            label = _format_discipline_label(val)
+            if label not in out:
+                out.append(label)
     return out or ["Coordinación"]
 
 
 def _title_from_incident(incident: dict[str, Any]) -> str:
     rep = incident.get("representative_conflict") or {}
     level = str(incident.get("level_id") or "—")
-    da = str(rep.get("discipline_a") or "?")
-    db = str(rep.get("discipline_b") or "?")
+    disciplines = _disciplines_from_incident(incident)
+    if len(disciplines) >= 2:
+        da, db = disciplines[0], disciplines[1]
+    else:
+        da = _format_discipline_label(str(rep.get("discipline_a") or "?"))
+        db = _format_discipline_label(str(rep.get("discipline_b") or "?"))
     clash_type = str(rep.get("clash_type") or "CLASH")
     return f"{clash_type}: {da} vs {db} ({level})"
 
 
 def _description_from_incident(incident: dict[str, Any]) -> str:
+    explicit = str(incident.get("description") or "").strip()
+    if explicit:
+        return explicit
+
     rep = incident.get("representative_conflict") or {}
     parts: list[str] = []
-    overlap = rep.get("overlap_depth_z_mm")
+    overlap = rep.get("overlap_depth_z_mm") or incident.get("max_overlap_depth_z_mm")
     if overlap is not None:
         parts.append(f"Solapamiento vertical: {overlap} mm")
-    area = rep.get("plan_intersection_area_mm2")
+    area = rep.get("plan_intersection_area_mm2") or incident.get("max_area_mm2")
     if area is not None:
         parts.append(f"Área en planta: {float(area):,.0f} mm²")
     pair = incident.get("file_pair") or []
@@ -68,7 +110,19 @@ def _summary_from_clashes(clashes: list[dict[str, Any]], doc_count: int) -> dict
     errors = sum(1 for c in clashes if c.get("priority") == "critical")
     warnings = sum(1 for c in clashes if c.get("priority") in ("high", "warning"))
     ok = sum(1 for c in clashes if c.get("priority") == "info")
-    return {"errors": errors, "warnings": warnings, "ok": ok}
+    return {
+        "errors": errors,
+        "warnings": warnings,
+        "ok": ok,
+        "total_clashes": len(clashes),
+        "critical": errors,
+        "non_critical": warnings + ok,
+    }
+
+
+def _analysis_mode_from_env() -> str:
+    smoke = os.getenv("COORDINATION_SMOKE_MODE", "").lower() in ("1", "true", "yes")
+    return "smoke" if smoke else "real"
 
 
 def _ai_insight_from_context(context: dict[str, Any] | None, incident_count: int) -> str:
@@ -101,6 +155,7 @@ def map_to_structural_analysis_report(
     primary_incidents: dict[str, Any],
     coordination_context: dict[str, Any] | None,
     analyzed_documents: list[dict[str, Any]],
+    analysis_mode: str | None = None,
 ) -> dict[str, Any]:
     incidents = primary_incidents.get("incidents") or []
     if not isinstance(incidents, list):
@@ -129,6 +184,7 @@ def map_to_structural_analysis_report(
 
     return {
         "run_status": run_status,
+        "analysis_mode": analysis_mode or _analysis_mode_from_env(),
         "title": f"Informe de coordinación — {project_name}",
         "subtitle": f"{project_name} · {incident_count} incidencia(s) primaria(s)",
         "summary": summary,

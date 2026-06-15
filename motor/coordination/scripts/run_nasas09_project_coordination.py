@@ -533,7 +533,7 @@ def _extract_path_elements(
         level_resolution = SimpleNamespace(level_id=file_level_id, source=file_level_source)
     if suffix in {".dwg", ".dxf"}:
         if suffix == ".dwg" and args.dwg_via_aps and aps_token and aps_bucket:
-            return extract_elements_from_dwg_via_aps(
+            aps_elements = extract_elements_from_dwg_via_aps(
                 path,
                 discipline,
                 level_id=level_resolution.level_id,
@@ -547,6 +547,14 @@ def _extract_path_elements(
                 cache_root=cache_root,
                 level_doc=doc,
             )
+            if aps_elements:
+                return _tag_elements(
+                    aps_elements,
+                    issue_key=issue_key,
+                    file_name=path.name,
+                    level_assignment_source=level_resolution.source,
+                    sheet_name=path.stem,
+                )
         if suffix == ".dwg":
             accore_elements = extract_elements_from_dwg_via_accore(
                 path,

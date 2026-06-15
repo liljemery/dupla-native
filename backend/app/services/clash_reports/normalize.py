@@ -27,7 +27,8 @@ _BUCKET_TO_DISCIPLINE = {
     "estructura": "ESTRUCTURA",
     "electrica": "ELECTRICA",
     "mecanica": "MECANICA",
-    "plomeria": "PLOMERIA",
+    "plomeria": "Plomería",
+    "fontaneria": "Plomería",
 }
 
 

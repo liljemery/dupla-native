@@ -120,7 +120,7 @@ Abrir el navegador en **http://localhost:5173** y entrar con:
 
 ### En modo smoke
 
-El stack local arranca `coordination-service` con `COORDINATION_SMOKE_MODE=true` (default en `scripts/dev.sh`). Eso hace que el motor use el fixture de `coordination-service/fixtures/smoke_primary_incidents.json` en vez de correr el análisis real (que requiere AutoCAD/accore en Windows). Para demo y desarrollo es suficiente.
+El stack local arranca `coordination-service` con `COORDINATION_SMOKE_MODE=false` por defecto en `scripts/dev.sh` (modo real vía APS). Para demo sin credenciales APS, exporta `COORDINATION_SMOKE_MODE=true` y reinicia el worker; entonces usa el fixture de `coordination-service/fixtures/smoke_primary_incidents.json`.
 
 Para producción se quita esa variable y se monta un host con accore disponible.
 

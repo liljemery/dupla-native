@@ -44,15 +44,27 @@ export async function getCoordinationFolders(
   return (await res.json()) as CoordinationFolderOption[]
 }
 
+export type CoordinationInventoryResult =
+  | { ok: true; data: CoordinationInventory }
+  | { ok: false; status: number; message: string }
+
 export async function getCoordinationInventory(
   projectUuid: string,
   token: string | null,
   folderUuid: string | null,
-): Promise<CoordinationInventory | null> {
+): Promise<CoordinationInventoryResult> {
   const q = folderUuid ? `?folder_uuid=${encodeURIComponent(folderUuid)}` : ''
   const res = await apiFetch(`/api/projects/${projectUuid}/coordination/inventory${q}`, { token })
-  if (!res.ok) return null
-  return (await res.json()) as CoordinationInventory
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    const message =
+      (err as { detail?: string }).detail ??
+      (res.status === 404
+        ? 'Inventario no disponible para esta carpeta o proyecto.'
+        : 'No se pudo cargar el inventario de coordinación.')
+    return { ok: false, status: res.status, message }
+  }
+  return { ok: true, data: (await res.json()) as CoordinationInventory }
 }
 
 export async function getProjectFilesCount(projectUuid: string, token: string | null): Promise<number | null> {
