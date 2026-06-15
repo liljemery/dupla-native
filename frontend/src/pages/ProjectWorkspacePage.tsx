@@ -44,11 +44,13 @@ import {
 } from '../lib/constructionPliegoState'
 import {
   isGaFoChecklistFullyTerminal,
+  markGaFoSectionItemsComplete,
   mergePliegoItemStates,
   parseGaFoApprovedSections,
   serializeGaFoApprovedSections,
   stablePliegoItemStatesSignature,
 } from '../lib/pliegoFormState'
+import { isPliegoReadyForApproval, buildPliegoDraftSpec, pliegoSectionsIncompleteMessage, isPliegoEditablePhase, pliegoReadOnlyMessage } from '../lib/pliegoApproval'
 import { userDisplayInitials } from '../lib/taskboard'
 import { hasElevatedAccess, canViewBudget, isBudgetWorkspaceTab, workflowPhaseLabelForRole, workflowStepTitleForRole, canApproveSpecifications } from '../lib/accessPermissions'
 import { useAuthStore } from '../store/authStore'
@@ -528,7 +530,11 @@ export function ProjectWorkspacePage() {
   }
 
   async function saveBootstrap(): Promise<boolean> {
-    if (!token) return false
+    if (!token || !project) return false
+    if (project.workflow_phase !== 'BOOTSTRAPPING') {
+      setFlowMsg('El checklist de arranque solo se puede editar en la fase «Criterios de arranque».')
+      return false
+    }
     setFlowMsg(null)
     const res = await apiFetch(`/api/projects/${projectUuid}/bootstrap`, {
       method: 'PUT',
@@ -544,8 +550,17 @@ export function ProjectWorkspacePage() {
     return true
   }
 
-  async function saveSpecifications(): Promise<boolean> {
+  async function saveSpecifications(overrides?: {
+    pliegoItemStates?: Record<string, PliegoItemState>
+    pliegoApprovedSections?: Record<string, string>
+  }): Promise<boolean> {
     if (!token || !project) return false
+    if (!isPliegoEditablePhase(project.workflow_phase)) {
+      setFlowMsg(pliegoReadOnlyMessage(project.workflow_phase) ?? 'El pliego no es editable en esta fase.')
+      return false
+    }
+    const itemStates = overrides?.pliegoItemStates ?? pliegoItemStates
+    const approvedSections = overrides?.pliegoApprovedSections ?? pliegoApprovedSections
     setFlowMsg(null)
     setSpecSaveBusy(true)
     try {
@@ -573,13 +588,13 @@ export function ProjectWorkspacePage() {
         prevGa?.item_states as Record<string, unknown> | undefined,
       )
       const keepGaApproval =
-        stablePliegoItemStatesSignature(pliegoItemStates) === stablePliegoItemStatesSignature(serverMergedStates) &&
+        stablePliegoItemStatesSignature(itemStates) === stablePliegoItemStatesSignature(serverMergedStates) &&
         Boolean(prevGa?.approved)
 
       const gaBlockBase = {
         schema_version: 1 as const,
-        item_states: pliegoItemStates,
-        approved_sections: serializeGaFoApprovedSections(pliegoApprovedSections),
+        item_states: itemStates,
+        approved_sections: serializeGaFoApprovedSections(approvedSections),
       }
       const doc: Record<string, unknown> = {
         ...prev,
@@ -695,9 +710,49 @@ export function ProjectWorkspacePage() {
     }))
   }
 
+  async function approveGaFoSection(sectionId: string): Promise<boolean> {
+    if (!project || !isPliegoEditablePhase(project.workflow_phase)) {
+      setFlowMsg(pliegoReadOnlyMessage(project?.workflow_phase) ?? 'El pliego no es editable en esta fase.')
+      return false
+    }
+    const nextStates = markGaFoSectionItemsComplete(pliegoItemStates, sectionId)
+    const nextApproved = {
+      ...pliegoApprovedSections,
+      [sectionId]: new Date().toISOString(),
+    }
+    setPliegoItemStates(nextStates)
+    setPliegoApprovedSections(nextApproved)
+    return saveSpecifications({
+      pliegoItemStates: nextStates,
+      pliegoApprovedSections: nextApproved,
+    })
+  }
+
   async function approvePliego(): Promise<boolean> {
-    if (!token) return false
+    if (!token || !project) return false
+    if (!isPliegoEditablePhase(project.workflow_phase)) {
+      setFlowMsg(pliegoReadOnlyMessage(project.workflow_phase) ?? 'El pliego no es editable en esta fase.')
+      return false
+    }
     setFlowMsg(null)
+    const specObj =
+      project.specifications_document && typeof project.specifications_document === 'object'
+        ? (project.specifications_document as Record<string, unknown>)
+        : undefined
+    const useConstruction = isConstructionPliegoSchemaActive(specObj) || constructionDirty
+    const draft = buildPliegoDraftSpec(
+      specObj,
+      pliegoItemStates,
+      constructionLines,
+      useConstruction,
+    )
+    const blocker = pliegoSectionsIncompleteMessage(draft)
+    if (blocker) {
+      setFlowMsg(blocker)
+      return false
+    }
+    const saved = await saveSpecifications()
+    if (!saved) return false
     const res = await apiFetch(`/api/projects/${projectUuid}/specifications/approve`, {
       method: 'POST',
       token,
@@ -713,6 +768,9 @@ export function ProjectWorkspacePage() {
     const parsed = parseBusinessPliegoFromSpec(p.specifications_document)
     setBusinessPliegoSections(parsed.sections)
     setPliegoMeta({ approved: parsed.approved, generatedAt: parsed.generatedAt })
+    setPliegoApprovedSections(
+      parseGaFoApprovedSections(p.specifications_document as Record<string, unknown>),
+    )
     return true
   }
 
@@ -793,6 +851,42 @@ export function ProjectWorkspacePage() {
       : workflowPhaseLabelForRole(project.workflow_phase, role)
     : ''
   const nextPhase = project ? NEXT_WORKFLOW_PHASE[project.workflow_phase] : undefined
+  const pliegoReadyForApproval = useMemo(() => {
+    const spec = project?.specifications_document
+    const specObj = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : undefined
+    const useConstruction = isConstructionPliegoSchemaActive(specObj) || constructionDirty
+    const draft = buildPliegoDraftSpec(
+      specObj,
+      pliegoItemStates,
+      constructionLines,
+      useConstruction,
+    )
+    return isPliegoReadyForApproval(draft)
+  }, [
+    project?.specifications_document,
+    pliegoItemStates,
+    constructionLines,
+    constructionDirty,
+  ])
+  const pliegoApproveBlocker = useMemo(() => {
+    const spec = project?.specifications_document
+    const specObj = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : undefined
+    const useConstruction = isConstructionPliegoSchemaActive(specObj) || constructionDirty
+    const draft = buildPliegoDraftSpec(
+      specObj,
+      pliegoItemStates,
+      constructionLines,
+      useConstruction,
+    )
+    return pliegoSectionsIncompleteMessage(draft)
+  }, [
+    project?.specifications_document,
+    pliegoItemStates,
+    constructionLines,
+    constructionDirty,
+  ])
+  const pliegoEditable = isPliegoEditablePhase(project?.workflow_phase)
+  const pliegoReadOnlyHint = pliegoReadOnlyMessage(project?.workflow_phase)
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
@@ -831,6 +925,7 @@ export function ProjectWorkspacePage() {
           onOpenBootstrapChecklist={openBootstrapChecklist}
           bootstrapCriteria={bootstrapDraft}
           pliegoApproved={pliegoMeta.approved}
+          pliegoReadyForApproval={pliegoReadyForApproval}
           canApprovePliego={canApprovePliego}
           onApprovePliego={approvePliego}
         />
@@ -865,6 +960,7 @@ export function ProjectWorkspacePage() {
               onSaveBootstrap={saveBootstrap}
               onAdvancePhase={advancePhase}
               pliegoApproved={pliegoMeta.approved}
+              pliegoReadyForApproval={pliegoReadyForApproval}
               canApprovePliego={canApprovePliego}
               onApprovePliego={approvePliego}
               onOpenPliego={() => selectTab('pliego')}
@@ -966,7 +1062,12 @@ export function ProjectWorkspacePage() {
               specSaveBusy={specSaveBusy}
               flowMsg={flowMsg}
               onApprovePliego={approvePliego}
+              onApproveGaFoSection={approveGaFoSection}
               pliegoApproved={pliegoMeta.approved}
+              pliegoReadyForApproval={pliegoReadyForApproval}
+              pliegoApproveBlocker={pliegoApproveBlocker}
+              pliegoEditable={pliegoEditable}
+              pliegoReadOnlyHint={pliegoReadOnlyHint}
               pliegoGeneratedAt={pliegoMeta.generatedAt}
               onExportPliegoPdf={() => void exportPliegoPdf()}
               onExportPliegoXlsx={() => void exportPliegoXlsx()}

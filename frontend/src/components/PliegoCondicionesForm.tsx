@@ -55,8 +55,10 @@ type Props = {
   onItemStatesChange: (next: Record<string, PliegoItemState>) => void
   approvedSections: Record<string, string>
   canApproveSection: boolean
+  editable?: boolean
   onSectionApproved: (sectionId: string) => void
   onClearSectionApproval: (sectionId: string) => void
+  onApproveSection?: (sectionId: string) => boolean | void | Promise<boolean | void>
   onPersist: () => boolean | void | Promise<boolean | void>
   persistBusy: boolean
   flowMsg: string | null
@@ -72,8 +74,10 @@ export function PliegoCondicionesForm({
   onItemStatesChange,
   approvedSections,
   canApproveSection,
+  editable = true,
   onSectionApproved,
   onClearSectionApproval,
+  onApproveSection,
   onPersist,
   persistBusy,
   flowMsg,
@@ -94,6 +98,7 @@ export function PliegoCondicionesForm({
   const progress = useMemo(() => pliegoProgressPercent(itemStates), [itemStates])
 
   function patchItem(itemId: string, partial: Partial<PliegoItemState>) {
+    if (!editable) return
     const prev = itemStates[itemId] ?? { estado: 'PENDIENTE' as const, notas: '', file_uuid: null, file_name: null }
     const nextRow = { ...prev, ...partial }
     onItemStatesChange({
@@ -118,6 +123,10 @@ export function PliegoCondicionesForm({
         sectionTitle,
       }))
     ) {
+      return
+    }
+    if (onApproveSection) {
+      await onApproveSection(sectionId)
       return
     }
     onItemStatesChange(markGaFoSectionItemsComplete(itemStates, sectionId))
@@ -261,7 +270,9 @@ export function PliegoCondicionesForm({
                     <button
                       type="button"
                       className="shrink-0 border-l border-black/8 px-3 text-[11px] font-semibold uppercase tracking-wide text-primary transition hover:bg-primary/[0.06] sm:px-4"
-                      onClick={() => void approveSection(sec.id, sec.titulo)}
+                      onClick={() => {
+                        void approveSection(sec.id, sec.titulo)
+                      }}
                     >
                       Aprobar sección
                     </button>

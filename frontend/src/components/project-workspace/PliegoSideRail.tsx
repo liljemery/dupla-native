@@ -18,6 +18,8 @@ type PliegoSideRailProps = {
   generatedAt: string | null
   canApprove: boolean
   viewBudget: boolean
+  pliegoReadyForApproval: boolean
+  pliegoApproveBlocker: string | null
   onApprove: () => boolean | void | Promise<boolean | void>
   onApproveSection: (sectionId: string, _sectionTitle?: string) => void
   onGoPresupuesto?: () => void
@@ -33,6 +35,8 @@ export function PliegoSideRail({
   generatedAt,
   canApprove,
   viewBudget,
+  pliegoReadyForApproval,
+  pliegoApproveBlocker,
   onApprove,
   onApproveSection,
   onGoPresupuesto,
@@ -136,14 +140,17 @@ export function PliegoSideRail({
             {generatedAt ? new Date(generatedAt).toLocaleString() : '—'}
           </span>
         </p>
+        {canApprove && !approved && pliegoApproveBlocker ? (
+          <p className="mt-3 text-[11px] leading-relaxed text-primary">{pliegoApproveBlocker}</p>
+        ) : null}
         {canApprove ? (
           <WorkspaceActionButton
             type="button"
             className="mt-4 w-full gap-2 py-3 text-sm font-semibold tracking-normal"
-            disabled={approved}
+            disabled={approved || !pliegoReadyForApproval}
             onAction={onApprove}
             successLabel="Pliego aprobado"
-            runningLabel="Aprobando…"
+            runningLabel="Guardando y aprobando…"
           >
             <CheckSquare className="size-4" strokeWidth={2} aria-hidden />
             {approved ? 'Pliego aprobado' : 'Aprobar pliego'}

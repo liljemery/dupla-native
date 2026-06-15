@@ -10,6 +10,7 @@ type Props = {
   onChange: (next: BootstrapCriterion[]) => void
   onSave: () => boolean | void | Promise<boolean | void>
   prominent?: boolean
+  editable?: boolean
   id?: string
 }
 
@@ -18,6 +19,7 @@ export function BootstrapChecklistCard({
   onChange,
   onSave,
   prominent = false,
+  editable = true,
   id = 'bootstrap-checklist',
 }: Props) {
   const stats = bootstrapRequiredPercent(criteria)
@@ -38,7 +40,9 @@ export function BootstrapChecklistCard({
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-ink">Checklist de arranque</h2>
           <p className="mt-1 text-sm text-muted">
-            Documentos requeridos antes de pasar a «Esperando archivos». Marca los ítems obligatorios y guarda.
+            {editable
+              ? 'Documentos requeridos antes de pasar a «Esperando archivos». Marca los ítems obligatorios y guarda.'
+              : 'Checklist completado en la fase de arranque. Ya no es editable en esta etapa del flujo.'}
           </p>
         </div>
       </div>
@@ -58,7 +62,9 @@ export function BootstrapChecklistCard({
               type="checkbox"
               className="mt-1"
               checked={!!c.done}
+              disabled={!editable}
               onChange={(e) => {
+                if (!editable) return
                 const next = [...criteria]
                 next[i] = { ...next[i], done: e.target.checked }
                 onChange(next)
@@ -71,9 +77,11 @@ export function BootstrapChecklistCard({
           </li>
         ))}
       </ul>
-      <WorkspaceActionButton type="button" onAction={onSave} successLabel="Checklist guardado">
-        Guardar checklist
-      </WorkspaceActionButton>
+      {editable ? (
+        <WorkspaceActionButton type="button" onAction={onSave} successLabel="Checklist guardado">
+          Guardar checklist
+        </WorkspaceActionButton>
+      ) : null}
     </Card>
   )
 }

@@ -30,6 +30,7 @@ type WorkspaceFlujoTabProps = {
   onSaveBootstrap: () => boolean | void | Promise<boolean | void>
   onAdvancePhase: () => boolean | void | Promise<boolean | void>
   pliegoApproved: boolean
+  pliegoReadyForApproval: boolean
   canApprovePliego: boolean
   onApprovePliego: () => boolean | void | Promise<boolean | void>
   onOpenPliego: () => void
@@ -65,6 +66,7 @@ export function WorkspaceFlujoTab({
   onSaveBootstrap,
   onAdvancePhase,
   pliegoApproved,
+  pliegoReadyForApproval,
   canApprovePliego,
   onApprovePliego,
   onOpenPliego,
@@ -92,10 +94,18 @@ export function WorkspaceFlujoTab({
     project?.workflow_phase === 'SPECIFICATIONS' &&
     nextPhase === 'BUDGETING_PIPELINE' &&
     canApprovePliego &&
-    !pliegoApproved
+    !pliegoApproved &&
+    pliegoReadyForApproval
+  const showPliegoPrepareCta =
+    project?.workflow_phase === 'SPECIFICATIONS' &&
+    nextPhase === 'BUDGETING_PIPELINE' &&
+    canApprovePliego &&
+    !pliegoApproved &&
+    !pliegoReadyForApproval
+  const bootstrapEditable = project?.workflow_phase === 'BOOTSTRAPPING'
   const bootstrapStats = useMemo(() => bootstrapRequiredPercent(bootstrapDraft), [bootstrapDraft])
   const showBootstrapProminent =
-    project?.workflow_phase === 'BOOTSTRAPPING' ||
+    bootstrapEditable &&
     (bootstrapStats.required > 0 && bootstrapStats.done < bootstrapStats.required)
 
   useEffect(() => {
@@ -157,6 +167,7 @@ export function WorkspaceFlujoTab({
         onChange={setBootstrapDraft}
         onSave={onSaveBootstrap}
         prominent={showBootstrapProminent}
+        editable={bootstrapEditable}
       />
 
       <Card className="space-y-4 p-6">
@@ -215,6 +226,20 @@ export function WorkspaceFlujoTab({
             esta etapa esté hecho; si el botón falla, el mensaje de arriba indica el motivo.
           </p>
           {flowMsg ? <p className="text-sm text-primary">{flowMsg}</p> : null}
+          {showPliegoPrepareCta ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-black/15 bg-black/4 px-3 py-2.5">
+              <p className="min-w-0 flex-1 text-sm text-ink">
+                Genera o completa el pliego en la pestaña Pliego antes de solicitar la aprobación.
+              </p>
+              <button
+                type="button"
+                className="rounded-lg border border-black/15 bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm hover:bg-black/3"
+                onClick={onOpenPliego}
+              >
+                Ir al pliego
+              </button>
+            </div>
+          ) : null}
           {showPliegoApproveCta ? (
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/25 bg-primary/[0.06] px-3 py-2.5">
               <p className="min-w-0 flex-1 text-sm text-ink">

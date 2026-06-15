@@ -3,8 +3,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
-
-from fpdf import FPDF
 from fpdf.enums import XPos
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
@@ -15,6 +13,7 @@ from app.config import get_settings
 from app.models.plan_delivery_request import PlanDeliveryRequest
 from app.models.project_file import ProjectFile
 from app.models.user import User
+from app.services.fpdf_unicode import create_unicode_pdf
 from app.services.pliego_template_fill import (
     fill_pliego_workbook,
     fill_resumen_pliego_ga_fo_01,
@@ -105,16 +104,16 @@ class ExportService:
         return buf.getvalue()
 
     def build_pdf(self, title: str, payload: dict) -> bytes:
-        pdf = FPDF()
+        pdf, font = create_unicode_pdf()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_font(font, "B", 14)
         pdf.cell(0, 10, title, ln=True)
-        pdf.set_font("Helvetica", size=10)
+        pdf.set_font(font, size=10)
         for g in payload.get("groups", []):
-            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_font(font, "B", 11)
             pdf.multi_cell(0, 7, f"{g.get('title', '')} ({g.get('kind', '')})", new_x=XPos.LMARGIN)
-            pdf.set_font("Helvetica", size=9)
+            pdf.set_font(font, size=9)
             for it in g.get("items", []):
                 line = (
                     f"{it.get('partida', '')} | {it.get('descripcion', '')} | "
@@ -138,12 +137,12 @@ class ExportService:
         criteria: list[dict[str, Any]],
         files: list[ProjectFile],
     ) -> bytes:
-        pdf = FPDF()
+        pdf, font = create_unicode_pdf()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_font(font, "B", 14)
         pdf.multi_cell(0, 8, "Informe documental - checklist y archivos", new_x=XPos.LMARGIN)
-        pdf.set_font("Helvetica", size=10)
+        pdf.set_font(font, size=10)
         pdf.ln(2)
         meta_lines = [
             f"Proyecto: {project_name}",
@@ -159,9 +158,9 @@ class ExportService:
         total_req = len(required)
         pct = int(round(100 * done_req / total_req)) if total_req else 0
         pdf.ln(3)
-        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_font(font, "B", 11)
         pdf.multi_cell(0, 7, "Cumplimiento checklist (ítems requeridos)", new_x=XPos.LMARGIN)
-        pdf.set_font("Helvetica", size=9)
+        pdf.set_font(font, size=9)
         pdf.multi_cell(0, 6, f"{done_req} de {total_req} completados ({pct}%).", new_x=XPos.LMARGIN)
         for item in criteria:
             if not isinstance(item, dict):
@@ -176,11 +175,11 @@ class ExportService:
         duplicates = [n for n, k in dup_counts.items() if k > 1 and n]
 
         pdf.ln(4)
-        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_font(font, "B", 11)
         pdf.multi_cell(0, 7, f"Archivos cargados ({len(files)})", new_x=XPos.LMARGIN)
-        pdf.set_font("Helvetica", size=9)
+        pdf.set_font(font, size=9)
         if duplicates:
-            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_font(font, "B", 9)
             pdf.multi_cell(
                 0,
                 5,
@@ -189,7 +188,7 @@ class ExportService:
                 + ("…" if len(duplicates) > 25 else ""),
                 new_x=XPos.LMARGIN,
             )
-            pdf.set_font("Helvetica", size=9)
+            pdf.set_font(font, size=9)
         if not files:
             pdf.multi_cell(0, 6, "No hay archivos registrados.", new_x=XPos.LMARGIN)
         else:
@@ -262,25 +261,25 @@ class ExportService:
         return self.build_control_planos_pdf(project_name, rows)
 
     def build_control_planos_pdf(self, project_name: str, rows: list[PlanDeliveryRequest]) -> bytes:
-        pdf = FPDF()
+        pdf, font = create_unicode_pdf()
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 12)
+        pdf.set_font(font, "B", 12)
         pdf.multi_cell(0, 8, f"Control Entrega de Planos - {project_name}", new_x=XPos.LMARGIN)
         pdf.ln(2)
-        pdf.set_font("Helvetica", size=8)
+        pdf.set_font(font, size=8)
         if not rows:
             pdf.cell(0, 6, "Sin solicitudes registradas.", ln=True)
         else:
             for idx, row in enumerate(rows, start=1):
-                pdf.set_font("Helvetica", "B", 9)
+                pdf.set_font(font, "B", 9)
                 pdf.multi_cell(
                     0,
                     5,
                     f"{idx}. {row.request_number} - {row.status}",
                     new_x=XPos.LMARGIN,
                 )
-                pdf.set_font("Helvetica", size=8)
+                pdf.set_font(font, size=8)
                 line = (
                     f"Solicitud: {row.request_date.isoformat() if row.request_date else '-'} | "
                     f"Entrega: {row.delivery_date.isoformat() if row.delivery_date else '-'} | "

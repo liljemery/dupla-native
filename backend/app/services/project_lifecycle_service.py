@@ -101,12 +101,15 @@ class ProjectLifecycleService:
     async def _sync_subcontracts_flag(self, project: Project) -> None:
         meta = dict(project.workflow_meta or {})
         bp = _budget_pipeline(meta)
-        has = False
-        for q in project.subcontract_quotes:
-            if len(q.lines) > 0:
-                has = True
-                break
-        bp["subcontracts_done"] = has
+        line_count = (
+            await self._session.execute(
+                select(func.count(SubcontractQuoteLine.id))
+                .select_from(SubcontractQuoteLine)
+                .join(SubcontractQuote, SubcontractQuoteLine.quote_id == SubcontractQuote.id)
+                .where(SubcontractQuote.project_id == project.id)
+            )
+        ).scalar_one()
+        bp["subcontracts_done"] = int(line_count or 0) > 0
         _set_budget_pipeline(meta, bp)
         project.workflow_meta = meta
 
@@ -684,6 +687,7 @@ class ProjectLifecycleService:
             WorkflowPhase.BUDGETING_PIPELINE,
             WorkflowPhase.MANAGEMENT_APPROVAL,
             WorkflowPhase.BUDGET_APPROVED,
+            WorkflowPhase.COMPLETE,
         }
         if wf not in allowed:
             raise HTTPException(
@@ -770,10 +774,18 @@ class ProjectLifecycleService:
             )
         project = await self._project_svc.get_project(user, project_uuid)
         wf = self._domain_phase_for_project(project)
-        if wf not in (WorkflowPhase.ARCHITECTURE_REVIEW, WorkflowPhase.SPECIFICATIONS):
+        approve_allowed = {
+            WorkflowPhase.ARCHITECTURE_REVIEW,
+            WorkflowPhase.SPECIFICATIONS,
+            WorkflowPhase.BUDGETING_PIPELINE,
+            WorkflowPhase.MANAGEMENT_APPROVAL,
+            WorkflowPhase.BUDGET_APPROVED,
+            WorkflowPhase.COMPLETE,
+        }
+        if wf not in approve_allowed:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="La aprobación del pliego solo aplica en fase de arquitectura o de pliego",
+                detail="La aprobación del pliego no aplica en esta fase del proyecto",
             )
         spec: dict[str, Any] = (
             dict(project.specifications_document) if isinstance(project.specifications_document, dict) else {}

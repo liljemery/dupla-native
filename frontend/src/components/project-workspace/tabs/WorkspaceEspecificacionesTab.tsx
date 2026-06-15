@@ -2,7 +2,6 @@ import { canApproveSpecifications, canViewBudget } from '../../../lib/accessPerm
 import {
   isConstructionPliegoSchemaActive,
 } from '../../../lib/constructionPliegoState'
-import { markGaFoSectionItemsComplete } from '../../../lib/pliegoFormState'
 import { useAuthStore } from '../../../store/authStore'
 import type { Project } from '../../../types/project'
 import type { ConstructionLineValue } from '../../../types/constructionPliego'
@@ -34,7 +33,12 @@ type WorkspaceEspecificacionesTabProps = {
   flowMsg: string | null
   onApprovePliego: () => Promise<boolean | void>
   pliegoApproved: boolean
+  pliegoReadyForApproval: boolean
+  pliegoApproveBlocker: string | null
+  pliegoEditable: boolean
+  pliegoReadOnlyHint: string | null
   pliegoGeneratedAt: string | null
+  onApproveGaFoSection: (sectionId: string) => Promise<boolean | void>
   onExportPliegoPdf?: () => void
   onExportPliegoXlsx?: () => void
   onGoPresupuesto?: () => void
@@ -63,7 +67,12 @@ export function WorkspaceEspecificacionesTab({
   flowMsg,
   onApprovePliego,
   pliegoApproved,
+  pliegoReadyForApproval,
+  pliegoApproveBlocker,
+  pliegoEditable,
+  pliegoReadOnlyHint,
   pliegoGeneratedAt,
+  onApproveGaFoSection,
   onExportPliegoPdf,
   onExportPliegoXlsx,
   onGoPresupuesto,
@@ -86,8 +95,7 @@ export function WorkspaceEspecificacionesTab({
   }
 
   function approveGaFoSectionFromRail(sectionId: string) {
-    setPliegoItemStates((prev) => markGaFoSectionItemsComplete(prev, sectionId))
-    markGaFoSectionApproved(sectionId)
+    void onApproveGaFoSection(sectionId)
   }
 
   function clearGaFoSectionApproval(sectionId: string) {
@@ -116,7 +124,13 @@ export function WorkspaceEspecificacionesTab({
   }
 
   return (
-    <div className="flex min-h-0 flex-col gap-6 lg:flex-row lg:items-start lg:gap-6">
+    <div className="flex min-h-0 flex-col gap-4">
+      {!pliegoEditable && pliegoReadOnlyHint ? (
+        <p className="rounded-lg border border-black/15 bg-black/4 px-4 py-3 text-sm text-ink">
+          {pliegoReadOnlyHint}
+        </p>
+      ) : null}
+      <div className="flex min-h-0 flex-col gap-6 lg:flex-row lg:items-start lg:gap-6">
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         <PliegoCondicionesForm
           projectUuid={projectUuid}
@@ -126,8 +140,10 @@ export function WorkspaceEspecificacionesTab({
           onItemStatesChange={setPliegoItemStates}
           approvedSections={pliegoApprovedSections}
           canApproveSection={canApprove}
+          editable={pliegoEditable}
           onSectionApproved={markGaFoSectionApproved}
           onClearSectionApproval={clearGaFoSectionApproval}
+          onApproveSection={onApproveGaFoSection}
           onPersist={onPersist}
           persistBusy={specSaveBusy}
           flowMsg={flowMsg}
@@ -172,10 +188,13 @@ export function WorkspaceEspecificacionesTab({
         generatedAt={pliegoGeneratedAt}
         canApprove={canApprove}
         viewBudget={viewBudget}
+        pliegoReadyForApproval={pliegoReadyForApproval}
+        pliegoApproveBlocker={pliegoApproveBlocker}
         onApprove={onApprovePliego}
         onApproveSection={approveGaFoSectionFromRail}
         onGoPresupuesto={onGoPresupuesto}
       />
+      </div>
     </div>
   )
 }
