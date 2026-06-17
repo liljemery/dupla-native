@@ -43,7 +43,7 @@ def resolve_viewer_dump(cache_root: str | Path | None, dwg_filename: str) -> dic
 
 def resolve_plan_pdf(search_dirs: list[str | Path], dwg_filename: str) -> Path | None:
     """Find a companion PDF for the DWG (same stem or fuzzy token match)."""
-    from coordination.extraction.companion_pdf import resolve_companion_pdf
+    from app.services.clash_reports.companion_pdf import _score_pdf_match, resolve_companion_pdf
 
     dwg_path = Path(dwg_filename)
     if dwg_path.is_file():
@@ -58,8 +58,6 @@ def resolve_plan_pdf(search_dirs: list[str | Path], dwg_filename: str) -> Path |
         if not root.is_dir():
             continue
         for pdf in root.rglob("*.pdf"):
-            from coordination.extraction.companion_pdf import _score_pdf_match
-
             score = _score_pdf_match(stem, pdf.stem, dwg_path=dwg_path, pdf_path=pdf)
             if score <= 0:
                 continue
