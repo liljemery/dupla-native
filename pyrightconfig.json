@@ -1,10 +1,14 @@
 {
-  "include": ["backend/app", "backend/tests", "backend/alembic"],
+  "include": ["backend/app", "backend/tests", "backend/alembic", "scripts"],
   "venvPath": "backend",
   "venv": ".venv",
   "executionEnvironments": [
     {
       "root": "backend"
+    },
+    {
+      "root": "scripts",
+      "extraPaths": ["backend"]
     }
   ]
 }

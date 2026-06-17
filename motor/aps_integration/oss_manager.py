@@ -1,16 +1,27 @@
 import os
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
 from aps_integration.aps_auth import get_aps_token
 
+_BACKEND_ENV = Path(__file__).resolve().parents[2] / "backend" / ".env"
+if _BACKEND_ENV.is_file():
+    load_dotenv(_BACKEND_ENV)
 load_dotenv()
 
 APS_BUCKET_NAME = os.getenv("APS_BUCKET_NAME", "dupla_dwg_bucket_test_01")
 # Autodesk bucket names must be globally unique and lowercase.
 
 BASE_URL = "https://developer.api.autodesk.com/oss/v2"
+
+
+def _resolve_access_token(token: str | dict[str, object]) -> str:
+    """Accept bare token string or APS session dict from model_derivative."""
+    if isinstance(token, dict):
+        return str(token.get("access_token") or token.get("token") or "")
+    return str(token)
 
 
 def build_object_name(file_path, object_name=None, unique_suffix=None):
@@ -39,7 +50,7 @@ def create_bucket(token, bucket_name):
     print(f"Verificando/Creando bucket '{bucket_name}'...")
     url = f"{BASE_URL}/buckets"
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {_resolve_access_token(token)}",
         "Content-Type": "application/json",
     }
     payload = {
@@ -96,7 +107,7 @@ def generate_signed_url(token, bucket_name, object_name, access="read"):
     print(f"Generando URL firmada para '{object_name}' ({access})...")
     url = f"{BASE_URL}/buckets/{bucket_name}/objects/{object_name}/signed"
     headers = {
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {_resolve_access_token(token)}",
         "Content-Type": "application/json",
     }
     payload = {

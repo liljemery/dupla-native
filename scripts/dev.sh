@@ -29,6 +29,8 @@ export COORDINATION_OUTPUT_ROOT="${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outp
 export DUPLA_CACHE_DIR="${DUPLA_CACHE_DIR:-$VAR_DIR/cache}"
 export DUPLA_ARTIFACT_DIR="${DUPLA_ARTIFACT_DIR:-$VAR_DIR/artifacts}"
 export COORDINATION_SMOKE_MODE="${COORDINATION_SMOKE_MODE:-false}"
+export COORDINATION_MAX_WORKERS="${COORDINATION_MAX_WORKERS:-6}"
+export COORDINATION_CACHE_ROOT="${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/aps_cache}"
 export PYTHONPATH="${DUPLA_ROOT}:${COORD_DIR}:${PYTHONPATH:-}"
 
 usage() {
@@ -46,6 +48,9 @@ Comandos:
 Variables útiles:
   DUPLA_ROOT                 Ruta al motor de coordinación (default: motor/ en la raíz del repo)
   COORDINATION_OUTPUT_ROOT   Salida compartida clash (default: var/coord_outputs)
+  COORDINATION_CACHE_ROOT    Caché APS persistente entre corridas (default: var/coord_outputs/aps_cache)
+  COORDINATION_MAX_WORKERS   Workers paralelos para extracción DWG (default: 6)
+  COORDINATION_ANALYSIS_PROFILE  fast_compare_aps | fast_compare | standard (auto si no se define)
   COORDINATION_SMOKE_MODE    false para detección real vía APS (default: false; override en backend/.env)
 EOF
 }
@@ -95,6 +100,7 @@ cmd_setup() {
     "$VAR_DIR/cache" \
     "$VAR_DIR/artifacts" \
     "$VAR_DIR/coord_outputs" \
+    "$VAR_DIR/coord_outputs/aps_cache" \
     "$VAR_DIR/processor_outputs" \
     "$PID_DIR" \
     "$LOG_DIR" \
@@ -150,6 +156,34 @@ write_pid() {
   echo "$pid" >"$PID_DIR/$name.pid"
 }
 
+# Arranca un proceso en sesión nueva (macOS no tiene setsid; Python start_new_session sí).
+launch_detached() {
+  local name="$1"
+  shift
+  local log_file="$LOG_DIR/$name.log"
+  local pid
+  pid="$(
+    python3 - "$log_file" "$@" <<'PY'
+import subprocess
+import sys
+
+log_path = sys.argv[1]
+cmd = sys.argv[2:]
+with open(log_path, "a", buffering=1) as logf:
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=logf,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+        close_fds=True,
+    )
+print(proc.pid)
+PY
+  )"
+  write_pid "$name" "$pid"
+}
+
 read_pid() {
   local name="$1"
   local file="$PID_DIR/$name.pid"
@@ -163,13 +197,27 @@ is_running() {
   [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
 }
 
+stop_pid_tree() {
+  local pid="$1"
+  [[ -z "$pid" ]] && return 0
+  if ! is_running "$pid"; then
+    return 0
+  fi
+  # Mata hijos (uvicorn --reload, vite, etc.) y luego el proceso raíz.
+  pkill -TERM -P "$pid" 2>/dev/null || true
+  kill -TERM "$pid" 2>/dev/null || true
+  sleep 0.5
+  pkill -KILL -P "$pid" 2>/dev/null || true
+  kill -KILL "$pid" 2>/dev/null || true
+}
+
 cmd_stop() {
   local name pid
   for name in frontend backend processor processor-worker coordination coordination-worker; do
     pid="$(read_pid "$name" || true)"
     if is_running "$pid"; then
       echo "Deteniendo $name (pid $pid)"
-      kill "$pid" 2>/dev/null || true
+      stop_pid_tree "$pid"
     fi
     rm -f "$PID_DIR/$name.pid"
   done
@@ -208,62 +256,22 @@ cmd_start() {
   mkdir -p "$PID_DIR" "$LOG_DIR"
 
   echo "==> Arrancando backend :8000"
-  # shellcheck disable=SC1091
-  source "$BACKEND_DIR/.venv/bin/activate"
-  (
-    cd "$BACKEND_DIR"
-    nohup python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000 \
-      >"$LOG_DIR/backend.log" 2>&1 &
-    echo $! >"$PID_DIR/backend.pid"
-  )
-  deactivate
+  launch_detached backend bash -c "cd '$BACKEND_DIR' && source .venv/bin/activate && exec python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
 
   echo "==> Arrancando processor API :8001"
-  # shellcheck disable=SC1091
-  source "$PROCESSOR_DIR/.venv/bin/activate"
-  (
-    cd "$PROCESSOR_DIR"
-    export REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}"
-    nohup python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001 \
-      >"$LOG_DIR/processor.log" 2>&1 &
-    echo $! >"$PID_DIR/processor.pid"
-  )
+  launch_detached processor bash -c "cd '$PROCESSOR_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && exec python -m uvicorn main:app --reload --host 0.0.0.0 --port 8001"
 
   echo "==> Arrancando processor-worker"
-  (
-    cd "$PROCESSOR_DIR"
-    export REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}"
-    nohup python worker.py >"$LOG_DIR/processor-worker.log" 2>&1 &
-    echo $! >"$PID_DIR/processor-worker.pid"
-  )
-  deactivate
+  launch_detached processor-worker bash -c "cd '$PROCESSOR_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && exec python worker.py"
 
   echo "==> Arrancando coordination API :8002"
-  # shellcheck disable=SC1091
-  source "$COORD_DIR/.venv/bin/activate"
-  (
-    cd "$COORD_DIR"
-    export REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}"
-    nohup python -m uvicorn main:app --reload --host 0.0.0.0 --port 8002 \
-      >"$LOG_DIR/coordination.log" 2>&1 &
-    echo $! >"$PID_DIR/coordination.pid"
-  )
+  launch_detached coordination bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/aps_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export CLIENT_ID='${CLIENT_ID:-}' && export CLIENT_SECRET='${CLIENT_SECRET:-}' && export APS_BUCKET_NAME='${APS_BUCKET_NAME:-}' && export APS_VIEWER_GEOMETRY_DUMP='${APS_VIEWER_GEOMETRY_DUMP:-true}' && export APS_VIEWER_GEOMETRY_FORMAT='${APS_VIEWER_GEOMETRY_FORMAT:-svf1}' && export APS_VIEWER_GEOMETRY_TIMEOUT='${APS_VIEWER_GEOMETRY_TIMEOUT:-900}' && export APS_VIEWER_MAX_VIEWS='${APS_VIEWER_MAX_VIEWS:-4}' && export APS_VIEWER_MAX_OBJECTS_PER_VIEW='${APS_VIEWER_MAX_OBJECTS_PER_VIEW:-500}' && export APS_VIEWER_LINE_BUFFER_MM='${APS_VIEWER_LINE_BUFFER_MM:-}' && export PUPPETEER_EXECUTABLE_PATH='${PUPPETEER_EXECUTABLE_PATH:-}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python -m uvicorn main:app --reload --host 0.0.0.0 --port 8002"
 
   echo "==> Arrancando coordination-worker"
-  (
-    cd "$COORD_DIR"
-    export REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379/0}"
-    nohup python worker.py >"$LOG_DIR/coordination-worker.log" 2>&1 &
-    echo $! >"$PID_DIR/coordination-worker.pid"
-  )
-  deactivate
+  launch_detached coordination-worker bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/aps_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export CLIENT_ID='${CLIENT_ID:-}' && export CLIENT_SECRET='${CLIENT_SECRET:-}' && export APS_BUCKET_NAME='${APS_BUCKET_NAME:-}' && export APS_VIEWER_GEOMETRY_DUMP='${APS_VIEWER_GEOMETRY_DUMP:-true}' && export APS_VIEWER_GEOMETRY_FORMAT='${APS_VIEWER_GEOMETRY_FORMAT:-svf1}' && export APS_VIEWER_GEOMETRY_TIMEOUT='${APS_VIEWER_GEOMETRY_TIMEOUT:-900}' && export APS_VIEWER_MAX_VIEWS='${APS_VIEWER_MAX_VIEWS:-4}' && export APS_VIEWER_MAX_OBJECTS_PER_VIEW='${APS_VIEWER_MAX_OBJECTS_PER_VIEW:-500}' && export APS_VIEWER_LINE_BUFFER_MM='${APS_VIEWER_LINE_BUFFER_MM:-}' && export PUPPETEER_EXECUTABLE_PATH='${PUPPETEER_EXECUTABLE_PATH:-}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python worker.py"
 
   echo "==> Arrancando frontend :5173"
-  (
-    cd "$FRONTEND_DIR"
-    nohup pnpm dev --host 127.0.0.1 --port 5173 >"$LOG_DIR/frontend.log" 2>&1 &
-    echo $! >"$PID_DIR/frontend.pid"
-  )
+  launch_detached frontend bash -c "cd '$FRONTEND_DIR' && exec pnpm dev --host 127.0.0.1 --port 5173"
 
   sleep 2
   cmd_status

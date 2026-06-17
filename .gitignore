@@ -30,4 +30,9 @@ dist/
 # Runtime local (scripts/dev.sh)
 var/
 
+# F2D spike — dumps y caché offline generados localmente (demasiado grandes para GitHub)
+scripts/spike_f2d/dump_svf1.json
+scripts/spike_f2d/dump_svf1_runtime.json
+scripts/spike_f2d/offline/
+
 .cursor/

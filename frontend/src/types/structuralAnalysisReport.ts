@@ -14,6 +14,8 @@ export type StructuralClash = {
   disciplines: string[]
   /** URL de miniatura 3D o captura; opcional hasta que la API lo provea. */
   thumbnail_url: string | null
+  confidence?: string | null
+  geometry_sources?: string | null
 }
 
 /** Documento considerado en el análisis y su estado de ingestión. */
@@ -24,6 +26,11 @@ export type StructuralAnalyzedDocument = {
   status: 'ok' | 'error' | 'pending' | 'warning'
   retryable: boolean
   element_count?: number
+  aps_result?: string
+  aps_note?: string
+  geometry_quality?: 'exact' | 'proxy' | 'medium' | string
+  geometry_source?: string
+  viewer_elements?: number
 }
 
 /** Fila de la tabla de zonificación / cumplimiento por zona. */
@@ -68,4 +75,11 @@ export type StructuralAnalysisReport = {
   ai_insight: string
   zoning_rows: StructuralZoningRow[]
   footer_status_message: string
+  extraction_progress?: {
+    processed: number
+    total: number
+    current_files?: string[]
+    elapsed_s?: number
+    phase?: string
+  } | null
 }
