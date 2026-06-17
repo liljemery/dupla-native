@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from collections import Counter
 from typing import Any, Iterable, Mapping
@@ -834,6 +835,18 @@ def compose_budget_rows(
 
         line_metadata["price_source"] = price_source
         line_metadata["source_type"] = source_type
+        # Currency provenance. The constructor xlsx (constructor_apu) is USD per
+        # the office; BC3 / ConstruCosto fallbacks may be a different currency
+        # (e.g. RD$). Flag those so a mixed-currency budget is visible instead of
+        # silently summed. No automatic conversion is applied here.
+        primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "USD").strip() or "USD"
+        if source_type == "constructor_apu":
+            line_metadata["price_currency"] = primary_currency
+        elif resolved_price is not None:
+            line_metadata["price_currency"] = "?"
+            line_metadata["price_currency_uncertain"] = True
+        else:
+            line_metadata["price_currency"] = None
         prepared.takeoff.trace.metadata["source_type"] = source_type
         line_metadata["quantity_source_display"] = _quantity_source_display(prepared.takeoff)
         line_metadata["bc3_origin"] = _line_bc3_origin(
@@ -930,12 +943,25 @@ def compose_budget(
         "Budget composed: %d chapters, %d lines (%d via constructor APU), %d rows",
         len(chapters), len(lines), apu_lines, len(rows),
     )
+    primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "USD").strip() or "USD"
+    uncertain_lines = sum(1 for line in lines if line.metadata.get("price_currency_uncertain"))
+    if uncertain_lines:
+        logger.warning(
+            "Currency check: %d/%d priced lines came from BC3/ConstruCosto fallback "
+            "(currency unverified). Constructor xlsx is treated as %s — verify before summing totals.",
+            uncertain_lines, len(lines), primary_currency,
+        )
     payload: dict[str, Any] = {
         "project_context": context.to_dict(),
         "chapters": [chapter.to_dict() for chapter in chapters],
         "lines": [line.to_dict() for line in lines],
         "rows": [row.to_dict() for row in rows],
         "budget_diagnostics": diagnostics,
+        "currency_summary": {
+            "primary_currency": primary_currency,
+            "lines_total": len(lines),
+            "lines_currency_uncertain": uncertain_lines,
+        },
     }
     if context.metadata.get("run_budget_validation"):
         try:

@@ -70,12 +70,29 @@ def _request_with_token_refresh(
     def do_request() -> requests.Response:
         resolved_headers = dict(headers or {})
         resolved_headers.update(_get_headers(str(token_state["access_token"])))
-        return request_method(
-            url,
-            headers=resolved_headers,
-            timeout=timeout,
-            **request_kwargs,
-        )
+        # Retry transient connection / DNS failures (e.g. getaddrinfo / WinError
+        # 10054 / 11001). Manifest polling runs for minutes on cold translations,
+        # so a single DNS blip must not abort the whole extraction job.
+        last_exc: Exception | None = None
+        for attempt in range(1, APS_ASYNC_MAX_RETRIES + 1):
+            try:
+                return request_method(
+                    url,
+                    headers=resolved_headers,
+                    timeout=timeout,
+                    **request_kwargs,
+                )
+            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+                last_exc = exc
+                if attempt >= APS_ASYNC_MAX_RETRIES:
+                    raise
+                delay = min(20.0, (2 ** (attempt - 1)) + random.random())
+                print(
+                    f"[APS] {method.upper()} network error ({type(exc).__name__}); "
+                    f"retry {attempt}/{APS_ASYNC_MAX_RETRIES} in {delay:.1f}s"
+                )
+                time.sleep(delay)
+        raise last_exc  # pragma: no cover - loop always returns or raises
 
     response = do_request()
     if response.status_code != 401:

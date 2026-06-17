@@ -59,7 +59,15 @@ logger = logging.getLogger("dupla.stage_cache")
 
 T = TypeVar("T")
 
-_DEFAULT_CACHE_DIR = "/app/cache"
+def _default_cache_dir() -> str:
+    """Container path when present (Docker), else a repo-relative folder so bare
+    (non-Docker) checkouts on Windows/macOS still get a writable cache."""
+    if os.path.exists("/app/cache"):
+        return "/app/cache"
+    return str(Path(__file__).resolve().parent.parent / "cache")
+
+
+_DEFAULT_CACHE_DIR = _default_cache_dir()
 _DEFAULT_TTL_DAYS = 7
 _REDIS_KEY_PREFIX = "dupla:stage_cache:"
 

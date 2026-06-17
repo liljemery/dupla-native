@@ -1,9 +1,16 @@
 import os
 import time
+import uuid
 import requests
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from aps_integration.aps_auth import get_aps_token
+from aps_integration.oss_manager import (
+    APS_BUCKET_NAME,
+    create_bucket,
+    generate_signed_url,
+    upload_file_to_bucket,
+)
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -188,6 +195,45 @@ def check_workitem_status(token, workitem_id):
             print(f"   Reporte de Autodesk: {res.json().get('reportUrl')}")
             return status
         time.sleep(3)
+
+
+def ensure_da_setup(token):
+    """Register/refresh the AppBundle + Activity. Run once, or after a plugin rebuild."""
+    setup_appbundle(token)
+    setup_activity(token)
+
+
+def run_da_extraction(dwg_path, *, ensure_setup=False, bucket_name=None):
+    """Full Design Automation round-trip for one DWG.
+
+    Uploads the DWG to OSS, runs the DuplaExtractor WorkItem inside AutoCAD in
+    the cloud, and returns the parsed resultados.json with true geometry
+    (Polyline.Length / Area, Line.Length, vertices). Raises on non-success.
+    """
+    token = get_aps_token()
+    bucket = bucket_name or APS_BUCKET_NAME
+    if ensure_setup:
+        ensure_da_setup(token)
+    create_bucket(token, bucket)
+
+    suffix = uuid.uuid4().hex[:8]
+    object_name = upload_file_to_bucket(token, bucket, dwg_path, unique_suffix=f"da_{suffix}")
+    if not object_name:
+        raise RuntimeError(f"DA: failed to upload {dwg_path}")
+
+    input_url = generate_signed_url(token, bucket, object_name, access="read")
+    output_object = f"da_result_{suffix}.json"
+    output_url = generate_signed_url(token, bucket, output_object, access="readWrite")
+
+    workitem_id = run_workitem(token, input_url, output_url)
+    status = check_workitem_status(token, workitem_id)
+    if status != "success":
+        raise RuntimeError(f"DA workitem {workitem_id} finished with status={status}")
+
+    read_url = generate_signed_url(token, bucket, output_object, access="read")
+    resp = requests.get(read_url)
+    resp.raise_for_status()
+    return resp.json()
 
 
 if __name__ == "__main__":

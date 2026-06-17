@@ -30,4 +30,9 @@ dist/
 # Runtime local (scripts/dev.sh)
 var/
 
+# Local processor artifacts (never commit)
+dump.rdb
+processor/output/
+processor/data/pricing_cache/
+
 .cursor/

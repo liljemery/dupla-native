@@ -20,6 +20,7 @@ from knowledge.training_data import extract_training_pairs
 from processors.bc3_parser import merge_bc3_catalogs, parse_bc3
 from core.pipeline import build_budget_from_sources
 from core.schemas import ProjectContext
+from core import paths
 from disciplines import get_engine
 
 from pricing.excel_price_loader import load_or_cache_constructor_pricing
@@ -125,7 +126,7 @@ def _safe_upload_name(filename: str | None, fallback: str) -> str:
 
 
 def _artifact_root() -> Path:
-    return Path(os.getenv("DUPLA_ARTIFACT_DIR") or _DEFAULT_ARTIFACT_DIR)
+    return paths.artifact_dir()
 
 
 def _artifact_dir(artifact_key: str) -> Path:
@@ -608,6 +609,28 @@ def _build_extraction_artifacts(
             partial_facts = process_autodesk_json(str(temp_raw_json))
             _merge_cad_facts(cad_facts, partial_facts)
 
+        # Optional: replace Model Derivative geometry (properties only — a plain
+        # LINE or a legend segment has no measurable length) with true AutoCAD
+        # geometry from Design Automation (DuplaExtractor). Off unless
+        # DUPLA_USE_DA_GEOMETRY=1. Any failure keeps the Model Derivative facts.
+        if _env_bool("DUPLA_USE_DA_GEOMETRY", False):
+            try:
+                from aps_integration.geometry_source import enrich_cad_facts_with_da
+
+                da_dwg_paths = [
+                    str(uploads_dir / _safe_upload_name(name, f"upload_{idx}.dwg"))
+                    for idx, (name, _content) in enumerate(dwg_files)
+                ]
+                da_dwg_paths = [path for path in da_dwg_paths if os.path.exists(path)]
+                if da_dwg_paths:
+                    logger.info("DA geometry enabled: enriching %d DWG(s)", len(da_dwg_paths))
+                    enrich_cad_facts_with_da(cad_facts, da_dwg_paths)
+            except Exception:
+                logger.warning(
+                    "DA geometry enrichment failed; keeping Model Derivative geometry",
+                    exc_info=True,
+                )
+
         page_manifest, _ = _render_pdf_artifacts(
             pdf_files,
             work_dir=tmp_dir,
@@ -819,11 +842,15 @@ def _load_or_build_vision_results(
             return payload if isinstance(payload, list) else []
 
     logger.info("Vision artifact MISS for %s", discipline_id)
+    # "__shared__" => one discipline-agnostic exhaustive pass reused by every
+    # discipline. upload_discipline_id=None selects the generic prompt that
+    # extracts ALL disciplines (walls, structural, electrical, plumbing,
+    # fixtures) in a single call instead of re-reading the same pages 4x.
     vision_results = run_full_vision_analysis(
         str(artifacts.pages_dir),
         normalized,
         office_methodology=methodology,
-        upload_discipline_id=discipline_id,
+        upload_discipline_id=None if discipline_id == "__shared__" else discipline_id,
     )
     error_count, total, error_ratio = _vision_error_stats(vision_results)
     logger.info(
@@ -1309,7 +1336,32 @@ def run_dupla_pipeline(
         log_stats_summary()
         return result
 
-    data_dir = Path("/app/data")
+    # --- Legend OCR: read floor + view from each sheet's legend/cuadro ---------
+    # APS extracts legend text but never measures it and never says which floor/
+    # view a sheet is. OCR over the rendered page recovers "de qué piso y qué
+    # vista es" (planta, corte, ISOMETRÍA, detalle) — what a senior estimator
+    # reads before quantifying. Floor labels are injected into level markers so
+    # levels get named from the legend instead of the generic "level_01".
+    legend_page_map: dict[str, Any] = {}
+    try:
+        from core.legend_ocr import build_page_map, inject_floor_markers
+
+        legend_page_map = build_page_map(str(artifacts.pages_dir))
+        added_markers = inject_floor_markers(normalized, legend_page_map)
+        views_seen = sorted({v.get("view") for v in legend_page_map.values() if v.get("view")})
+        logger.info(
+            "Legend OCR: %d pages read, +%d floor markers, views=%s",
+            len(legend_page_map), added_markers, views_seen or ["(none)"],
+        )
+        if legend_page_map:
+            (artifacts.artifact_dir / "legend_map.json").write_text(
+                json.dumps(legend_page_map, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+    except Exception:
+        logger.warning("Legend OCR step failed; continuing without it", exc_info=True)
+
+    data_dir = paths.data_dir()
     bc3_files = sorted(data_dir.glob("*.bc3"))
     if bc3_files:
         catalogs = [parse_bc3(str(path)) for path in bc3_files]
@@ -1332,7 +1384,7 @@ def run_dupla_pipeline(
         except Exception:
             logger.warning("Failed to load/build BC3 embeddings; continuing without them", exc_info=True)
 
-    pres_path = Path("/app/data/PRES.xlsx")
+    pres_path = paths.data_dir() / "PRES.xlsx"
     training_pairs: list = []
     if pres_path.exists():
         try:
@@ -1352,22 +1404,27 @@ def run_dupla_pipeline(
     else:
         logger.warning("PRES.xlsx not found at %s; training pairs empty", pres_path)
 
-    pricing_excel_path = Path("/app/data/Lista de precios-analisis-MO.xlsx")
+    pricing_excel = paths.pricing_excel_path()
     pricing_store = None
     apu_matcher = None
-    if pricing_excel_path.exists():
+    if pricing_excel is not None:
         try:
-            pricing_store = load_or_cache_constructor_pricing(pricing_excel_path, project_id="api_job")
+            pricing_store = load_or_cache_constructor_pricing(pricing_excel, project_id="api_job")
             apu_matcher = APUMatcher(pricing_store)
             logger.info(
-                "Constructor PricingStore & APUMatcher loaded (materials=%d, apus=%d).",
+                "Constructor PricingStore & APUMatcher loaded from %s (materials=%d, apus=%d).",
+                pricing_excel,
                 len(pricing_store.materials),
                 len(pricing_store.apus),
             )
         except Exception as exc:
             logger.error("Failed to load Constructor PricingStore: %s", exc)
     else:
-        logger.warning("Constructor PricingStore Excel not found at %s", pricing_excel_path)
+        logger.warning(
+            "Constructor PricingStore Excel not found (looked in %s and processor root). "
+            "Set DUPLA_PRICING_EXCEL to override.",
+            paths.data_dir(),
+        )
 
     methodology_discipline = target_disciplines[0] if len(target_disciplines) == 1 else None
     auto_methodology = generate_methodology_context(
@@ -1376,7 +1433,7 @@ def run_dupla_pipeline(
         discipline=methodology_discipline,
     ) or ""
 
-    office_meth_path = Path("/app/knowledge/office_methodology.md")
+    office_meth_path = paths.knowledge_dir() / "office_methodology.md"
     office_meth = ""
     if office_meth_path.exists():
         office_meth = office_meth_path.read_text(encoding="utf-8").strip()
@@ -1399,7 +1456,7 @@ def run_dupla_pipeline(
     if not building_block and source_dwg_names:
         building_block, level_id = parse_location_from_filename(source_dwg_names[0])
 
-    output_base = os.getenv("DUPLA_OUTPUT_DIR", "/app/output")
+    output_base = str(paths.output_dir())
     run_dir = RunOutputDir(output_base, resolved_project_name)
     master_rows: list[dict[str, Any]] = []
     master_artifacts: dict[str, str] = {
@@ -1412,15 +1469,33 @@ def run_dupla_pipeline(
 
     import asyncio
 
+    # --- Vision runs ONCE, discipline-agnostic, shared across all disciplines ---
+    # The base vision prompt already extracts every discipline's elements; the
+    # per-discipline narrowing happens downstream (validate_vision_output +
+    # allowed_item_types in compose_budget). Running it once instead of once per
+    # discipline removes the 4x vision cost AND the cross-discipline concurrency
+    # blow-up (4 disciplines x Semaphore(30) = 120 simultaneous calls -> 429s).
+    # Single-discipline runs keep the discipline-specific prompt (no redundancy to
+    # remove); multi-discipline runs use one generic exhaustive pass.
+    shared_discipline_id = (
+        target_disciplines[0] if len(target_disciplines) == 1 else "__shared__"
+    )
+    shared_vision_results = _load_or_build_vision_results(
+        artifacts=artifacts,
+        normalized=normalized,
+        discipline_id=shared_discipline_id,
+        methodology=methodology,
+    )
+    logger.info(
+        "Vision pass ready (%s): %d page payloads reused across %d disciplines",
+        shared_discipline_id,
+        len(shared_vision_results),
+        len(target_disciplines),
+    )
+
     async def _process_discipline(disc_id: str) -> dict[str, Any]:
         logger.info("--- Processing Discipline: %s ---", disc_id)
-        vision_results = await asyncio.to_thread(
-            _load_or_build_vision_results,
-            artifacts=artifacts,
-            normalized=normalized,
-            discipline_id=disc_id,
-            methodology=methodology,
-        )
+        vision_results = shared_vision_results
 
         domain_rules = load_domain_rules_for_discipline(disc_id)
         domain_validation_summary: dict[str, Any] | None = None
@@ -1463,6 +1538,7 @@ def run_dupla_pipeline(
                 "pres_template_takeoffs": False,
                 "enable_semantic_layer": True,
                 "extraction_artifact_key": artifacts.artifact_key,
+                "legend_page_map": legend_page_map,
             },
         )
 
