@@ -332,7 +332,7 @@ export function ProjectWorkspaceDashboard({
       {viewBudget ? (
         <button
           type="button"
-          className="rounded-full border border-primary/25 bg-primary/[0.06] px-3 py-1.5 text-xs font-semibold text-primary shadow-sm hover:border-primary/40"
+          className="rounded-full border border-primary/25 bg-primary/6 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm hover:border-primary/40"
           onClick={() => onOpenTab('presupuestoMaestro')}
         >
           Presupuesto maestro
@@ -362,14 +362,14 @@ export function ProjectWorkspaceDashboard({
   )
 
   const kpiClass =
-    'rounded-xl border border-black/10 bg-white px-3 py-3 shadow-[var(--shadow-card)] sm:px-4'
+    'rounded-xl border border-black/10 bg-white px-3 py-3 shadow-(--shadow-card) sm:px-4'
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="flex flex-col gap-5 pb-4">
       {showBootstrapBanner ? (
-        <Card className="border-primary/30 bg-primary/[0.06] p-4 shadow-[var(--shadow-card)] ring-1 ring-primary/15 sm:p-5">
+        <Card className="border-primary/30 bg-primary/6 p-4 shadow-(--shadow-card) ring-1 ring-primary/15 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-white">
@@ -445,7 +445,7 @@ export function ProjectWorkspaceDashboard({
       </div>
 
       <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-5">
-        <Card className="border-black/10 p-5 shadow-[var(--shadow-card)] lg:col-span-3">
+        <Card className="border-black/10 p-5 shadow-(--shadow-card) lg:col-span-3">
           <h3 data-tour="workspace-tab-nav" className="text-sm font-semibold uppercase tracking-wide text-muted">
             Fases del proyecto
           </h3>
@@ -474,7 +474,7 @@ export function ProjectWorkspaceDashboard({
                       )}
                     </span>
                     {i < phaseSteps.length - 1 ? (
-                      <span className="my-1 w-px flex-1 min-h-[1.25rem] bg-black/10" aria-hidden />
+                      <span className="my-1 w-px flex-1 min-h-5 bg-black/10" aria-hidden />
                     ) : null}
                   </div>
                   <div className={`min-w-0 flex-1 pb-6 ${active ? '-mt-0.5' : ''}`}>
@@ -482,7 +482,7 @@ export function ProjectWorkspaceDashboard({
                       {s.label}
                     </p>
                     {active ? (
-                      <div className="mt-2 rounded-lg border border-primary/20 bg-primary/[0.06] p-3">
+                      <div className="mt-2 rounded-lg border border-primary/20 bg-primary/6 p-3">
                         <p className="text-xs font-medium text-ink">
                           Fase actual · {currentStepPct}% completado
                         </p>
@@ -551,7 +551,7 @@ export function ProjectWorkspaceDashboard({
         </Card>
 
         <div className="flex flex-col gap-4 lg:col-span-2">
-          <Card className="border-black/10 p-5 shadow-[var(--shadow-card)]">
+          <Card className="border-black/10 p-5 shadow-(--shadow-card)">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Alertas</h3>
               {unreadProjectNotifs > 0 ? (
@@ -562,7 +562,7 @@ export function ProjectWorkspaceDashboard({
             </div>
             <ul className="mt-3 space-y-2">
               {alertItems.length === 0 ? (
-                <li className="rounded-lg border border-black/8 bg-black/[0.02] px-3 py-6 text-center text-sm text-muted">
+                <li className="rounded-lg border border-black/8 bg-black/2 px-3 py-6 text-center text-sm text-muted">
                   Sin alertas recientes.
                 </li>
               ) : (
@@ -571,7 +571,7 @@ export function ProjectWorkspaceDashboard({
                     key={a.key}
                     className={`rounded-lg border px-3 py-2.5 text-sm ${
                       a.tone === 'critical'
-                        ? 'border-primary/25 bg-primary/[0.06] text-ink'
+                        ? 'border-primary/25 bg-primary/6 text-ink'
                         : a.tone === 'warn'
                           ? 'border-amber-200 bg-amber-50 text-ink'
                           : 'border-black/10 bg-white'
@@ -593,7 +593,7 @@ export function ProjectWorkspaceDashboard({
             </ul>
           </Card>
 
-          <Card className="border-black/10 p-5 shadow-[var(--shadow-card)]">
+          <Card className="border-black/10 p-5 shadow-(--shadow-card)">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Equipo del proyecto</h3>
             <ul className="mt-3 divide-y divide-black/8">
               {memberRows.length === 0 ? (
@@ -629,7 +629,7 @@ export function ProjectWorkspaceDashboard({
                           <div className="absolute right-0 top-full z-10 mt-1 w-36 rounded-lg border border-black/10 bg-white py-1 shadow-lg">
                             <button
                               type="button"
-                              className="block w-full px-3 py-2 text-left text-xs text-ink hover:bg-black/[0.04]"
+                              className="block w-full px-3 py-2 text-left text-xs text-ink hover:bg-black/4"
                               onClick={() => {
                                 setTeamMenu(null)
                                 onOpenTab('detalles')
@@ -672,13 +672,13 @@ export function ProjectWorkspaceDashboard({
           </div>
         ) : null}
         {showPliegoApproveCta ? (
-          <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/[0.06] px-3 py-2.5">
+          <div className="flex w-full flex-wrap items-center gap-2 rounded-lg border border-primary/25 bg-primary/6 px-3 py-2.5">
             <p className="min-w-0 flex-1 text-xs text-ink">
               El pliego está pendiente de aprobación de Arquitectura antes de avanzar al presupuesto.
             </p>
             <button
               type="button"
-              className="rounded-lg border border-black/15 bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm hover:bg-black/[0.03]"
+              className="rounded-lg border border-black/15 bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm hover:bg-black/3"
               onClick={() => onOpenTab('pliego')}
             >
               Ir al pliego
@@ -697,7 +697,7 @@ export function ProjectWorkspaceDashboard({
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="rounded-lg border border-black/15 bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm hover:bg-black/[0.03]"
+            className="rounded-lg border border-black/15 bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm hover:bg-black/3"
             onClick={() => onOpenTab('detalles')}
           >
             Ver detalles

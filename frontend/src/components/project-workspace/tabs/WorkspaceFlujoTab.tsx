@@ -183,10 +183,10 @@ export function WorkspaceFlujoTab({
             role={roleTyped}
           />
           {docHint ? (
-            <p className="rounded-md border border-black/10 bg-black/[0.02] px-3 py-2 text-xs text-muted">{docHint}</p>
+            <p className="rounded-md border border-black/10 bg-black/2 px-3 py-2 text-xs text-muted">{docHint}</p>
           ) : null}
 
-          <div className="rounded-md border border-black/10 bg-black/[0.02] p-4">
+          <div className="rounded-md border border-black/10 bg-black/2 p-4">
             <p className="text-sm font-medium text-ink">Documentación y archivos</p>
             <p className="mt-1 text-sm text-muted">
               Archivos en el proyecto:{' '}
@@ -195,7 +195,7 @@ export function WorkspaceFlujoTab({
             <WorkspacePillActionButton
               type="button"
               disabled={docBusy || !token}
-              className="mt-3 border-primary/30 bg-primary/[0.06] text-sm font-semibold text-primary"
+              className="mt-3 border-primary/30 bg-primary/6 text-sm font-semibold text-primary"
               successLabel="PDF generado"
               runningLabel="Generando…"
               onAction={async () => {
@@ -221,7 +221,7 @@ export function WorkspaceFlujoTab({
             </WorkspacePillActionButton>
           </div>
 
-          <p className="rounded-md border border-black/10 bg-black/[0.02] px-3 py-2 text-sm text-muted">
+          <p className="rounded-md border border-black/10 bg-black/2 px-3 py-2 text-sm text-muted">
             Fase actual: <span className="font-semibold text-ink">{phaseLabel}</span>. Avanza solo cuando el trabajo de
             esta etapa esté hecho; si el botón falla, el mensaje de arriba indica el motivo.
           </p>
@@ -241,13 +241,13 @@ export function WorkspaceFlujoTab({
             </div>
           ) : null}
           {showPliegoApproveCta ? (
-            <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/25 bg-primary/[0.06] px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-primary/25 bg-primary/6 px-3 py-2.5">
               <p className="min-w-0 flex-1 text-sm text-ink">
                 Aprueba el pliego de condiciones (GA-FO-01) para poder avanzar al presupuesto.
               </p>
               <button
                 type="button"
-                className="rounded-lg border border-black/15 bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm hover:bg-black/[0.03]"
+                className="rounded-lg border border-black/15 bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm hover:bg-black/3"
                 onClick={onOpenPliego}
               >
                 Ir al pliego
@@ -289,7 +289,7 @@ export function WorkspaceFlujoTab({
                   Hitos y revisión de Control se registran aquí antes de avanzar a «Presupuesto aprobado por cliente».
                 </p>
                 {awaitingBudgetApproval && (missingControlGate || missingClientVersion) ? (
-                  <div className="rounded-md border border-primary/25 bg-primary/[0.06] px-3 py-2 text-sm text-ink">
+                  <div className="rounded-md border border-primary/25 bg-primary/6 px-3 py-2 text-sm text-ink">
                     Para avanzar: marca la revisión de Control y la etiqueta de versión aprobada por el cliente (guarda
                     abajo).{' '}
                     {missingControlGate ? <span className="font-medium text-primary">Falta revisión de Control.</span> : null}{' '}

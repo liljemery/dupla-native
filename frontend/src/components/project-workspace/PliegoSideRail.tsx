@@ -67,7 +67,7 @@ export function PliegoSideRail({
 
   return (
     <aside className="flex w-full shrink-0 flex-col gap-4 lg:w-[min(100%,22rem)] xl:w-96 print:hidden">
-      <div className="rounded-xl border border-black/10 bg-white p-4 shadow-[var(--shadow-card)]">
+      <div className="rounded-xl border border-black/10 bg-white p-4 shadow-(--shadow-card)">
         <div className="flex items-center gap-2 text-primary">
           <CheckSquare className="size-5 shrink-0" strokeWidth={2} aria-hidden />
           <h3 className="text-sm font-semibold uppercase tracking-wide text-ink">Lista de revisión</h3>
@@ -82,7 +82,7 @@ export function PliegoSideRail({
             return (
               <li
                 key={row.id}
-                className="flex items-start gap-3 rounded-lg border border-black/8 bg-black/[0.02] px-3 py-2.5 text-xs"
+                className="flex items-start gap-3 rounded-lg border border-black/8 bg-black/2 px-3 py-2.5 text-xs"
               >
                 <span
                   className={`mt-0.5 flex size-[18px] shrink-0 items-center justify-center rounded border ${
@@ -90,7 +90,7 @@ export function PliegoSideRail({
                   }`}
                   aria-hidden
                 >
-                  {ok || sectionApproved ? <Check className="size-3 stroke-[3]" aria-hidden /> : null}
+                  {ok || sectionApproved ? <Check className="size-3 stroke-3" aria-hidden /> : null}
                 </span>
                 <div className="min-w-0 flex-1">
                   <span className={`block font-semibold leading-snug ${ok || sectionApproved ? 'text-muted line-through' : 'text-ink'}`}>
@@ -129,7 +129,7 @@ export function PliegoSideRail({
 
       <PliegoProjectChatSnippet projectUuid={projectUuid} token={token} userUuid={userUuid} />
 
-      <div className="rounded-xl border border-black/10 bg-white p-4 shadow-[var(--shadow-card)]">
+      <div className="rounded-xl border border-black/10 bg-white p-4 shadow-(--shadow-card)">
         <p className="text-xs text-muted">
           Estado:{' '}
           <span className="font-semibold text-ink">{approved ? 'Aprobado' : 'Borrador / revisión'}</span>
@@ -158,7 +158,7 @@ export function PliegoSideRail({
         ) : null}
         <button
           type="button"
-          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-black/15 bg-white py-3 text-sm font-semibold text-ink shadow-sm transition hover:bg-black/[0.03]"
+          className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-black/15 bg-white py-3 text-sm font-semibold text-ink shadow-sm transition hover:bg-black/3"
           onClick={() => void openProjectChatNavigate()}
         >
           <Share2 className="size-4 text-primary" strokeWidth={2} aria-hidden />

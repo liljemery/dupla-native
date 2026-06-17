@@ -41,7 +41,7 @@ function estadoTone(st: PliegoItemEstado): string {
     case 'EN_REVISION':
       return 'border-sky-600/25 bg-sky-50 text-sky-950'
     case 'NO_APLICA':
-      return 'border-black/10 bg-black/[0.04] text-muted'
+      return 'border-black/10 bg-black/4 text-muted'
     default:
       return 'border-black/10 bg-white text-muted'
   }
@@ -175,7 +175,7 @@ export function PliegoCondicionesForm({
         onChange={(e) => void onFileSelected(e.target.files)}
       />
 
-      <div className="overflow-hidden rounded-xl border border-black/10 bg-white shadow-[var(--shadow-card)]">
+      <div className="overflow-hidden rounded-xl border border-black/10 bg-white shadow-(--shadow-card)">
         <header className="border-b border-black/8 bg-white px-5 py-5 sm:px-6 sm:py-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
@@ -191,7 +191,7 @@ export function PliegoCondicionesForm({
                 {onExportPdf ? (
                   <button
                     type="button"
-                    className="inline-flex size-10 items-center justify-center rounded-lg border border-black/12 bg-white text-ink shadow-sm transition hover:border-black/20 hover:bg-black/[0.02]"
+                    className="inline-flex size-10 items-center justify-center rounded-lg border border-black/12 bg-white text-ink shadow-sm transition hover:border-black/20 hover:bg-black/2"
                     onClick={onExportPdf}
                     aria-label="Exportar pliego en PDF"
                   >
@@ -201,7 +201,7 @@ export function PliegoCondicionesForm({
                 {onExportXlsx ? (
                   <button
                     type="button"
-                    className="inline-flex size-10 items-center justify-center rounded-lg border border-black/12 bg-white text-ink shadow-sm transition hover:border-black/20 hover:bg-black/[0.02]"
+                    className="inline-flex size-10 items-center justify-center rounded-lg border border-black/12 bg-white text-ink shadow-sm transition hover:border-black/20 hover:bg-black/2"
                     onClick={onExportXlsx}
                     aria-label="Exportar pliego en Excel"
                   >
@@ -219,7 +219,7 @@ export function PliegoCondicionesForm({
             </div>
             <span className="text-2xl font-semibold tabular-nums text-ink">{progress}%</span>
           </div>
-          <div className="mt-2.5 h-1.5 rounded-full bg-black/[0.07]">
+          <div className="mt-2.5 h-1.5 rounded-full bg-black/7">
             <div
               className="h-1.5 rounded-full bg-primary transition-[width] duration-300"
               style={{ width: `${progress}%` }}
@@ -234,13 +234,13 @@ export function PliegoCondicionesForm({
             const sectionApprovedAt = approvedSections[sec.id]
             return (
               <section key={sec.id} className="bg-white">
-                <div className="flex items-stretch gap-0 bg-black/[0.025]">
+                <div className="flex items-stretch gap-0 bg-black/2.5">
                   <h3 className="m-0 min-w-0 flex-1">
                     <button
                       type="button"
                       onClick={() => toggleSection(sec.id)}
                       aria-expanded={isOpen}
-                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-black/[0.04] sm:px-5"
+                      className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-black/4 sm:px-5"
                     >
                       <span
                         className="flex size-8 shrink-0 items-center justify-center rounded bg-primary text-[11px] font-bold text-white"
@@ -269,7 +269,7 @@ export function PliegoCondicionesForm({
                   {canApproveSection && !sectionApprovedAt ? (
                     <button
                       type="button"
-                      className="shrink-0 border-l border-black/8 px-3 text-[11px] font-semibold uppercase tracking-wide text-primary transition hover:bg-primary/[0.06] sm:px-4"
+                      className="shrink-0 border-l border-black/8 px-3 text-[11px] font-semibold uppercase tracking-wide text-primary transition hover:bg-primary/6 sm:px-4"
                       onClick={() => {
                         void approveSection(sec.id, sec.titulo)
                       }}
@@ -320,7 +320,7 @@ export function PliegoCondicionesForm({
                             <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
-                                className="inline-flex items-center gap-2 rounded-lg border border-black/12 bg-black/[0.03] px-3 py-2 text-sm font-medium text-ink transition hover:bg-black/[0.06] disabled:opacity-50"
+                                className="inline-flex items-center gap-2 rounded-lg border border-black/12 bg-black/3 px-3 py-2 text-sm font-medium text-ink transition hover:bg-black/6 disabled:opacity-50"
                                 disabled={busy || !token}
                                 onClick={() => openFilePicker(it.id)}
                                 aria-label={`Adjuntar archivo para ${it.id}`}
@@ -330,7 +330,7 @@ export function PliegoCondicionesForm({
                               </button>
                               {st.file_uuid && st.file_name ? (
                                 <a
-                                  className="max-w-[10rem] truncate text-xs font-medium text-primary underline-offset-2 hover:underline sm:max-w-[12rem]"
+                                  className="max-w-40 truncate text-xs font-medium text-primary underline-offset-2 hover:underline sm:max-w-48"
                                   href={`/api/projects/${projectUuid}/files/${st.file_uuid}/download`}
                                   title={st.file_name}
                                   onClick={async (e) => {
@@ -367,7 +367,7 @@ export function PliegoCondicionesForm({
           })}
         </div>
 
-        <footer className="flex flex-wrap items-center gap-3 border-t border-black/8 bg-black/[0.02] px-5 py-4 sm:px-6">
+        <footer className="flex flex-wrap items-center gap-3 border-t border-black/8 bg-black/2 px-5 py-4 sm:px-6">
           <WorkspaceActionButton
             type="button"
             disabled={persistBusy}

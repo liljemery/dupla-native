@@ -30,6 +30,8 @@ Los usuarios se autentican con **JWT**; las capacidades dependen del **rol** (Ge
 | Documento | Contenido |
 |-----------|-----------|
 | [README del repositorio](../README.md) | Cómo levantar el entorno, seed, pruebas, estructura de carpetas de código |
+| [Informe funcional completo](./INFORME_ESTRUCTURA_FUNCIONAL_COMPLETO.md) | Estado actual del producto (~74%), clashes, presupuesto, integraciones |
+| [Roadmap hacia 100%](./ROADMAP_COMPLETITUD_100.md) | Problemas pendientes, Grupo A (prioridades) y Grupo B (resto), hitos M1–M4 |
 | [Documentación técnica](./TECHNICAL.md) | Arquitectura, convenciones, integraciones (OpenAI), variables de entorno, testing |
 | [Módulos del sistema](./modules/README.md) | Índice y enlaces a cada área funcional |
 | [Playbook de ejecución](./playbook.md) | Lineamientos históricos de producto (grillas tipo Excel, JSONB); complementar con `TECHNICAL.md` para el esquema actual |

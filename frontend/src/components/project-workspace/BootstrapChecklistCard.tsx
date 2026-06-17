@@ -27,7 +27,7 @@ export function BootstrapChecklistCard({
   return (
     <Card
       id={id}
-      className={`space-y-4 p-6 ${prominent ? 'border-primary/35 bg-primary/[0.04] ring-1 ring-primary/15' : ''}`}
+      className={`space-y-4 p-6 ${prominent ? 'border-primary/35 bg-primary/4 ring-1 ring-primary/15' : ''}`}
     >
       <div className="flex items-start gap-3">
         <span
