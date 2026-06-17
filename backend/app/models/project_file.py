@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -40,6 +40,14 @@ class ProjectFile(Base):
     discipline: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
     ingest_status: Mapped[str] = mapped_column(String(20), nullable=False, default="PUBLISHED")
     counts_for_budget: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    aps_bucket_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    aps_object_key: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    aps_object_id: Mapped[Optional[str]] = mapped_column(String(1200), nullable=True)
+    aps_urn: Mapped[Optional[str]] = mapped_column(Text(), nullable=True)
+    aps_derivative_status: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    aps_viewable_guid: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    aps_last_translated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    aps_manifest_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
