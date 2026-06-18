@@ -147,6 +147,26 @@ def _ai_insight_from_context(context: dict[str, Any] | None, incident_count: int
     return f"Análisis completado con {incident_count} incidencias primarias."
 
 
+def _geometry_audit_from_context(context: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(context, dict):
+        return None
+    hybrid = context.get("hybrid_geometry")
+    if not isinstance(hybrid, dict):
+        return None
+    audit = hybrid.get("audit")
+    if not isinstance(audit, dict):
+        return None
+    status = str(audit.get("status") or "").strip().lower()
+    if not status:
+        return None
+    gate = context.get("hybrid_geometry_audit_gate")
+    return {
+        "status": status,
+        "summary": audit.get("summary") if isinstance(audit.get("summary"), dict) else {},
+        "gate": gate if isinstance(gate, dict) else {},
+    }
+
+
 def map_to_structural_analysis_report(
     *,
     run_status: str,
@@ -191,6 +211,7 @@ def map_to_structural_analysis_report(
         "clashes": clashes,
         "clash_relationships": [],
         "analyzed_documents": analyzed_documents,
+        "geometry_audit": _geometry_audit_from_context(coordination_context),
         "ai_insight": _ai_insight_from_context(coordination_context, incident_count),
         "zoning_rows": [],
         "footer_status_message": (
