@@ -49,6 +49,10 @@ _QUANTITY_SOURCE_LABELS: dict[str, str] = {
     "default_estimate": "Estimado (default)",
     "mixed_measurement": "Mezclado (plano + default)",
     "ratio_estimate": "Estimado (ratio)",
+    "cuadro": "Cuadro (autoridad)",
+    "derivado": "Derivado (regla)",
+    "escalado": "Escalado/cota",
+    "cota": "Cota OCR",
 }
 
 
@@ -644,6 +648,7 @@ def compose_budget_rows(
     bc3_catalog: dict[str, Any] | None = None,
     construcosto_snapshot: Any | None = None,
     apu_matcher: Any | None = None,
+    price_resolver: Any | None = None,
 ) -> tuple[list[BudgetChapter], list[BudgetLine], list[BudgetRow]]:
     takeoff_list = list(takeoffs)
     derived_from_keys, concrete_volume_prefixes = budget_filter_sets(takeoff_list)
@@ -769,84 +774,120 @@ def compose_budget_rows(
         if prepared.bc3_guard_drop_reason:
             line_metadata["bc3_guard_drop_reason"] = prepared.bc3_guard_drop_reason
 
-        # --- Constructor APU layer ----------------------------------------
-        # When a constructor APUMatcher is available, price the line against a
-        # matched APU (its code + component decomposition); fall back to
-        # _extract_unit_price (BC3 / ConstruCosto) when there is no hit.
-        apu_match: Any | None = None
-        if apu_matcher is not None:
-            try:
-                apu_match = apu_matcher.match(prepared.takeoff)
-            except Exception:
-                logger.warning(
-                    "APUMatcher.match failed for %s", prepared.takeoff.item_key, exc_info=True
-                )
-                apu_match = None
-
+        # --- Pricing -------------------------------------------------------
+        # PriceResolver (when wired) is authoritative: deterministic crosswalk ->
+        # relational APU, ConstruCosto only as fallback, EXCLUDE for costs already
+        # bundled in another APU (no double counting). The legacy APUMatcher /
+        # BC3 path runs only when no resolver is provided.
         resolved_price: float | None
         price_source: str
         source_type: str
+        apu_match: Any | None = None   # stays None on the resolver path; used later in candidate_code
 
-        if apu_match is not None and not _unit_family_compatible(
-            prepared.takeoff.unit, getattr(apu_match, "unit", "") or ""
-        ):
-            logger.info(
-                "APU match rejected for %s — unit family mismatch (takeoff=%r apu=%r)",
-                prepared.takeoff.item_key,
-                prepared.takeoff.unit,
-                getattr(apu_match, "unit", ""),
-            )
-            apu_match = None
-
-        if apu_match is not None:
-            line_code = str(apu_match.code).strip() or line_code
-            deterministic_bc3_code = line_code
-            resolved_price = float(apu_match.unit_price_total)
-            if apu_match.source and "ConstruCosto" in apu_match.source:
-                price_source = apu_match.source
-                source_type = "construcosto"
-            else:
-                price_source = f"Constructor APU ({apu_match.code})"
-                source_type = "constructor_apu"
-            line_metadata["apu_code"] = apu_match.code
-            line_metadata["apu_description"] = apu_match.description
-            line_metadata["apu_unit"] = apu_match.unit
-            line_metadata["apu_components"] = [
-                {
-                    "description": c.description,
-                    "quantity": c.quantity,
-                    "unit": c.unit,
-                    "unit_price": c.unit_price,
-                    "subtotal": c.subtotal,
-                    "component_type": c.component_type,
-                }
-                for c in apu_match.components
-            ]
-        else:
-            resolved_price, price_source = _extract_unit_price(
-                prepared.candidate,
-                bc3_catalog,
-                fallback_bc3_code=deterministic_bc3_code,
-                construcosto_snapshot=construcosto_snapshot,
-                summary=prepared.summary,
+        if price_resolver is not None:
+            res = price_resolver.resolve(
+                prepared.takeoff.item_type,
+                prepared.takeoff.inputs,
                 unit=prepared.takeoff.unit,
+                description=prepared.summary,
             )
-            source_type = "bc3_catalog"
+            resolved_price = res.unit_price
+            price_source = res.source
+            source_type = res.source   # relational_apu | construcosto | excluded | pending
+            line_metadata["price_resolution"] = res.to_dict()
+            line_metadata["price_currency"] = res.currency
+            if res.apu_code:
+                line_code = res.apu_code
+                deterministic_bc3_code = res.apu_code
+                line_metadata["apu_code"] = res.apu_code
+            if res.matched_description:
+                line_metadata["apu_description"] = res.matched_description
+            if res.source == "excluded":
+                line_metadata["excluded_bundled"] = True
+            try:
+                if res.source == "relational_apu" and res.apu_code:
+                    line_metadata["apu_components"] = [
+                        {
+                            "tipo": c.tipo,
+                            "descripcion": c.descripcion,
+                            "unidad": c.unidad,
+                            "cantidad": c.cantidad,
+                            "precio_unitario": c.precio_unitario,
+                            "subtotal": c.subtotal,
+                            "codigo_recurso": c.codigo_recurso,
+                        }
+                        for c in price_resolver.relational.components_for(res.apu_code)
+                    ]
+            except Exception:
+                logger.debug("Could not attach APU components for %s", res.apu_code, exc_info=True)
+        else:
+            # --- Legacy constructor APUMatcher -> BC3 / ConstruCosto ---
+            if apu_matcher is not None:
+                try:
+                    apu_match = apu_matcher.match(prepared.takeoff)
+                except Exception:
+                    logger.warning(
+                        "APUMatcher.match failed for %s", prepared.takeoff.item_key, exc_info=True
+                    )
+                    apu_match = None
+
+            if apu_match is not None and not _unit_family_compatible(
+                prepared.takeoff.unit, getattr(apu_match, "unit", "") or ""
+            ):
+                logger.info(
+                    "APU match rejected for %s — unit family mismatch (takeoff=%r apu=%r)",
+                    prepared.takeoff.item_key,
+                    prepared.takeoff.unit,
+                    getattr(apu_match, "unit", ""),
+                )
+                apu_match = None
+
+            if apu_match is not None:
+                line_code = str(apu_match.code).strip() or line_code
+                deterministic_bc3_code = line_code
+                resolved_price = float(apu_match.unit_price_total)
+                if apu_match.source and "ConstruCosto" in apu_match.source:
+                    price_source = apu_match.source
+                    source_type = "construcosto"
+                else:
+                    price_source = f"Constructor APU ({apu_match.code})"
+                    source_type = "constructor_apu"
+                line_metadata["apu_code"] = apu_match.code
+                line_metadata["apu_description"] = apu_match.description
+                line_metadata["apu_unit"] = apu_match.unit
+                line_metadata["apu_components"] = [
+                    {
+                        "description": c.description,
+                        "quantity": c.quantity,
+                        "unit": c.unit,
+                        "unit_price": c.unit_price,
+                        "subtotal": c.subtotal,
+                        "component_type": c.component_type,
+                    }
+                    for c in apu_match.components
+                ]
+            else:
+                resolved_price, price_source = _extract_unit_price(
+                    prepared.candidate,
+                    bc3_catalog,
+                    fallback_bc3_code=deterministic_bc3_code,
+                    construcosto_snapshot=construcosto_snapshot,
+                    summary=prepared.summary,
+                    unit=prepared.takeoff.unit,
+                )
+                source_type = "bc3_catalog"
+
+            primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "USD").strip() or "USD"
+            if source_type == "constructor_apu":
+                line_metadata["price_currency"] = primary_currency
+            elif resolved_price is not None:
+                line_metadata["price_currency"] = "?"
+                line_metadata["price_currency_uncertain"] = True
+            else:
+                line_metadata["price_currency"] = None
 
         line_metadata["price_source"] = price_source
         line_metadata["source_type"] = source_type
-        # Currency provenance. The constructor xlsx (constructor_apu) is USD per
-        # the office; BC3 / ConstruCosto fallbacks may be a different currency
-        # (e.g. RD$). Flag those so a mixed-currency budget is visible instead of
-        # silently summed. No automatic conversion is applied here.
-        primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "USD").strip() or "USD"
-        if source_type == "constructor_apu":
-            line_metadata["price_currency"] = primary_currency
-        elif resolved_price is not None:
-            line_metadata["price_currency"] = "?"
-            line_metadata["price_currency_uncertain"] = True
-        else:
-            line_metadata["price_currency"] = None
         prepared.takeoff.trace.metadata["source_type"] = source_type
         line_metadata["quantity_source_display"] = _quantity_source_display(prepared.takeoff)
         line_metadata["bc3_origin"] = _line_bc3_origin(
@@ -914,6 +955,7 @@ def compose_budget(
     bc3_catalog: dict[str, Any] | None = None,
     construcosto_snapshot: Any | None = None,
     apu_matcher: Any | None = None,
+    price_resolver: Any | None = None,
 ) -> dict[str, Any]:
     takeoff_list = list(takeoffs)
     derived_from_keys, concrete_volume_prefixes = budget_filter_sets(takeoff_list)
@@ -937,6 +979,7 @@ def compose_budget(
         bc3_catalog=bc3_catalog,
         construcosto_snapshot=construcosto_snapshot,
         apu_matcher=apu_matcher,
+        price_resolver=price_resolver,
     )
     apu_lines = sum(1 for line in lines if line.metadata.get("source_type") == "constructor_apu")
     logger.info(

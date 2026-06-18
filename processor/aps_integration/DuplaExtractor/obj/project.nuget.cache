@@ -1,46 +1,23 @@
 {
   "version": 2,
-  "dgSpecHash": "knHTeBf5Neo=",
+  "dgSpecHash": "pb153tBXN0Q=",
   "success": true,
-  "projectFilePath": "C:\\Users\\jimif\\Documents\\Code\\Dupla\\aps_integration\\DuplaExtractor\\DuplaExtractor.csproj",
+  "projectFilePath": "C:\\Users\\chris\\Documents\\Dupla-Native\\dupla-native\\processor\\aps_integration\\DuplaExtractor\\DuplaExtractor.csproj",
   "expectedPackageFiles": [
-    "C:\\Users\\jimif\\.nuget\\packages\\autocad.net\\24.3.0\\autocad.net.24.3.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\autocad.net.core\\24.3.0\\autocad.net.core.24.3.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\autocad.net.model\\24.3.0\\autocad.net.model.24.3.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\8.0.0\\microsoft.bcl.asyncinterfaces.8.0.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.buffers\\4.5.1\\system.buffers.4.5.1.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.memory\\4.5.5\\system.memory.4.5.5.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.numerics.vectors\\4.5.0\\system.numerics.vectors.4.5.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.text.encodings.web\\8.0.0\\system.text.encodings.web.8.0.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.text.json\\8.0.0\\system.text.json.8.0.0.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.threading.tasks.extensions\\4.5.4\\system.threading.tasks.extensions.4.5.4.nupkg.sha512",
-    "C:\\Users\\jimif\\.nuget\\packages\\system.valuetuple\\4.5.0\\system.valuetuple.4.5.0.nupkg.sha512"
+    "C:\\Users\\chris\\.nuget\\packages\\autocad.net\\24.3.0\\autocad.net.24.3.0.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\autocad.net.core\\24.3.0\\autocad.net.core.24.3.0.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\autocad.net.model\\24.3.0\\autocad.net.model.24.3.0.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\8.0.0\\microsoft.bcl.asyncinterfaces.8.0.0.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\microsoft.netframework.referenceassemblies\\1.0.3\\microsoft.netframework.referenceassemblies.1.0.3.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\microsoft.netframework.referenceassemblies.net48\\1.0.3\\microsoft.netframework.referenceassemblies.net48.1.0.3.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.buffers\\4.5.1\\system.buffers.4.5.1.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.memory\\4.5.5\\system.memory.4.5.5.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.numerics.vectors\\4.5.0\\system.numerics.vectors.4.5.0.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.runtime.compilerservices.unsafe\\6.0.0\\system.runtime.compilerservices.unsafe.6.0.0.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.text.encodings.web\\8.0.0\\system.text.encodings.web.8.0.0.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.text.json\\8.0.5\\system.text.json.8.0.5.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.threading.tasks.extensions\\4.5.4\\system.threading.tasks.extensions.4.5.4.nupkg.sha512",
+    "C:\\Users\\chris\\.nuget\\packages\\system.valuetuple\\4.5.0\\system.valuetuple.4.5.0.nupkg.sha512"
   ],
-  "logs": [
-    {
-      "code": "NU1903",
-      "level": "Warning",
-      "message": "Package 'System.Text.Json' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-8g4q-xg66-9fp4",
-      "projectPath": "C:\\Users\\jimif\\Documents\\Code\\Dupla\\aps_integration\\DuplaExtractor\\DuplaExtractor.csproj",
-      "warningLevel": 1,
-      "filePath": "C:\\Users\\jimif\\Documents\\Code\\Dupla\\aps_integration\\DuplaExtractor\\DuplaExtractor.csproj",
-      "libraryId": "System.Text.Json",
-      "targetGraphs": [
-        ".NETFramework,Version=v4.8"
-      ]
-    },
-    {
-      "code": "NU1903",
-      "level": "Warning",
-      "message": "Package 'System.Text.Json' 8.0.0 has a known high severity vulnerability, https://github.com/advisories/GHSA-hh2w-p6rv-4g7w",
-      "projectPath": "C:\\Users\\jimif\\Documents\\Code\\Dupla\\aps_integration\\DuplaExtractor\\DuplaExtractor.csproj",
-      "warningLevel": 1,
-      "filePath": "C:\\Users\\jimif\\Documents\\Code\\Dupla\\aps_integration\\DuplaExtractor\\DuplaExtractor.csproj",
-      "libraryId": "System.Text.Json",
-      "targetGraphs": [
-        ".NETFramework,Version=v4.8"
-      ]
-    }
-  ]
+  "logs": []
 }

@@ -27,6 +27,10 @@ HEADERS = (
     "Método de Precio",
     "Revisión",
     "Confianza",
+    "Referencias",
+    "Supuestos",
+    "Código APU",
+    "Desglose APU",
 )
 REVIEW_FILL = PatternFill("solid", fgColor="FCE4D6")
 PENDING_FILL = PatternFill("solid", fgColor="FFFF00")
@@ -35,6 +39,20 @@ ALL_BORDER = Border(left=THIN_SIDE, right=THIN_SIDE, top=THIN_SIDE, bottom=THIN_
 HEADER_FILL = PatternFill("solid", fgColor="D9E1F2")
 CHAPTER_FILL = PatternFill("solid", fgColor="FFF2CC")
 SUBTOTAL_FILL = PatternFill("solid", fgColor="E2F0D9")
+
+
+def _format_apu_components(metadata: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    for comp in metadata.get("apu_components") or []:
+        if not isinstance(comp, dict):
+            continue
+        desc = str(comp.get("description") or "")[:40]
+        qty = comp.get("quantity")
+        unit = comp.get("unit") or ""
+        price = comp.get("unit_price")
+        if desc:
+            parts.append(f"{desc} {qty}{unit}@{price}")
+    return "; ".join(parts[:6])
 
 
 def _coerce_row(row: BudgetRow | Mapping[str, object]) -> BudgetRow:
@@ -187,6 +205,10 @@ def export_budget_workbook(
         candidate_source = ""
         requiere_revision_text = ""
         confidence_value: float | str = ""
+        source_refs_text = ""
+        assumptions_text = ""
+        apu_code = ""
+        apu_desglose = ""
         needs_review = False
         if row.row_type == "line":
             price_source = str(row.metadata.get("price_source") or "")
@@ -201,6 +223,10 @@ def export_budget_workbook(
                     confidence_value = round(float(raw_conf), 2)
                 except (TypeError, ValueError):
                     confidence_value = ""
+            source_refs_text = "; ".join(str(r) for r in (row.source_refs or [])[:5])
+            assumptions_text = "; ".join(str(a) for a in (row.assumptions or [])[:3])
+            apu_code = str(row.metadata.get("apu_code") or row.metadata.get("candidate_code") or "")
+            apu_desglose = _format_apu_components(row.metadata)
 
         values = (
             row.code,
@@ -216,6 +242,10 @@ def export_budget_workbook(
             candidate_source,
             requiere_revision_text,
             confidence_value,
+            source_refs_text,
+            assumptions_text,
+            apu_code,
+            apu_desglose,
         )
         for column_index, value in enumerate(values, start=1):
             cell = worksheet.cell(row=target_row, column=column_index)
@@ -260,6 +290,10 @@ def export_budget_workbook(
     worksheet.column_dimensions["K"].width = 22
     worksheet.column_dimensions["L"].width = 12
     worksheet.column_dimensions["M"].width = 12
+    worksheet.column_dimensions["N"].width = 36
+    worksheet.column_dimensions["O"].width = 36
+    worksheet.column_dimensions["P"].width = 18
+    worksheet.column_dimensions["Q"].width = 48
 
     if quality_report:
         _append_quality_sheet(workbook, quality_report)

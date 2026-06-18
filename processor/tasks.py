@@ -125,6 +125,47 @@ def _safe_upload_name(filename: str | None, fallback: str) -> str:
     return value or fallback
 
 
+def _maybe_enrich_da_geometry(
+    dwg_files: list[tuple[str, bytes]],
+    normalized: dict[str, Any],
+) -> None:
+    """Run DA geometry when enabled, including on extraction cache hits."""
+    if not _env_bool("DUPLA_USE_DA_GEOMETRY", False):
+        return
+    if normalized.get("da_geometry_used"):
+        logger.info("DA geometry already in artifact; skipping re-run")
+        return
+    if not dwg_files:
+        return
+    try:
+        import tempfile
+        from aps_integration.geometry_source import enrich_cad_facts_with_da
+
+        with tempfile.TemporaryDirectory(prefix="dupla_da_") as tmp:
+            paths: list[str] = []
+            for idx, (name, content) in enumerate(dwg_files):
+                p = Path(tmp) / _safe_upload_name(name, f"upload_{idx}.dwg")
+                p.write_bytes(content)
+                paths.append(str(p))
+            logger.info("DA geometry enabled (post-cache): enriching %d DWG(s)", len(paths))
+            enrich_cad_facts_with_da(normalized, paths)
+    except Exception:
+        logger.warning(
+            "DA geometry enrichment failed (post-cache); keeping cached geometry",
+            exc_info=True,
+        )
+
+
+def _maybe_apply_scale_calibration(normalized: dict[str, Any]) -> None:
+    if _env_bool("DUPLA_SCALE_CALIBRATE", True):
+        try:
+            from core.scale_calibrator import apply_scale_calibration
+
+            apply_scale_calibration(normalized)
+        except Exception:
+            logger.warning("Scale calibration skipped (non-fatal)", exc_info=True)
+
+
 def _artifact_root() -> Path:
     return paths.artifact_dir()
 
@@ -932,8 +973,8 @@ def _run_dupla_pipeline_legacy(
     # Lightweight preflight logging (non-blocking).
     if not os.getenv("CLIENT_ID") or not os.getenv("CLIENT_SECRET"):
         logger.warning("APS credentials may be missing: CLIENT_ID or CLIENT_SECRET not set")
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.warning("OPENAI_API_KEY not set — PartidaGenerator will be disabled")
+    if not (os.getenv("OPENAI_API_KEY") or os.getenv("DUPLA_OPENAI_KEYS")):
+        logger.warning("OPENAI_API_KEY/DUPLA_OPENAI_KEYS not set — PartidaGenerator will be disabled")
 
     resolved_project_name = (project_name or "").strip() or "Dupla API Job"
     logger.info("Project name: %s | Discipline: %s", resolved_project_name, discipline_id or "(auto-detect)")
@@ -1264,6 +1305,60 @@ def _run_dupla_pipeline_legacy(
         return master_budget
 
 
+def _legend_map_from_vision(vision_results: list) -> dict[str, Any]:
+    """Floor + view per page read from the Vision pass.
+
+    Vision already reads the page image including the legend / cuadro, so the
+    floor (NIVEL 2, N+2.80) and view (planta/corte/isometría) are taken from its
+    output — no separate OCR engine. Returns {page: {floor_label, view, ...}}.
+    """
+    import re
+
+    floor_re = re.compile(
+        r"((?:nivel|piso|planta|n\.?p\.?t\.?|n)\s*[:\-]?\s*[+\-]?\s*\d+(?:\.\d+)?)",
+        re.IGNORECASE,
+    )
+    page_map: dict[str, Any] = {}
+    for r in vision_results or []:
+        if not isinstance(r, dict) or "error" in r:
+            continue
+        page = str(r.get("source_image") or (r.get("_metadata") or {}).get("file") or "").strip()
+        if not page:
+            continue
+        view = r.get("source_view") or (r.get("inputs") or {}).get("plan_type")
+        floor_label = None
+        for ann in ((r.get("inputs") or {}).get("annotations") or []):
+            text = str(ann.get("text", "") if isinstance(ann, dict) else ann)
+            match = floor_re.search(text)
+            if match:
+                floor_label = re.sub(r"\s+", " ", match.group(1)).strip().upper()
+                break
+        page_map[page] = {"page": page, "view": view, "floor_label": floor_label, "source": "vision"}
+    return page_map
+
+
+def _inject_floor_markers(cad_facts: dict[str, Any], page_map: dict[str, Any]) -> int:
+    """Feed Vision-derived floor labels into cad_facts level markers so levels get
+    named from the legend ('NIVEL 2') instead of the generic 'level_01'."""
+    if not page_map:
+        return 0
+    hints = cad_facts.setdefault("inventory_hints", {})
+    markers = hints.setdefault("level_markers", [])
+    existing = {
+        str(m.get("content", "") if isinstance(m, dict) else m).strip().upper()
+        for m in markers
+    }
+    added = 0
+    for entry in page_map.values():
+        label = (entry.get("floor_label") or "").strip()
+        if not label or label.upper() in existing:
+            continue
+        markers.append({"content": label, "source": "vision_legend", "page": entry.get("page")})
+        existing.add(label.upper())
+        added += 1
+    return added
+
+
 def run_dupla_pipeline(
     dwg_files: list[tuple[str, bytes]],
     pdf_files: list[tuple[str, bytes]] = None,
@@ -1295,8 +1390,8 @@ def run_dupla_pipeline(
 
     if not os.getenv("CLIENT_ID") or not os.getenv("CLIENT_SECRET"):
         logger.warning("APS credentials may be missing: CLIENT_ID or CLIENT_SECRET not set")
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.warning("OPENAI_API_KEY not set; OpenAI-backed stages will use fallbacks where available")
+    if not (os.getenv("OPENAI_API_KEY") or os.getenv("DUPLA_OPENAI_KEYS")):
+        logger.warning("OPENAI_API_KEY/DUPLA_OPENAI_KEYS not set; OpenAI-backed stages will use fallbacks where available")
 
     filenames = [name for name, _ in [*dwg_files, *pdf_files]]
     target_disciplines, discipline_mode = _resolve_target_disciplines(discipline_id, filenames)
@@ -1327,6 +1422,9 @@ def run_dupla_pipeline(
         len(normalized.get("cad_facts", {}).get("layers", {})),
     )
 
+    _maybe_enrich_da_geometry(dwg_files, normalized)
+    _maybe_apply_scale_calibration(normalized)
+
     if not target_disciplines:
         result = _base_extraction_result(
             artifacts=artifacts,
@@ -1336,30 +1434,11 @@ def run_dupla_pipeline(
         log_stats_summary()
         return result
 
-    # --- Legend OCR: read floor + view from each sheet's legend/cuadro ---------
-    # APS extracts legend text but never measures it and never says which floor/
-    # view a sheet is. OCR over the rendered page recovers "de qué piso y qué
-    # vista es" (planta, corte, ISOMETRÍA, detalle) — what a senior estimator
-    # reads before quantifying. Floor labels are injected into level markers so
-    # levels get named from the legend instead of the generic "level_01".
+    # Legend (cuadro) reading is done by the Vision pass — it already reads the
+    # rendered page image, legend included — so there is no separate OCR step.
+    # legend_page_map stays as a (currently empty) hook consumed by notes/params
+    # extraction; populating it from Vision output is a follow-up.
     legend_page_map: dict[str, Any] = {}
-    try:
-        from core.legend_ocr import build_page_map, inject_floor_markers
-
-        legend_page_map = build_page_map(str(artifacts.pages_dir))
-        added_markers = inject_floor_markers(normalized, legend_page_map)
-        views_seen = sorted({v.get("view") for v in legend_page_map.values() if v.get("view")})
-        logger.info(
-            "Legend OCR: %d pages read, +%d floor markers, views=%s",
-            len(legend_page_map), added_markers, views_seen or ["(none)"],
-        )
-        if legend_page_map:
-            (artifacts.artifact_dir / "legend_map.json").write_text(
-                json.dumps(legend_page_map, indent=2, ensure_ascii=False),
-                encoding="utf-8",
-            )
-    except Exception:
-        logger.warning("Legend OCR step failed; continuing without it", exc_info=True)
 
     data_dir = paths.data_dir()
     bc3_files = sorted(data_dir.glob("*.bc3"))
@@ -1444,6 +1523,127 @@ def run_dupla_pipeline(
     if methodology:
         logger.info("Combined methodology context: %d chars", len(methodology))
 
+    # --- HARD CONFIG: notes/legends -> structured project parameters -----------
+    # Methodology above is "soft context". Here we extract machine-readable
+    # parameters (f'c, fy, recubrimiento, bloque, mortero, desperdicios, ...)
+    # from the plan notes/legends so rules/quantifiers can consume them. Always
+    # degrades to defaults; never breaks the run.
+    project_parameters: dict[str, Any] = {}
+    try:
+        from knowledge.project_parameters import (
+            collect_notes_text,
+            extract_project_parameters,
+        )
+
+        notes_text = collect_notes_text(
+            normalized,
+            legend_page_map=legend_page_map,
+            extra=office_meth or None,
+        )
+        params = extract_project_parameters(
+            notes_text,
+            discipline=methodology_discipline,
+            cache_dir=paths.cache_dir(),
+        )
+        project_parameters = params.to_dict()
+        try:
+            (artifacts.artifact_dir / "project_parameters.json").write_text(
+                json.dumps(project_parameters, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception:
+            logger.warning("Could not persist project_parameters.json", exc_info=True)
+
+        # Surface the hard config to the vision model too (in addition to rules).
+        hard_block = (
+            "\n\n## PARAMETROS DUROS DEL PROYECTO (config, no inventar)\n"
+            f"- f'c: {project_parameters.get('fc_default')} kg/cm2\n"
+            f"- fy: {project_parameters.get('fy')} kg/cm2\n"
+            f"- recubrimiento: {project_parameters.get('recubrimiento_cm')} cm\n"
+            f"- bloque por defecto: {project_parameters.get('bloque_default')}\n"
+            f"- mortero: {project_parameters.get('mortero')}\n"
+            f"- abundamiento: {project_parameters.get('abundamiento')}\n"
+            f"- fuente: {project_parameters.get('source')}"
+        )
+        methodology = (methodology or "") + hard_block
+        logger.info(
+            "Project parameters ready (source=%s): f'c=%s fy=%s bloque=%s",
+            project_parameters.get("source"),
+            project_parameters.get("fc_default"),
+            project_parameters.get("fy"),
+            project_parameters.get("bloque_default"),
+        )
+    except Exception:
+        logger.warning("Project parameter extraction skipped (non-fatal)", exc_info=True)
+
+    # --- (b) Cuadro de acabados -> mapa ambiente->acabado ----------------------
+    finishes_schedule_data: dict[str, Any] = {}
+    try:
+        from knowledge.finishes_schedule import extract_finishes_schedule
+        from knowledge.project_parameters import collect_notes_text as _collect_notes
+
+        finishes_text = _collect_notes(
+            normalized, legend_page_map=legend_page_map, extra=office_meth or None
+        )
+        finishes_schedule_data = extract_finishes_schedule(
+            finishes_text, cache_dir=paths.cache_dir()
+        )
+        if finishes_schedule_data:
+            (artifacts.artifact_dir / "finishes_schedule.json").write_text(
+                json.dumps(finishes_schedule_data, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            logger.info(
+                "Finishes schedule: %d ambientes parsed",
+                len(finishes_schedule_data.get("ambientes") or []),
+            )
+    except Exception:
+        logger.warning("Finishes schedule extraction skipped (non-fatal)", exc_info=True)
+
+    # --- (c) Cuadros estructurales (columnas/vigas/zapatas) -------------------
+    structural_schedule_data: dict[str, Any] = {}
+    try:
+        from knowledge.structural_schedule import extract_structural_schedule, is_enabled
+
+        if is_enabled() and "estructura" in target_disciplines:
+            structural_schedule_data = extract_structural_schedule(
+                [str(p) for p in page_paths], cache_dir=paths.cache_dir()
+            )
+            if structural_schedule_data:
+                (artifacts.artifact_dir / "structural_schedule.json").write_text(
+                    json.dumps(structural_schedule_data, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                logger.info(
+                    "Structural schedule: %d rows from %d pages",
+                    len(structural_schedule_data.get("filas") or []),
+                    structural_schedule_data.get("pages_with_schedule", 0),
+                )
+    except Exception:
+        logger.warning("Structural schedule extraction skipped (non-fatal)", exc_info=True)
+
+    # --- (P1.5) Cuadros de puertas/ventanas -----------------------------------
+    openings_schedule_data: dict[str, Any] = {}
+    try:
+        from knowledge.openings_schedule import extract_openings_schedule, is_enabled as _openings_enabled
+
+        if _openings_enabled():
+            openings_schedule_data = extract_openings_schedule(
+                [str(p) for p in page_paths], cache_dir=paths.cache_dir()
+            )
+            if openings_schedule_data:
+                (artifacts.artifact_dir / "openings_schedule.json").write_text(
+                    json.dumps(openings_schedule_data, indent=2, ensure_ascii=False),
+                    encoding="utf-8",
+                )
+                logger.info(
+                    "Openings schedule: %d rows from %d pages",
+                    len(openings_schedule_data.get("filas") or []),
+                    openings_schedule_data.get("pages_with_schedule", 0),
+                )
+    except Exception:
+        logger.warning("Openings schedule extraction skipped (non-fatal)", exc_info=True)
+
     building_block, level_id = None, None
     source_pdf_names = [name for name, _ in pdf_files] or [
         str(item.get("filename") or "") for item in artifacts.manifest.get("pdf_files", [])
@@ -1493,6 +1693,18 @@ def run_dupla_pipeline(
         len(target_disciplines),
     )
 
+    # Legend (cuadro) floor + view from the Vision pass — no separate OCR engine.
+    # Floor labels are injected into level markers so levels are named from the
+    # legend; the page map is surfaced in each discipline's metadata.
+    legend_page_map = _legend_map_from_vision(shared_vision_results)
+    legend_markers_added = _inject_floor_markers(normalized, legend_page_map)
+    if legend_page_map:
+        legend_views = sorted({v.get("view") for v in legend_page_map.values() if v.get("view")})
+        logger.info(
+            "Legend (from Vision): %d pages, +%d floor markers, views=%s",
+            len(legend_page_map), legend_markers_added, legend_views or ["(none)"],
+        )
+
     async def _process_discipline(disc_id: str) -> dict[str, Any]:
         logger.info("--- Processing Discipline: %s ---", disc_id)
         vision_results = shared_vision_results
@@ -1539,7 +1751,25 @@ def run_dupla_pipeline(
                 "enable_semantic_layer": True,
                 "extraction_artifact_key": artifacts.artifact_key,
                 "legend_page_map": legend_page_map,
+                "project_parameters": project_parameters,
+                "finishes_schedule": finishes_schedule_data,
+                "structural_schedule": structural_schedule_data,
+                "openings_schedule": openings_schedule_data,
+                "run_budget_validation": True,
+                "scale_calibration": normalized.get("scale_calibration"),
             },
+        )
+
+        # (d) Motor de derivacion + (P1.5) autoridad de cuadros: expande takeoffs
+        # base con reglas por disciplina y reemplaza el acero por el despiece del
+        # cuadro estructural (y completa conteos de aberturas) cuando hay cuadro.
+        from rules_engine import default_rules_engine
+
+        disc_rules_engine = default_rules_engine(
+            discipline=disc_id,
+            project_parameters=project_parameters,
+            structural_schedule=structural_schedule_data if disc_id == "estructura" else None,
+            openings_schedule=openings_schedule_data if disc_id == "arquitectura" else None,
         )
 
         budget = await build_budget_from_sources(
@@ -1547,6 +1777,7 @@ def run_dupla_pipeline(
             cad_facts=normalized,
             vision_payloads=vision_results,
             bc3_catalog=bc3_catalog,
+            rules_engine=disc_rules_engine,
             embedding_index=embedding_index,
             training_pairs=training_pairs,
             pricing_store=pricing_store,

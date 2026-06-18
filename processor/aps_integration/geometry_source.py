@@ -61,12 +61,17 @@ def _da_to_facts(da: dict[str, Any]) -> tuple[list[dict], list[dict], list[dict]
             "length": _num(pl.get("Length")),
             "area": _num(pl.get("Area")) if pl.get("Closed") else None,
             "radius": None, "bbox": {},
+            # Preserve vertices so the GeometryMerger can collapse double-lines.
+            "vertices": pl.get("Vertices") or [],
+            "closed": bool(pl.get("Closed")),
         })
     for ln in da.get("Lines", []) or []:
         hints.append({
             "layer": str(ln.get("Layer", "")), "entity_type": "line",
             "name": "", "handle": str(ln.get("Handle", "")),
             "length": _num(ln.get("Length")), "area": None, "radius": None, "bbox": {},
+            # Preserve endpoints for double-line collapse.
+            "start": ln.get("Start"), "end": ln.get("End"),
         })
     for arc in da.get("Arcs", []) or []:
         hints.append({
@@ -135,6 +140,27 @@ def enrich_cad_facts_with_da(cad_facts: dict[str, Any], dwg_paths: list[str]) ->
                 h["area"] /= scale * scale
             if h.get("radius") is not None:
                 h["radius"] /= scale
+
+    # GeometryMerger (P2.7): collapse double-line walls before the geometry is
+    # measured downstream. Coordinates from DA make this exact. Off via
+    # DUPLA_GEOMETRY_MERGE=0.
+    if _env_bool("DUPLA_GEOMETRY_MERGE", True):
+        try:
+            from core.geometry_merger import merge_geometry_hints
+
+            all_hints, merge_stats = merge_geometry_hints(all_hints)
+            if merge_stats.get("applied"):
+                logger.info(
+                    "GeometryMerger: %d lines -> %d groups, collapsed %d segments, "
+                    "removed %.2f m of double-count",
+                    merge_stats.get("input_lines", 0),
+                    merge_stats.get("groups", 0),
+                    merge_stats.get("collapsed_segments", 0),
+                    merge_stats.get("removed_length_m", 0.0),
+                )
+                cad_facts["geometry_merge_stats"] = merge_stats
+        except Exception:
+            logger.warning("GeometryMerger failed; keeping raw DA geometry", exc_info=True)
 
     cf = cad_facts.setdefault("cad_facts", {})
     if _env_bool("DUPLA_DA_REPLACE_GEOMETRY", True):

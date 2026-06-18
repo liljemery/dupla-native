@@ -79,12 +79,28 @@ def _catalog_fingerprint(bc3_catalog: dict[str, Any]) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def _resolve_openai_key() -> str | None:
+    """Single OPENAI_API_KEY, or the first key from the DUPLA_OPENAI_KEYS CSV."""
+    api_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+    if api_key:
+        return api_key
+    csv_keys = (os.getenv("DUPLA_OPENAI_KEYS") or "").strip()
+    if csv_keys:
+        for candidate in csv_keys.split(","):
+            candidate = candidate.strip()
+            if candidate:
+                return candidate
+    return None
+
+
 def _default_embedder(model: str) -> Callable[[list[str]], np.ndarray]:
     if OpenAI is None:
         raise RuntimeError("openai package is required to build/search embeddings.")
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = _resolve_openai_key()
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required for semantic embeddings.")
+        raise RuntimeError(
+            "OPENAI_API_KEY (or DUPLA_OPENAI_KEYS) is required for semantic embeddings."
+        )
     client = OpenAI(api_key=api_key)
 
     def _embed_batch(texts: list[str]) -> np.ndarray:
