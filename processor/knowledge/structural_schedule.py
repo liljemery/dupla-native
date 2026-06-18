@@ -38,6 +38,31 @@ except ImportError:  # pragma: no cover
     OpenAI = None  # type: ignore[assignment]
 
 
+_SYSTEM_PROMPT = """\
+Ingeniero estructural senior (Republica Dominicana).
+Invocacion: tool structural_schedule sobre la lamina adjunta (imagen).
+
+Objetivo: localizar el CUADRO DE COLUMNAS, VIGAS y/o ZAPATAS (tabla con marcas) y devolver una fila por marca.
+
+Reglas:
+- Solo filas que aparezcan en el cuadro. No infieras desde simbologia del plano ni cotas sueltas.
+- Sin cuadro estructural en la lamina -> filas=[].
+- mark: copia literal (C1, C-01, V2, Z3, M1).
+- element: columna|viga|zapata|muro|losa|otro segun la fila/seccion del cuadro.
+- section: literal del cuadro (0.30x0.60, 40x40, diametro). Formato ancho x alto en metros.
+- main_bars: notacion literal del acero principal (8#6, 4#8, 12Ø12, 6 varillas #4). null si vacio.
+- stirrups: notacion literal de estribos (#3@0.15, #4@0.10, est #2 @ 0.20). null si vacio.
+- fc: f'c entero en kg/cm2 si aparece (210, 280, 350). null si no aparece.
+- count: cantidad entera de elementos de esa marca. null si no aparece.
+- length_m: longitud o altura en METROS (3.0, 3.50). Convierte cm del cuadro (350 cm -> 3.50).
+- null solo si la columna existe y la celda esta vacia, es "-" o "N/A".
+- "VER DETALLE" / "VER PLANO": null en ese campo.
+- Ignora planta dibujada, leyenda general, membrete, cuadros de acabados/aperturas.
+
+Si hay cuadros separados (columnas, vigas, zapatas) en la misma lamina, une todas las filas.\
+"""
+
+
 def is_enabled() -> bool:
     return (os.getenv("DUPLA_STRUCTURAL_SCHEDULE") or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -53,7 +78,10 @@ def _json_schema() -> dict[str, Any]:
             "properties": {
                 "filas": {
                     "type": "array",
-                    "description": "Una fila por elemento del cuadro estructural. Vacio si la pagina no tiene cuadro.",
+                    "description": (
+                        "Filas del cuadro estructural unicamente. "
+                        "Vacio si la lamina no contiene cuadro."
+                    ),
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
@@ -62,18 +90,39 @@ def _json_schema() -> dict[str, Any]:
                             "stirrups", "fc", "count", "length_m",
                         ],
                         "properties": {
-                            "mark": {"type": "string", "description": "Marca del elemento (C1, V2, Z3, ...)."},
+                            "mark": {
+                                "type": "string",
+                                "description": "Marca literal del cuadro (C1, V2, Z3, M1).",
+                            },
                             "element": {
                                 "type": "string",
                                 "enum": ["columna", "viga", "zapata", "muro", "losa", "otro"],
-                                "description": "Tipo de elemento estructural.",
+                                "description": "Tipo de elemento segun la fila del cuadro.",
                             },
-                            "section": {"type": ["string", "null"], "description": "Seccion p.ej. '0.30x0.60' o diametro."},
-                            "main_bars": {"type": ["string", "null"], "description": "Acero principal p.ej. '8#6'."},
-                            "stirrups": {"type": ["string", "null"], "description": "Estribos p.ej. '#3@0.15'."},
-                            "fc": {"type": ["integer", "null"], "description": "f'c en kg/cm2 si aparece."},
-                            "count": {"type": ["integer", "null"], "description": "Cantidad de elementos de esta marca."},
-                            "length_m": {"type": ["number", "null"], "description": "Longitud/altura en metros si aparece."},
+                            "section": {
+                                "type": ["string", "null"],
+                                "description": "Seccion literal (0.30x0.60, 40x40). null si vacio.",
+                            },
+                            "main_bars": {
+                                "type": ["string", "null"],
+                                "description": "Acero principal literal (8#6, 4#8, 12Ø12). null si vacio.",
+                            },
+                            "stirrups": {
+                                "type": ["string", "null"],
+                                "description": "Estribos literales (#3@0.15, #4@0.10). null si vacio.",
+                            },
+                            "fc": {
+                                "type": ["integer", "null"],
+                                "description": "f'c en kg/cm2 (210, 280, 350). null si no aparece.",
+                            },
+                            "count": {
+                                "type": ["integer", "null"],
+                                "description": "Cantidad de elementos de esta marca. null si no aparece.",
+                            },
+                            "length_m": {
+                                "type": ["number", "null"],
+                                "description": "Longitud/altura en metros (convertir cm). null si no aparece.",
+                            },
                         },
                     },
                 }
@@ -122,21 +171,13 @@ def _cache_path(cache_dir: Path, image_bytes_digest: str, model: str) -> Path:
 
 def _parse_one(client: "OpenAI", image_path: Path, model: str) -> list[dict[str, Any]]:
     b64 = _encode(image_path)
-    system = (
-        "Eres un ingeniero estructural. Te paso la imagen de una lamina de planos. "
-        "Si contiene un CUADRO de columnas, vigas o zapatas, extrae cada fila con su "
-        "marca, seccion, acero principal, estribos, f'c, cantidad y longitud. Usa null "
-        "donde el dato no aparezca. Si la lamina NO tiene cuadro estructural, devuelve "
-        "filas vacio. No inventes."
-    )
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": _SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Extrae el cuadro estructural de esta lamina."},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                 ],
             },
