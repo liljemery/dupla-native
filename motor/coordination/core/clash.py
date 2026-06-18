@@ -248,9 +248,12 @@ def _pair_confidence(ea: Element25D, eb: Element25D) -> Literal["low", "medium",
 def _element_confidence_score(element: Element25D) -> int:
     quality = str(element.metadata.get("geometry_quality") or "medium").lower()
     score = {
+        "unlocalizable": 0,
         "low": 0,
         "proxy": 1,
+        "coarse": 2,
         "medium": 2,
+        "good": 3,
         "high": 3,
         "exact": 4,
     }.get(quality, 2)

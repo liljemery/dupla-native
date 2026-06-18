@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,9 @@ from coordination.core.nasas_paths import translate_footprint
 from coordination.core.registry import ProjectLevelRegistryDocument
 
 logger = logging.getLogger("dupla.coordination.dwg_aps")
+REPO_ROOT = Path(__file__).resolve().parents[3]
+VIEWER_ENGINE_SCRIPT = REPO_ROOT / "backend" / "viewer-engine" / "extract_fragments.js"
+MAX_VIEWER_FRAGMENT_ELEMENTS = 250_000
 
 
 def _save_diagnostics(
@@ -29,6 +33,131 @@ def _save_diagnostics(
     if cache_root is None:
         return
     save_cached_json(cache_root, key=cache_key, suffix="diagnostics", payload=payload)
+
+
+def _viewer_artifact_path(cache_root: Path | None, urn: str) -> Path | None:
+    if cache_root is None or not urn:
+        return None
+    return cache_root / f"{urn}.viewer.json"
+
+
+def _load_viewer_artifact(cache_root: Path | None, *, urn: str, cache_key: str) -> dict[str, Any] | None:
+    path = _viewer_artifact_path(cache_root, urn)
+    if path is None or not path.is_file():
+        return None
+    import json
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    metadata = payload.get("cache_metadata") if isinstance(payload, dict) else None
+    if not isinstance(metadata, dict):
+        logger.info("APS Viewer artifact stale: missing cache_metadata (%s)", path)
+        return None
+    if metadata.get("urn") != urn:
+        logger.info("APS Viewer artifact stale: urn mismatch (%s)", path)
+        return None
+    if metadata.get("source_cache_key") != cache_key:
+        logger.info(
+            "APS Viewer artifact stale: source cache key mismatch path=%s artifact=%s current=%s",
+            path,
+            metadata.get("source_cache_key"),
+            cache_key,
+        )
+        return None
+    return payload
+
+
+def _token_value(token: str | dict[str, Any]) -> str:
+    if isinstance(token, dict):
+        return str(token.get("access_token") or "")
+    return str(token)
+
+
+def _extract_viewer_artifact(
+    *,
+    cache_root: Path | None,
+    urn: str,
+    token: str | dict[str, Any],
+    cache_key: str,
+    timeout_seconds: int,
+) -> dict[str, Any] | None:
+    path = _viewer_artifact_path(cache_root, urn)
+    if path is None:
+        return None
+    access_token = _token_value(token)
+    if not access_token:
+        logger.warning("No APS token available for headless Viewer fragment extraction")
+        return None
+    if not VIEWER_ENGINE_SCRIPT.is_file():
+        logger.warning("Headless Viewer fragment extractor not found: %s", VIEWER_ENGINE_SCRIPT)
+        return None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "node",
+        str(VIEWER_ENGINE_SCRIPT),
+        "--urn",
+        urn,
+        "--token",
+        access_token,
+        "--output",
+        str(path),
+        "--all-viewables",
+        "1",
+        "--timeout",
+        str(max(timeout_seconds, 60) * 1000),
+    ]
+    logger.info("Running APS headless fragment extractor -> %s", path)
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=str(VIEWER_ENGINE_SCRIPT.parent),
+            text=True,
+            capture_output=True,
+            timeout=max(timeout_seconds, 60),
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        logger.warning("APS headless fragment extractor failed before completion: %s", exc)
+        return None
+    if result.stdout:
+        for line in result.stdout.splitlines():
+            logger.info("viewer-engine: %s", line)
+    if result.stderr:
+        for line in result.stderr.splitlines():
+            logger.warning("viewer-engine: %s", line)
+    if result.returncode != 0:
+        logger.warning("APS headless fragment extractor exited with code %s", result.returncode)
+        return None
+    import json
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    metadata = dict(payload.get("cache_metadata") or {})
+    metadata.update({"urn": urn, "source_cache_key": cache_key})
+    payload["cache_metadata"] = metadata
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    return payload
+
+
+def _load_or_extract_viewer_artifact(
+    *,
+    cache_root: Path | None,
+    raw: dict[str, Any],
+    token: str | dict[str, Any],
+    cache_key: str,
+    timeout_seconds: int,
+) -> dict[str, Any] | None:
+    urn = str(raw.get("urn") or "")
+    if not urn:
+        return None
+    cached = _load_viewer_artifact(cache_root, urn=urn, cache_key=cache_key)
+    if cached is not None:
+        return cached
+    return _extract_viewer_artifact(
+        cache_root=cache_root,
+        urn=urn,
+        token=token,
+        cache_key=cache_key,
+        timeout_seconds=timeout_seconds,
+    )
 
 
 def extract_elements_from_dwg_via_aps(
@@ -48,7 +177,7 @@ def extract_elements_from_dwg_via_aps(
     cache_root: Path | None = None,
     level_doc: ProjectLevelRegistryDocument | None = None,
 ) -> list[Element25D]:
-    """Upload the DWG, reuse APS translation data, and prefer cached Viewer geometry."""
+    """Upload the DWG, reuse APS translation data, and prefer real Viewer geometry."""
     from aps_integration.model_derivative import extract_dwg_data
     from aps_integration.oss_manager import upload_file_to_bucket
 
@@ -74,7 +203,7 @@ def extract_elements_from_dwg_via_aps(
             translation_mm=translation_mm,
             path_label=path.stem,
             coordination_issue_key=coordination_issue_key,
-            max_entities=max_entities,
+            max_entities=max(max_entities, MAX_VIEWER_FRAGMENT_ELEMENTS),
             min_area_mm2=effective_min_area * 1_000_000.0,
         )
         if viewer_elements:
@@ -133,8 +262,15 @@ def extract_elements_from_dwg_via_aps(
     diagnostics["view_stats"] = view_stats
 
     viewer_dump = raw.get("viewer_geometry") if isinstance(raw, dict) else None
+    if not isinstance(viewer_dump, dict):
+        viewer_dump = _load_or_extract_viewer_artifact(
+            cache_root=cache_root,
+            raw=raw,
+            token=token,
+            cache_key=cache_key,
+            timeout_seconds=translation_timeout_seconds,
+        )
     if isinstance(viewer_dump, dict):
-        save_cached_json(cache_root, key=cache_key, suffix="viewer", payload=viewer_dump)
         viewer_elements = elements_from_viewer_dump(
             viewer_dump,
             discipline=discipline,
@@ -143,7 +279,7 @@ def extract_elements_from_dwg_via_aps(
             translation_mm=translation_mm,
             path_label=path.stem,
             coordination_issue_key=coordination_issue_key,
-            max_entities=max_entities,
+            max_entities=max(max_entities, MAX_VIEWER_FRAGMENT_ELEMENTS),
             min_area_mm2=effective_min_area * 1_000_000.0,
         )
         if viewer_elements:
@@ -166,7 +302,7 @@ def extract_elements_from_dwg_via_aps(
     diagnostics["proxy_elements"] = len(proxy)
     diagnostics["result"] = "proxy" if proxy else "empty"
     _save_diagnostics(cache_root, cache_key, diagnostics)
-    logger.info("APS DWG %s -> %d elementos proxy (%s)", path.name, len(proxy), discipline.value)
+    logger.info("APS DWG %s -> %d elementos proxy fallback (%s)", path.name, len(proxy), discipline.value)
     return proxy
 
 
@@ -209,10 +345,14 @@ def _fallback_proxy_elements(
             metadata.update(
                 {
                     "coordination_issue_key": coordination_issue_key,
-                    "source": "dwg_aps_properties_proxy",
+                    "source": "proxy_FALLBACK",
                     "dwg_path": path.name,
-                    "geometry_source": "dwg_aps_properties_proxy",
-                    "geometry_quality": quality,
+                    "geometry_source": "proxy_FALLBACK",
+                    "geometry_quality": "proxy",
+                    "coordinate_unit": "millimeters",
+                    "fallback_from": "dwg_aps_properties_proxy",
+                    "fallback_reason": "no_aps_fragment_geometry",
+                    "legacy_proxy_quality": quality,
                     "level_assignment_source": level_resolution.source,
                     "sheet_or_view_name": view_name,
                 }

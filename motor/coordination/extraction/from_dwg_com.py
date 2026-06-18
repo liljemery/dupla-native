@@ -11,6 +11,7 @@ from shapely.geometry import Polygon
 
 from coordination.core.models_25d import Discipline, Element25D, ZInterval
 from coordination.core.nasas_paths import translate_footprint
+from coordination.core.units import insunits_to_mm_factor
 
 logger = logging.getLogger("dupla.coordination.dwg_com")
 
@@ -27,18 +28,6 @@ try:
 except Exception:
     pywintypes = None
 
-
-INSUNITS_TO_MM = {
-    0: 1.0,
-    1: 25.4,
-    2: 304.8,
-    4: 1.0,
-    5: 10.0,
-    6: 1000.0,
-    7: 1_000_000.0,
-    10: 914.4,
-    14: 100.0,
-}
 
 ANNOTATION_TYPES = {
     "TEXT",
@@ -173,14 +162,11 @@ def _insunits_to_mm_factor(doc: Any) -> float:
         insunits = int(doc.GetVariable("INSUNITS"))
     except Exception:
         insunits = 0
-    factor = INSUNITS_TO_MM.get(insunits)
-    if factor is not None:
-        return factor
     try:
         measurement = int(doc.GetVariable("MEASUREMENT"))
     except Exception:
-        measurement = 1
-    return 1.0 if measurement == 1 else 25.4
+        measurement = None
+    return insunits_to_mm_factor(insunits, measurement=measurement)
 
 
 def _entity_type(entity: Any) -> str:

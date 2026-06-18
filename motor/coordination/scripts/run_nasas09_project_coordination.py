@@ -457,8 +457,11 @@ def _export_plan_geometry(all_elements: list[Element25D], output_path: Path) -> 
     render a high-resolution 2D plan with accurate clash overlays.
 
     Output schema:
-        {"files": {"<filename>": {"discipline", "extents_mm"[4], "element_count",
-                                   "elements": [{"discipline", "footprint_mm"[[x,y],...]}]}}}
+        {"files": {"<filename>": {"discipline", "element_count", "elements": [...]}}}
+
+    APS fragment geometry is emitted in sheet paper units, not project mm. The
+    legacy footprint_mm/extents_mm keys remain only for records that explicitly
+    declare millimeters.
     """
     files: dict[str, dict[str, Any]] = {}
     for el in all_elements:
@@ -466,29 +469,64 @@ def _export_plan_geometry(all_elements: list[Element25D], output_path: Path) -> 
         if len(footprint) < 2:
             continue
         source_ref = str(getattr(el, "source_ref", "") or "")
+        metadata = dict(el.metadata or {})
         file_name = Path(source_ref.split("|", 1)[0]).name or str(
-            (el.metadata or {}).get("file") or "unknown"
+            metadata.get("file") or "unknown"
         )
         discipline = el.discipline.value if hasattr(el.discipline, "value") else str(el.discipline)
         entry = files.setdefault(
             file_name, {"discipline": discipline, "elements": []}
         )
-        entry["elements"].append(
-            {
-                "discipline": discipline,
-                "footprint_mm": [[round(float(x), 1), round(float(y), 1)] for x, y in footprint],
-            }
-        )
+        coordinate_unit = str(metadata.get("coordinate_unit") or "millimeters")
+        rounded_footprint = [[round(float(x), 4), round(float(y), 4)] for x, y in footprint]
+        xs = [point[0] for point in rounded_footprint]
+        ys = [point[1] for point in rounded_footprint]
+        center = metadata.get("center")
+        if not (isinstance(center, list) and len(center) >= 2):
+            center = [round((min(xs) + max(xs)) / 2.0, 4), round((min(ys) + max(ys)) / 2.0, 4)]
+        else:
+            center = [round(float(center[0]), 4), round(float(center[1]), 4)]
+        item = {
+            "handle": metadata.get("handle"),
+            "dbId": metadata.get("dbId"),
+            "source_ref": source_ref,
+            "discipline": discipline,
+            "layer": metadata.get("layer"),
+            "footprint": rounded_footprint,
+            "center": center,
+            "coordinate_unit": coordinate_unit,
+            "geometry_quality": metadata.get("geometry_quality"),
+            "geometry_source": metadata.get("geometry_source"),
+            "fragment_count": metadata.get("fragment_count"),
+            "world_bounds": metadata.get("world_bounds"),
+            "sheet_bounds": metadata.get("sheet_bounds"),
+        }
+        if coordinate_unit == "millimeters":
+            item["footprint_mm"] = [[round(float(x), 1), round(float(y), 1)] for x, y in footprint]
+        entry["elements"].append({key: value for key, value in item.items() if value is not None})
 
     out: dict[str, Any] = {"files": {}}
     for file_name, data in files.items():
-        xs = [p[0] for e in data["elements"] for p in e["footprint_mm"]]
-        ys = [p[1] for e in data["elements"] for p in e["footprint_mm"]]
+        by_unit: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for element in data["elements"]:
+            by_unit[str(element.get("coordinate_unit") or "millimeters")].append(element)
+        extents_by_unit: dict[str, list[float]] = {}
+        for unit, elements in by_unit.items():
+            xs = [p[0] for e in elements for p in e["footprint"]]
+            ys = [p[1] for e in elements for p in e["footprint"]]
+            if xs and ys:
+                extents_by_unit[unit] = [min(xs), min(ys), max(xs), max(ys)]
+        primary_unit = next(iter(by_unit.keys()), "millimeters")
+        elements = data["elements"]
+        quality_counts = Counter(str(e.get("geometry_quality") or "unknown") for e in elements)
         out["files"][file_name] = {
             "discipline": data["discipline"],
-            "extents_mm": [min(xs), min(ys), max(xs), max(ys)] if xs else None,
-            "element_count": len(data["elements"]),
-            "elements": data["elements"],
+            "coordinate_unit": primary_unit,
+            "extents_by_unit": extents_by_unit,
+            "extents_mm": extents_by_unit.get("millimeters"),
+            "geometry_quality_counts": dict(sorted(quality_counts.items())),
+            "element_count": len(elements),
+            "elements": elements,
         }
     try:
         output_path.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
@@ -725,7 +763,7 @@ def _build_issue_groups_and_conflicts(
 
 def _hard_clash_eligible(element: Element25D, allow_proxy: bool) -> bool:
     quality = str(element.metadata.get("geometry_quality") or "medium").lower()
-    if quality == "low":
+    if quality in {"low", "unlocalizable"}:
         return False
     if quality == "proxy" and not allow_proxy:
         return False

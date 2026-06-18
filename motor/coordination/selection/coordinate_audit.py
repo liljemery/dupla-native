@@ -14,6 +14,20 @@ from coordination.core.models_25d import Element25D
 
 AuditStatus = Literal["eligible", "needs_alignment", "annotation_noise", "bbox_only", "extract_failed"]
 
+COMBINED_AS_BUILT_NAME_TOKENS = (
+    "COMBINADO",
+    "TODAS",
+    "GENERAL",
+    "COORDINACION",
+    "COORDINACIÓN",
+    "AS-BUILT",
+    "AS BUILT",
+    "ASBUILT",
+)
+HIGH_ENTITY_COUNT_THRESHOLD = 50_000
+HIGH_LAYOUT_COUNT_THRESHOLD = 20
+LARGE_FILE_SIZE_BYTES = 75 * 1024 * 1024
+
 
 class SourceAudit(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -59,6 +73,54 @@ class PairScheduleItem(BaseModel):
     documentary_cohort_relation: str = "same_cohort"
     scheduled: bool
     block_reason: str | None = None
+
+
+def selection_sanity_flags(
+    *,
+    path: str | Path,
+    raw_entity_count: int = 0,
+    layout_count: int = 0,
+    file_size_bytes: int | None = None,
+) -> list[str]:
+    """Flag combined/as-built files promoted from the SERENA sanitation POC."""
+    text = str(path).upper()
+    flags: list[str] = []
+    matched = [token for token in COMBINED_AS_BUILT_NAME_TOKENS if token in text]
+    if matched:
+        flags.append(f"name_pattern={','.join(matched)}")
+    if raw_entity_count > HIGH_ENTITY_COUNT_THRESHOLD:
+        flags.append(f"high_entity_count={raw_entity_count}")
+    if layout_count > HIGH_LAYOUT_COUNT_THRESHOLD:
+        flags.append(f"high_layout_count={layout_count}")
+    if file_size_bytes is not None and file_size_bytes > LARGE_FILE_SIZE_BYTES:
+        flags.append(f"large_file_size_mb={file_size_bytes / (1024 * 1024):.1f}")
+    return flags
+
+
+def hs_findings(
+    *,
+    path: str | Path,
+    raw_entity_count: int = 0,
+    layout_count: int = 0,
+    file_size_bytes: int | None = None,
+    alternatives: list[str | Path] | None = None,
+) -> dict[str, Any]:
+    """Return the HS-oriented selection sanity report used by Phase 1."""
+    flags = selection_sanity_flags(
+        path=path,
+        raw_entity_count=raw_entity_count,
+        layout_count=layout_count,
+        file_size_bytes=file_size_bytes,
+    )
+    return {
+        "path": str(path),
+        "raw_entity_count": raw_entity_count,
+        "layout_count": layout_count,
+        "file_size_bytes": file_size_bytes,
+        "flags": flags,
+        "selection_blocked": bool(flags),
+        "alternatives": [str(item) for item in alternatives or []],
+    }
 
 
 def build_source_audit(
@@ -121,6 +183,22 @@ def build_source_audit(
         centroid_mm = (float(raw_centroid[0]), float(raw_centroid[1]))
     coordinate_band_key, coordinate_band = _coordinate_band(centroid_mm, cell_size_mm=coordinate_band_cell_mm)
 
+    candidate_path = str(getattr(candidate, "path", "") or getattr(candidate, "rel_path", ""))
+    file_size_bytes = None
+    try:
+        path_obj = Path(candidate_path)
+        if path_obj.exists():
+            file_size_bytes = path_obj.stat().st_size
+    except Exception:
+        file_size_bytes = None
+    layout_count = int(accore_profile.get("layout_count") or accore_profile.get("paper_space_layout_count") or 0) if accore_profile else 0
+    sanity_flags = selection_sanity_flags(
+        path=candidate_path,
+        raw_entity_count=raw_entity_count,
+        layout_count=layout_count,
+        file_size_bytes=file_size_bytes,
+    )
+
     notes: list[str] = []
     if accore_profile and raw_entity_count > 0:
         annotation_ratio = (raw_annotation_count / raw_entity_count) if raw_entity_count > 0 else 0.0
@@ -149,6 +227,10 @@ def build_source_audit(
             status = "eligible"
             if selected_primary < min_primary_elements:
                 notes.append(f"low_primary_count={selected_primary}")
+
+    if sanity_flags:
+        status = "needs_alignment"
+        notes.extend(f"selection_sanity:{flag}" for flag in sanity_flags)
 
     return SourceAudit(
         rel_path=str(candidate.rel_path),

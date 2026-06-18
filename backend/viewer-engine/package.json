@@ -1,0 +1,12 @@
+{
+  "name": "dupla-viewer-engine",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Headless APS Viewer extraction utilities for Dupla coordination",
+  "scripts": {
+    "extract-fragments": "node extract_fragments.js"
+  },
+  "dependencies": {
+    "playwright": "^1.57.0"
+  }
+}
