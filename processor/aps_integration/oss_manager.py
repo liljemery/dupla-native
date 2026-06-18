@@ -1,4 +1,6 @@
 import os
+import random
+import time
 
 import requests
 from dotenv import load_dotenv
@@ -11,6 +13,46 @@ APS_BUCKET_NAME = os.getenv("APS_BUCKET_NAME", "dupla_dwg_bucket_test_01")
 # Autodesk bucket names must be globally unique and lowercase.
 
 BASE_URL = "https://developer.api.autodesk.com/oss/v2"
+
+# Network resilience: Autodesk occasionally drops a TLS connection mid-handshake
+# (WinError 10054 / ConnectionReset). Without retries a single blip kills the
+# whole extraction job, so every OSS request goes through this wrapper.
+_REQUEST_TIMEOUT_SECONDS = int(os.getenv("APS_OSS_TIMEOUT_SECONDS", "60") or 60)
+_MAX_RETRIES = int(os.getenv("APS_OSS_MAX_RETRIES", "4") or 4)
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+def _request_with_retry(method, url, **kwargs):
+    """requests.request with timeout + exponential backoff on transient failures."""
+    kwargs.setdefault("timeout", _REQUEST_TIMEOUT_SECONDS)
+    last_exc = None
+    response = None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            response = requests.request(method, url, **kwargs)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            last_exc = exc
+            if attempt >= _MAX_RETRIES:
+                raise
+            delay = min(20.0, (2 ** (attempt - 1)) + random.random())
+            print(
+                f"[OSS] {method.upper()} {url[:70]} network error "
+                f"({type(exc).__name__}); retry {attempt}/{_MAX_RETRIES} in {delay:.1f}s"
+            )
+            time.sleep(delay)
+            continue
+        if response.status_code in _RETRYABLE_STATUS and attempt < _MAX_RETRIES:
+            delay = min(20.0, (2 ** (attempt - 1)) + random.random())
+            print(
+                f"[OSS] {method.upper()} {url[:70]} -> {response.status_code}; "
+                f"retry {attempt}/{_MAX_RETRIES} in {delay:.1f}s"
+            )
+            time.sleep(delay)
+            continue
+        return response
+    if last_exc is not None:
+        raise last_exc
+    return response
 
 
 def build_object_name(file_path, object_name=None, unique_suffix=None):
@@ -47,7 +89,7 @@ def create_bucket(token, bucket_name):
         "policyKey": "transient",
     }
 
-    response = requests.post(url, json=payload, headers=headers)
+    response = _request_with_retry("post", url, json=payload, headers=headers)
     if response.status_code == 200:
         print("[OK] Bucket creado exitosamente.")
     elif response.status_code == 409:
@@ -80,7 +122,7 @@ def upload_file_to_bucket(
         with open(file_path, "rb") as handle:
             file_data = handle.read()
 
-        response = requests.put(upload_url, data=file_data)
+        response = _request_with_retry("put", upload_url, data=file_data)
         response.raise_for_status()
         print("[OK] Archivo subido con exito.")
         return object_name
@@ -107,7 +149,7 @@ def generate_signed_url(token, bucket_name, object_name, access="read"):
     elif access == "readWrite":
         payload["singleUse"] = False
 
-    response = requests.post(f"{url}?access={access}", json=payload, headers=headers)
+    response = _request_with_retry("post", f"{url}?access={access}", json=payload, headers=headers)
     try:
         response.raise_for_status()
     except requests.exceptions.HTTPError:

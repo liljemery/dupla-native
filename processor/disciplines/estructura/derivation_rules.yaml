@@ -1,0 +1,8 @@
+# (d) Motor de derivacion - ESTRUCTURA.
+#
+# Estructura YA deriva encofrado (formwork_area_hint), acero (reinforcement_kg) y
+# excavacion (excavation_volume) en el quantifier base (agents/quantifier_agent.py).
+# Para evitar doble-conteo, este archivo se deja vacio. Si en el futuro se quita
+# esa derivacion del quantifier, mover esas reglas aqui.
+
+derivations: []

@@ -1,0 +1,34 @@
+# Config DURA por proyecto (item "a" de lectura exhaustiva).
+#
+# Estos parametros salen de las NOTAS / LEYENDAS del plano (extraidos por LLM
+# con salida estructurada estricta). Cuando una nota no especifica un valor, se
+# usa el default de aqui. A diferencia de la "methodology" (contexto blando que
+# solo se inyecta en el prompt de vision), estos valores son configuracion dura
+# pensada para alimentar las reglas/cuantificadores.
+
+# Defaults globales (Republica Dominicana / Punta Cana).
+defaults:
+  fc_default: 280          # f'c hormigon estructural (kg/cm2)
+  fy: 4200                 # fluencia del acero de refuerzo (kg/cm2)
+  recubrimiento_cm: 4.0    # recubrimiento de armadura
+  bloque_default: block_6in
+  mortero: "1:3"           # proporcion cemento:arena para pega/pañete
+  impermeabilizacion: null # descripcion libre si la nota lo indica
+  abundamiento: 1.25       # esponjamiento de tierra excavada (bote de escombros)
+  excavacion_margen_m: 0.10 # sobre-ancho de excavacion por cara
+  desperdicios:
+    hormigon: 0.05
+    acero: 0.03
+    mamposteria: 0.05
+    mortero: 0.10
+    acabados: 0.10
+    pintura: 0.05
+
+# Overrides por disciplina: se fusionan SOBRE defaults (solo las claves presentes).
+disciplines:
+  estructura:
+    recubrimiento_cm: 4.0
+  arquitectura:
+    bloque_default: block_6in
+  sanitario: {}
+  electrico: {}

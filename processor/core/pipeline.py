@@ -202,6 +202,44 @@ def _load_default_pricing_store(context: ProjectContext | None) -> PricingStore 
         return None
 
 
+_PRICE_RESOLVER_CACHE: dict[Any, Any] = {}
+
+
+def _build_price_resolver(construcosto_snapshot: Any | None) -> Any | None:
+    """Build (and cache) the PriceResolver: crosswalk -> relational APU ->
+    ConstruCosto fallback. Returns None to fall back to the legacy APUMatcher
+    path. Disable with DUPLA_USE_PRICE_RESOLVER=0."""
+    import os
+
+    if (os.getenv("DUPLA_USE_PRICE_RESOLVER") or "1").strip().lower() in {"0", "false", "no", "off"}:
+        return None
+    try:
+        from core import paths
+
+        src = paths.pricing_excel_path()
+        if src is None:
+            return None
+        key = (str(src), src.stat().st_mtime)
+        cached = _PRICE_RESOLVER_CACHE.get(key)
+        if cached is not None:
+            return cached
+        from pricing.resolver import build_default_resolver
+
+        resolver = build_default_resolver()
+        _PRICE_RESOLVER_CACHE.clear()
+        _PRICE_RESOLVER_CACHE[key] = resolver
+        logger.info(
+            "PriceResolver wired: %d APUs, %d resources, construcosto=%d entries",
+            len(resolver.relational.apus),
+            len(resolver.relational.resources),
+            resolver.construcosto.count if resolver.construcosto else 0,
+        )
+        return resolver
+    except Exception:
+        logger.warning("PriceResolver unavailable; using legacy pricing path", exc_info=True)
+        return None
+
+
 def build_final_budget(
     context: ProjectContext,
     takeoffs: Iterable[QuantityTakeoff],
@@ -244,11 +282,13 @@ def build_final_budget(
             logger.warning("Failed to build APUMatcher; continuing without it", exc_info=True)
             apu_matcher = None
 
+    price_resolver = _build_price_resolver(construcosto_snapshot)
     composed = compose_budget(
         context, takeoff_list, candidates_by_takeoff,
         bc3_catalog=bc3_catalog,
         construcosto_snapshot=construcosto_snapshot,
         apu_matcher=apu_matcher,
+        price_resolver=price_resolver,
     )
     composed["budget_lines"] = lines
     composed["takeoffs"] = [takeoff.to_dict() for takeoff in takeoff_list]

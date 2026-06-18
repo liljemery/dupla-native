@@ -105,6 +105,14 @@ class Settings(BaseSettings):
         Optional[str],
         Field(default=None, description="API key OpenAI: clasificación de archivos y Dupla Assistant (léela desde backend/.env)."),
     ] = None
+    dupla_openai_keys: Annotated[
+        Optional[str],
+        Field(
+            default=None,
+            validation_alias=AliasChoices("DUPLA_OPENAI_KEYS"),
+            description="CSV de API keys OpenAI para rotación; si está presente, las sugerencias se reparten entre ellas.",
+        ),
+    ] = None
     openai_model: Annotated[str, Field(default="gpt-4o-mini")] = "gpt-4o-mini"
     ai_assistant_context_ttl_seconds: Annotated[
         int,
