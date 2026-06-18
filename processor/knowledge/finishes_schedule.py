@@ -39,6 +39,47 @@ except ImportError:  # pragma: no cover
 
 _SURFACES = ["piso", "zocalo", "pared", "cielo"]
 
+_SYSTEM_PROMPT = """\
+Presupuestista senior (arquitectura, Republica Dominicana).
+Invocacion: tool finishes_schedule sobre notas/leyendas de plano pegadas tal cual.
+
+Objetivo: localizar el CUADRO DE ACABADOS (tabla ambiente x piso/zocalo/pared/cielo) y devolver una fila por ambiente.
+
+Reglas:
+- Solo ambientes que aparezcan en el cuadro. No infieras desde planta ni notas sueltas.
+- Sin cuadro de acabados -> ambientes=[].
+- Acabados: copia literal del cuadro (material, codigo, espesor, h=1.80). No normalices materiales.
+- null solo si la columna existe y la celda esta vacia, es "-" o "N/A".
+- "SIMILAR A X" / "IDEM": replica acabados del ambiente referenciado.
+- "TODOS" / "GENERAL": ambiente="general" salvo que la fila nombre ambientes concretos (una fila c/u).
+- "VER DETALLE" / "VER PLANO": null en ese campo.
+- pared: conserva altura parcial si aparece (ceramica h=1.80, hasta cielo, 2.40 ml).
+- ambiente: minusculas, sin acentos (bano 1, dormitorio 2, area de servicio).
+- Ignora simbologia, indice de laminas, membrete, notas estructurales/electricas.
+
+Sinonimos de columna:
+- piso: piso, suelo, pavimento, loseta
+- zocalo: zocalo, rodapie, base
+- pared: pared, muro, revestimiento, enchape
+- cielo: cielo, cielo raso, falso plafond, plafond, techo\
+"""
+
+_FINISHES_LINE = re.compile(
+    r"acabado|cuadro|piso|z[oó]calo|rodap[ií]e|"
+    r"cielo\s+raso|falso\s+plafond|plafond|enchape|porcelanato|"
+    r"ambiente|sala|ba[nñ]o|cocina|dormitorio|habitaci[oó]n",
+    re.IGNORECASE,
+)
+
+
+def _focus_notes(text: str) -> str:
+    """Keep lines likely from the finishes table; fall back to full text."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    hits = [ln for ln in lines if _FINISHES_LINE.search(ln)]
+    if len(hits) >= 2:
+        return "\n".join(hits)
+    return text
+
 
 def _json_schema() -> dict[str, Any]:
     return {
@@ -51,7 +92,10 @@ def _json_schema() -> dict[str, Any]:
             "properties": {
                 "ambientes": {
                     "type": "array",
-                    "description": "Una fila por ambiente del cuadro de acabados.",
+                    "description": (
+                        "Filas del cuadro de acabados unicamente. "
+                        "Vacio si el texto no contiene cuadro de acabados."
+                    ),
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
@@ -59,12 +103,30 @@ def _json_schema() -> dict[str, Any]:
                         "properties": {
                             "ambiente": {
                                 "type": "string",
-                                "description": "Nombre del ambiente (sala, bano, cocina, dormitorio 1, ...).",
+                                "description": (
+                                    "Nombre del ambiente como en el cuadro, minusculas sin acentos "
+                                    "(sala, bano 1, cocina, dormitorio 2, general)."
+                                ),
                             },
-                            "piso": {"type": ["string", "null"], "description": "Acabado de piso o null."},
-                            "zocalo": {"type": ["string", "null"], "description": "Acabado de zocalo o null."},
-                            "pared": {"type": ["string", "null"], "description": "Acabado de pared o null."},
-                            "cielo": {"type": ["string", "null"], "description": "Acabado de cielo raso o null."},
+                            "piso": {
+                                "type": ["string", "null"],
+                                "description": "Acabado de piso literal del cuadro. null si vacio o no especificado.",
+                            },
+                            "zocalo": {
+                                "type": ["string", "null"],
+                                "description": "Acabado de zocalo/rodapie literal. null si vacio o no especificado.",
+                            },
+                            "pared": {
+                                "type": ["string", "null"],
+                                "description": (
+                                    "Acabado de pared literal, incluyendo altura parcial "
+                                    "(ej. ceramica h=1.80). null si vacio."
+                                ),
+                            },
+                            "cielo": {
+                                "type": ["string", "null"],
+                                "description": "Acabado de cielo raso/plafond literal. null si vacio.",
+                            },
                         },
                     },
                 }
@@ -129,17 +191,12 @@ def extract_finishes_schedule(
 
     try:
         client = OpenAI(api_key=api_key)
-        system = (
-            "Eres un presupuestista senior. Lee el CUADRO DE ACABADOS de un plano "
-            "arquitectonico y devuelve una fila por ambiente con su acabado de piso, "
-            "zocalo, pared y cielo. Usa null cuando el cuadro no especifique ese campo. "
-            "No inventes ambientes que no aparezcan."
-        )
+        payload = _focus_notes(text)
         response = client.chat.completions.create(
             model=resolved_model,
             messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": "CUADRO DE ACABADOS / NOTAS:\n\n" + text},
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": payload},
             ],
             response_format={"type": "json_schema", "json_schema": _json_schema()},
             temperature=0,

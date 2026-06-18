@@ -209,3 +209,19 @@ def test_finishes_binding_matches_rooms():
     bound = bind_finishes_to_rooms(schedule, ["Bano 1", "Sala"])
     assert "Bano 1" in bound and bound["Bano 1"]["piso"] == "porcelanato"
     assert "Sala" not in bound
+
+
+def test_finishes_focus_notes_keeps_table_lines():
+    from knowledge.finishes_schedule import _focus_notes
+
+    text = (
+        "PROYECTO RESIDENCIAL\n"
+        "INDICE DE LAMINAS\n"
+        "CUADRO DE ACABADOS\n"
+        "SALA porcelanato porcelanato pintura gypsum\n"
+        "BANO antideslizante ceramica h=1.80 pvc\n"
+    )
+    focused = _focus_notes(text)
+    assert "CUADRO DE ACABADOS" in focused
+    assert "SALA" in focused
+    assert "INDICE DE LAMINAS" not in focused

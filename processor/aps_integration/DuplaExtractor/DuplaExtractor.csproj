@@ -8,8 +8,5 @@
   <ItemGroup>
     <PackageReference Include="AutoCAD.NET.Core" Version="24.3.*" ExcludeAssets="runtime" />
     <PackageReference Include="AutoCAD.NET" Version="24.3.*" ExcludeAssets="runtime" />
-    <!-- System.Text.Json removed on purpose: its facade-DLL tree fails to bind in
-         the AutoCAD core console (net48) and breaks command registration.
-         Commands.cs now serializes JSON by hand, so the bundle has zero deps. -->
   </ItemGroup>
 </Project>

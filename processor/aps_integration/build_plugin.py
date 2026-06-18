@@ -7,11 +7,6 @@ PROJECT_DIR = os.path.join(os.path.dirname(__file__), "DuplaExtractor")
 BUNDLE_DIR = os.path.join(os.path.dirname(__file__), "DuplaExtractor.bundle")
 OUTPUT_ZIP = os.path.join(os.path.dirname(__file__), "DuplaExtractor.zip")
 
-# NOTE: the C# source lives in DuplaExtractor/Commands.cs ON DISK and is the
-# source of truth (it emits Vertices / Line Start-End so the GeometryMerger can
-# collapse double-line walls — P2.7). This script no longer regenerates it; an
-# older embedded copy used to overwrite it and silently drop the vertices.
-
 PACKAGE_XML = """<?xml version="1.0" encoding="utf-8"?>
 <ApplicationPackage SchemaVersion="1.0" AppVersion="1.0" Author="Dupla" Name="DuplaExtractor" Description="Extrae datos de bloques y polilineas a JSON">
   <Components>
