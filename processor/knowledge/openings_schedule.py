@@ -34,6 +34,28 @@ except ImportError:  # pragma: no cover
     OpenAI = None  # type: ignore[assignment]
 
 
+_SYSTEM_PROMPT = """\
+Presupuestista senior (arquitectura, Republica Dominicana).
+Invocacion: tool openings_schedule sobre la lamina adjunta (imagen).
+
+Objetivo: localizar el CUADRO DE PUERTAS y/o VENTANAS (tabla con marcas) y devolver una fila por marca.
+
+Reglas:
+- Solo filas que aparezcan en el cuadro. No infieras desde simbologia del plano ni cotas sueltas.
+- Sin cuadro de puertas/ventanas en la lamina -> filas=[].
+- mark: copia literal (P1, P-01, V2, VE-3). Una fila por marca unica del cuadro.
+- kind: "puerta" o "ventana" segun la fila/seccion del cuadro (marcas P* vs V* ayudan pero no bastan solas).
+- type y material: literal del cuadro (principal, interior, corrediza, fija, madera, aluminio, pvc, vidrio).
+- width_m / height_m: en METROS. Convierte cm/mm del cuadro (90 cm -> 0.90, 2.10 m -> 2.10).
+- count: cantidad entera de esa marca segun el cuadro; null si no aparece.
+- null solo si la columna existe y la celda esta vacia, es "-" o "N/A".
+- "VER DETALLE" / "VER PLANO": null en ese campo.
+- Ignora planta dibujada, leyenda general, membrete, cuadros de acabados u otros.
+
+Si hay cuadros separados de puertas y ventanas en la misma lamina, une todas las filas.\
+"""
+
+
 def is_enabled() -> bool:
     return (os.getenv("DUPLA_OPENINGS_SCHEDULE") or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -49,23 +71,44 @@ def _json_schema() -> dict[str, Any]:
             "properties": {
                 "filas": {
                     "type": "array",
-                    "description": "Una fila por puerta/ventana del cuadro. Vacio si la lamina no tiene cuadro.",
+                    "description": (
+                        "Filas del cuadro de puertas/ventanas unicamente. "
+                        "Vacio si la lamina no contiene cuadro."
+                    ),
                     "items": {
                         "type": "object",
                         "additionalProperties": False,
                         "required": ["mark", "kind", "type", "material", "width_m", "height_m", "count"],
                         "properties": {
-                            "mark": {"type": "string", "description": "Marca (P1, V2, ...)."},
+                            "mark": {
+                                "type": "string",
+                                "description": "Marca literal del cuadro (P1, P-01, V2, VE-3).",
+                            },
                             "kind": {
                                 "type": "string",
                                 "enum": ["puerta", "ventana"],
-                                "description": "puerta o ventana.",
+                                "description": "puerta o ventana segun la fila del cuadro.",
                             },
-                            "type": {"type": ["string", "null"], "description": "Tipo (principal, interior, corrediza, fija, ...)."},
-                            "material": {"type": ["string", "null"], "description": "Material (madera, aluminio, pvc, metal, vidrio)."},
-                            "width_m": {"type": ["number", "null"], "description": "Ancho en metros."},
-                            "height_m": {"type": ["number", "null"], "description": "Alto en metros."},
-                            "count": {"type": ["integer", "null"], "description": "Cantidad de esta marca."},
+                            "type": {
+                                "type": ["string", "null"],
+                                "description": "Tipo literal (principal, interior, corrediza, fija, oscilobatiente). null si vacio.",
+                            },
+                            "material": {
+                                "type": ["string", "null"],
+                                "description": "Material literal (madera, aluminio, pvc, metal, vidrio). null si vacio.",
+                            },
+                            "width_m": {
+                                "type": ["number", "null"],
+                                "description": "Ancho en metros (convertir cm/mm del cuadro). null si no aparece.",
+                            },
+                            "height_m": {
+                                "type": ["number", "null"],
+                                "description": "Alto en metros (convertir cm/mm del cuadro). null si no aparece.",
+                            },
+                            "count": {
+                                "type": ["integer", "null"],
+                                "description": "Cantidad de unidades de esta marca. null si no aparece.",
+                            },
                         },
                     },
                 }
@@ -110,20 +153,13 @@ def _cache_path(cache_dir: Path, image_bytes_digest: str, model: str) -> Path:
 
 def _parse_one(client: "OpenAI", image_path: Path, model: str) -> list[dict[str, Any]]:
     b64 = base64.b64encode(image_path.read_bytes()).decode("utf-8")
-    system = (
-        "Eres un presupuestista. Te paso la imagen de una lamina. Si contiene un "
-        "CUADRO de puertas y/o ventanas, extrae cada fila con marca, tipo, material, "
-        "ancho, alto y cantidad. Usa null donde no aparezca. Si no hay cuadro, "
-        "devuelve filas vacio. No inventes."
-    )
     response = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": system},
+            {"role": "system", "content": _SYSTEM_PROMPT},
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": "Extrae el cuadro de puertas/ventanas de esta lamina."},
                     {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
                 ],
             },
