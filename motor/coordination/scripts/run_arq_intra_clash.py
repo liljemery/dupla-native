@@ -183,7 +183,11 @@ def main() -> None:
         "project": PROJECT_NAME,
         "discipline": "ARQ",
         "frame": "identity (reference)",
-        "render_source": "self (ezdxf-derived bbox plan; no APS URN for ARQ)",
+        "render_source": (
+            "APS (SVF 2D sheet) + self-render"
+            if (OUT_DIR / "aps_plan_annotated.png").is_file()
+            else "self (ezdxf-derived bbox plan)"
+        ),
         "geometry_source": str(GEOMETRY_PATH),
         "elements_analyzed": prep_meta["kept"],
         "elements_skipped": prep_meta["skipped"],
@@ -232,6 +236,14 @@ def main() -> None:
     sheet_title = Path(geometry.get("source_dwg") or "ARQ").stem
     sheet_mtime = ((geometry.get("source_fingerprint") or {}).get("mtime"))
     sheet_date = _dt.datetime.fromtimestamp(sheet_mtime).strftime("%d.%m.%Y") if sheet_mtime else "—"
+    # Use the real APS 2D sheet (with overlaid boxes) when it has been produced
+    # by the APS pipeline; otherwise fall back to the self-render plan.
+    aps_plan = OUT_DIR / "aps_plan_annotated.png"
+    aps_plan_png = str(aps_plan) if aps_plan.is_file() else None
+    render_source = (
+        "APS (SVF 2D sheet) real screenshot + model→sheet similarity overlay"
+        if aps_plan_png else "self (ezdxf-derived bbox plan; no APS sheet present)"
+    )
     meta = {
         "project": PROJECT_NAME,
         "fecha": _dt.date.today().strftime("%d.%m.%Y"),
@@ -241,6 +253,7 @@ def main() -> None:
         "sheet_title": sheet_title,
         "sheet_date": sheet_date,
         "sheet_rev": "REV. 1",
+        "render_source": render_source,
     }
     pdf_path = build_ga_fo_08(
         incidents=incidents,
@@ -251,6 +264,7 @@ def main() -> None:
         sev_counts=sev_counts,
         pair_hist=pair_hist,
         meta=meta,
+        aps_plan_png=aps_plan_png,
     )
     print("\n[4] BUILD GA-FO-08 PDF")
     print(f"    pdf : {pdf_path}")
@@ -259,7 +273,7 @@ def main() -> None:
     print("\n[5] CHECKPOINT")
     print(f"    PDF path        : {pdf_path}")
     print(f"    incidents       : {len(incidents)} (severity {dict(sev_counts)})")
-    print("    render source   : SELF (ezdxf-derived bbox plan; no APS URN for ARQ)")
+    print(f"    render source   : {render_source}")
     print(f"    results json    : {OUT_DIR / 'clash_results.json'}")
     print("    spot-check (boxes sit on real elements — identity frame, model coords):")
     for inc in incidents[:3]:
@@ -280,6 +294,7 @@ def build_ga_fo_08(
     sev_counts: collections.Counter,
     pair_hist: collections.Counter,
     meta: dict,
+    aps_plan_png: str | None = None,
 ) -> str:
     """GA-FO-08 'LISTA DE CHEQUEO - PLANOS' institutional form.
 
@@ -447,15 +462,36 @@ def build_ga_fo_08(
     ]
     story.append(table)
 
-    # ── annotated plan sheets (self-render) ────────────────────────────────
+    # ── annotated plan sheets ──────────────────────────────────────────────
     story.append(NextPageTemplate("form"))
+    if aps_plan_png:
+        # Real APS 2D sheet with clash boxes overlaid via model→sheet similarity.
+        from PIL import Image as _PILImage
+
+        iw, ih = _PILImage.open(aps_plan_png).size
+        max_w, max_h = 250 * mm, 120 * mm
+        w = max_w
+        h = w * ih / iw
+        if h > max_h:
+            h = max_h
+            w = h * iw / ih
+        story.append(PageBreak())
+        story.append(Paragraph(
+            f"PLANO: {meta['sheet_code']} — {meta['sheet_title']} (lámina APS real · incidencias localizadas)", cap))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Image(aps_plan_png, width=w, height=h))
+        story.append(Paragraph(
+            "Lámina real del visor APS (SVF 2D del DWG traducido). Las cajas de clash se proyectan "
+            "del marco modelo (metros) al de la lámina mediante una similitud ajustada por RANSAC "
+            "desde centros de elementos emparejados por handle. Geométricamente real.", cell))
+
     story.append(PageBreak())
     story.append(Paragraph(f"PLANO: {meta['sheet_code']} — {meta['sheet_title']} (vista general de incidencias)", cap))
     story.append(Spacer(1, 2 * mm))
     story.append(Image(overview_png, width=153 * mm, height=118 * mm))
     story.append(Paragraph(
         "Render propio derivado de ezdxf (bounding-box del modelo limpio, marco identidad ARQ). "
-        "No es la lámina APS; geométricamente real.", cell))
+        "Vista esquemática complementaria a la lámina APS.", cell))
 
     for inc, png in detail_pngs:
         rep = inc.representative
