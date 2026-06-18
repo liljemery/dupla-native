@@ -54,7 +54,7 @@ def build_clashes() -> list[dict]:
     return clashes
 
 
-def capture(width: int = 3400, height: int = 2400) -> dict:
+def capture(width: int = 5200, height: int = 3600) -> dict:
     meta = json.loads(APS_META.read_text())
     urn = meta["urn"]
     token = _token()
