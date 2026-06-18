@@ -335,6 +335,15 @@ def takeoff_budget_eligibility(
     if item_type == "pres_reference_line":
         return True, ""
 
+    # E3: never export an empty partida. A zero/negative quantity is an
+    # unmeasured item, not a budget line. Keep with DUPLA_KEEP_ZERO_QTY=1.
+    if (os.getenv("DUPLA_KEEP_ZERO_QTY") or "").strip().lower() not in {"1", "true", "yes", "on"}:
+        try:
+            if float(takeoff.quantity) <= 0.0:
+                return False, "zero_quantity"
+        except (TypeError, ValueError):
+            pass
+
     if allowed_item_types is not None and item_type not in allowed_item_types:
         return False, "discipline_filter"
 

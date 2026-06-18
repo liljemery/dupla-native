@@ -1870,6 +1870,7 @@ def run_dupla_pipeline(
 
     discipline_results = asyncio.run(_process_all_disciplines())
     discipline_errors: list[dict[str, Any]] = []
+    discipline_budgets: dict[str, dict[str, Any]] = {}
     for disc_id, result in zip(target_disciplines, discipline_results):
         if isinstance(result, BaseException):
             logger.error(
@@ -1892,11 +1893,28 @@ def run_dupla_pipeline(
             all_domain_validations.append(validation_summary)
         master_rows.extend(result.get("rows") or [])
         master_artifacts.update(result.get("artifacts") or {})
+        discipline_budgets[disc_id] = result.get("budget") or {"rows": result.get("rows") or []}
 
         validation = result.get("validation")
         if validation is not None:
             write_unclassified_report(validation, run_dir.unclassified_elements)
             write_missing_attributes_report(validation, run_dir.discipline_missing_attrs(disc_id))
+
+    # E7: single multi-discipline master budget (RESUMEN GENERAL + per-discipline
+    # sheets). Written before archiving so it ships inside the deliverables zip.
+    if discipline_budgets:
+        try:
+            from budget.consolidator import consolidate_budgets
+
+            consolidated_path = consolidate_budgets(
+                discipline_budgets,
+                run_dir.root / "presupuesto_consolidado.xlsx",
+                resolved_project_name,
+            )
+            master_artifacts["consolidado_excel"] = str(consolidated_path)
+            logger.info("Consolidated multi-discipline budget: %s", consolidated_path)
+        except Exception:
+            logger.warning("Budget consolidation failed (non-fatal)", exc_info=True)
 
     archive_path = _archive_directory(run_dir.root)
     master_budget = {
