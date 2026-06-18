@@ -10,8 +10,12 @@ Everything stays REST-based. No COM or local Autodesk automation is used.
 from __future__ import annotations
 
 import base64
+import os
+import random
+import threading
 import time
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from dotenv import load_dotenv
@@ -34,6 +38,52 @@ DEFAULT_SHALLOW_PROPERTY_THRESHOLD = 20
 DEFAULT_PROPERTY_QUERY_BATCH_SIZE = 100
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return default
+
+
+# Concurrencia intra-archivo: cuántas vistas se extraen en paralelo por DWG.
+APS_VIEW_WORKERS = _env_int("APS_VIEW_WORKERS", 5)
+# Tope global de llamadas simultáneas a metadata/propiedades (varios DWG x varias vistas).
+APS_METADATA_CONCURRENCY = _env_int("APS_METADATA_CONCURRENCY", 8)
+# Presupuesto de objetos-con-área tras el cual se deja de pedir más vistas (modo agresivo).
+APS_VIEW_OBJECT_BUDGET = _env_int("APS_VIEW_OBJECT_BUDGET", 1600)
+# Mínimo de vistas a procesar siempre, aunque el presupuesto ya esté cubierto.
+APS_MIN_VIEWS = _env_int("APS_MIN_VIEWS", 3)
+# Polling de propiedades arranca más corto que el de traducción.
+DEFAULT_PROPERTY_POLL_START_SECONDS = _env_int("APS_PROPERTY_POLL_START_SECONDS", 4)
+
+_RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+_MAX_HTTP_RETRIES = _env_int("APS_HTTP_MAX_RETRIES", 5)
+
+# Limita el total de peticiones HTTP concurrentes contra APS para no gatillar 429.
+_METADATA_SEMAPHORE = threading.BoundedSemaphore(APS_METADATA_CONCURRENCY)
+# Evita que varios hilos refresquen el token a la vez.
+_TOKEN_REFRESH_LOCK = threading.Lock()
+
+
+class ApsCapacityError(RuntimeError):
+    """Raised when APS denies a rated API (Model Derivative) due to account quota.
+
+    This is an account/billing condition (HTTP 403 'ProductAccessRequiresCapacity'),
+    NOT a corrupt file or a code defect. Callers should fall back to local/PDF
+    extraction and surface a clear, actionable message instead of mislabeling the
+    DWG as invalid.
+    """
+
+
+def is_capacity_denied(status_code: int, body: str) -> bool:
+    text = (body or "").lower()
+    return status_code == 403 and (
+        "productaccessrequirescapacity" in text
+        or "token exchange denied" in text
+        or "token exchange access denied" in text
+    )
+
+
 def _get_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
@@ -50,6 +100,17 @@ def _coerce_token_state(token: str | dict[str, object]) -> dict[str, object]:
     return {"access_token": token, "refresh_count": 0}
 
 
+def _refresh_token(token_state: dict[str, object]) -> None:
+    """Refresca el token bajo lock para que hilos concurrentes no lo dupliquen."""
+    current = str(token_state["access_token"])
+    with _TOKEN_REFRESH_LOCK:
+        # Otro hilo pudo refrescar mientras esperábamos el lock.
+        if str(token_state["access_token"]) != current:
+            return
+        token_state["access_token"] = get_aps_token()
+        token_state["refresh_count"] = int(token_state.get("refresh_count", 0)) + 1
+
+
 def _request_with_token_refresh(
     method: str,
     url: str,
@@ -57,6 +118,7 @@ def _request_with_token_refresh(
     *,
     headers: dict[str, str] | None = None,
     timeout: int = REQUEST_TIMEOUT_SECONDS,
+    max_retries: int = _MAX_HTTP_RETRIES,
     **request_kwargs,
 ) -> requests.Response:
     token_state = _coerce_token_state(token)
@@ -65,32 +127,48 @@ def _request_with_token_refresh(
     def do_request() -> requests.Response:
         resolved_headers = dict(headers or {})
         resolved_headers.update(_get_headers(str(token_state["access_token"])))
-        return request_method(
-            url,
-            headers=resolved_headers,
-            timeout=timeout,
-            **request_kwargs,
-        )
+        # El semáforo acota cuántas peticiones golpean APS a la vez (anti-429).
+        with _METADATA_SEMAPHORE:
+            return request_method(
+                url,
+                headers=resolved_headers,
+                timeout=timeout,
+                **request_kwargs,
+            )
 
+    refreshed = False
     response = do_request()
-    if response.status_code != 401:
-        return response
+    for attempt in range(1, max_retries + 1):
+        status = response.status_code
 
-    print(
-        f"[AUTH] APS token expired during {method.upper()} request. "
-        "Refreshing token and retrying once."
-    )
-    token_state["access_token"] = get_aps_token()
-    token_state["refresh_count"] = int(token_state.get("refresh_count", 0)) + 1
-    retry_response = do_request()
-    if retry_response.status_code == 401:
-        print("[AUTH] Retry after token refresh still returned 401.")
-    else:
-        print(
-            f"[AUTH] Retry after token refresh succeeded with status "
-            f"{retry_response.status_code}."
-        )
-    return retry_response
+        if status == 401 and not refreshed:
+            print(
+                f"[AUTH] APS token expired during {method.upper()} request. "
+                "Refreshing token and retrying once."
+            )
+            _refresh_token(token_state)
+            refreshed = True
+            response = do_request()
+            continue
+
+        if status in _RETRYABLE_STATUS and attempt < max_retries:
+            # Respeta Retry-After si APS lo envía; si no, backoff exponencial con jitter.
+            retry_after = response.headers.get("Retry-After")
+            if retry_after and str(retry_after).strip().isdigit():
+                wait_seconds = float(retry_after)
+            else:
+                wait_seconds = min(2 ** attempt, 30) + random.uniform(0, 1.5)
+            print(
+                f"[WARN] APS {method.upper()} {status} (intento {attempt}/{max_retries}). "
+                f"Reintentando en {wait_seconds:.1f}s..."
+            )
+            time.sleep(wait_seconds)
+            response = do_request()
+            continue
+
+        break
+
+    return response
 
 
 def _normalize_views(views: Iterable[str] | None) -> list[str]:
@@ -210,6 +288,44 @@ def urn_from_object_id(bucket_key: str, object_name: str) -> str:
     return base64.urlsafe_b64encode(object_id.encode()).decode().rstrip("=")
 
 
+def translate_to_svf1(
+    token: str | dict[str, object],
+    urn: str,
+    *,
+    max_retries: int = 3,
+    views: Iterable[str] = DEFAULT_VIEWS,
+) -> dict:
+    """Submit SVF v1 translation (necesario para volcado de geometría 2D real vía Viewer)."""
+    normalized_views = _normalize_views(views)
+    print(
+        f"\n[MODEL DERIVATIVE] Submitting SVF1 translation | "
+        f"URN={_short_urn(urn)} | views={normalized_views}"
+    )
+    url = f"{MD_URL}/job"
+    payload = {
+        "input": {"urn": urn},
+        "output": {"formats": [{"type": "svf", "views": normalized_views}]},
+    }
+    last_response: requests.Response | None = None
+    for attempt in range(1, max_retries + 1):
+        response = _request_with_token_refresh("post", url, token, json=payload)
+        last_response = response
+        if response.status_code in {200, 201, 202}:
+            print("[OK] SVF1 translation job accepted.")
+            return response.json()
+        if is_capacity_denied(response.status_code, response.text):
+            raise ApsCapacityError(
+                f"APS capacity denied for SVF1 translation URN={_short_urn(urn)}: {response.text[:500]}"
+            )
+        if attempt < max_retries:
+            time.sleep(min(2**attempt, 30))
+    raise RuntimeError(
+        f"SVF1 translation failed for URN={_short_urn(urn)}: "
+        f"{last_response.status_code if last_response else 'no response'} "
+        f"{last_response.text[:300] if last_response else ''}"
+    )
+
+
 def translate_to_svf2(
     token: str | dict[str, object],
     urn: str,
@@ -256,6 +372,14 @@ def translate_to_svf2(
         if response.status_code in {201, 202}:
             print("[OK] Translation job started.")
             return response.json()
+        if is_capacity_denied(response.status_code, response.text):
+            raise ApsCapacityError(
+                "APS Model Derivative denegado por cuota de cuenta "
+                "(403 ProductAccessRequiresCapacity). El plan Free agotó su cupo "
+                "mensual de traducción o requiere Flex tokens. "
+                "Revisa https://manage.autodesk.com/feature-usage/. "
+                f"Respuesta: {response.text[:200]}"
+            )
         if response.status_code in {429} or response.status_code >= 500:
             wait_seconds = 10 * attempt
             print(
@@ -522,12 +646,29 @@ def _extract_view_results(
     poll_interval_seconds: int,
     shallow_threshold: int = DEFAULT_SHALLOW_PROPERTY_THRESHOLD,
     query_batch_size: int = DEFAULT_PROPERTY_QUERY_BATCH_SIZE,
+    view_workers: int = APS_VIEW_WORKERS,
+    object_budget: int = APS_VIEW_OBJECT_BUDGET,
+    min_views: int = APS_MIN_VIEWS,
+    property_poll_start_seconds: int = DEFAULT_PROPERTY_POLL_START_SECONDS,
 ) -> tuple[list[dict], int]:
+    """Extrae propiedades por vista en paralelo, preservando el orden original.
+
+    Las vistas se procesan en oleadas (chunks) del tamaño de `view_workers`, en el
+    mismo orden en que llegan de APS. Tras cada oleada se acumula `objects_with_area`;
+    si ya se cubrió `object_budget` (y se procesó un mínimo de vistas) se omiten las
+    vistas restantes. Esto es seguro porque el consumidor proxy corta en `max_entities`
+    recorriendo las vistas en orden, así que las vistas tardías no aportarían elementos.
+    """
     extracted_views: list[dict] = []
     successful_view_count = 0
+    accumulated_area = 0
     filtered_views = _filter_requested_views(views_payload, normalized_views)
+    if not filtered_views:
+        return extracted_views, successful_view_count
 
-    for view in filtered_views:
+    workers = max(1, min(int(view_workers), len(filtered_views)))
+
+    def _process(view: dict) -> tuple[dict, bool, int]:
         guid = view.get("guid", "")
         view_name = view.get("name", "Unknown")
         role = view.get("role", "")
@@ -538,31 +679,46 @@ def _extract_view_results(
                 urn,
                 guid,
                 max_property_wait_seconds=max_property_wait_seconds,
-                poll_interval_seconds=poll_interval_seconds,
+                poll_interval_seconds=property_poll_start_seconds,
                 shallow_threshold=shallow_threshold,
                 query_batch_size=query_batch_size,
             )
-            extracted_views.append(
-                {
-                    "name": view_name,
-                    "guid": guid,
-                    "role": role,
-                    "object_count": len(collection),
-                    "objects": collection,
-                    **diagnostics,
-                }
-            )
-            successful_view_count += 1
+            entry = {
+                "name": view_name,
+                "guid": guid,
+                "role": role,
+                "object_count": len(collection),
+                "objects": collection,
+                **diagnostics,
+            }
+            return entry, True, int(diagnostics.get("objects_with_area", 0) or 0)
         except Exception as exc:
             print(f"[WARN] Failed extracting view {view_name}: {exc}")
-            extracted_views.append(
-                {
-                    "name": view_name,
-                    "guid": guid,
-                    "role": role,
-                    "error": str(exc),
-                }
-            )
+            return ({"name": view_name, "guid": guid, "role": role, "error": str(exc)}, False, 0)
+
+    for start in range(0, len(filtered_views), workers):
+        chunk = filtered_views[start : start + workers]
+        if workers == 1:
+            chunk_results = [_process(chunk[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                chunk_results = list(executor.map(_process, chunk))
+
+        for entry, succeeded, area in chunk_results:
+            extracted_views.append(entry)
+            if succeeded:
+                successful_view_count += 1
+                accumulated_area += area
+
+        if len(extracted_views) >= min_views and accumulated_area >= object_budget:
+            remaining = len(filtered_views) - len(extracted_views)
+            if remaining > 0:
+                print(
+                    f"[MODEL DERIVATIVE] Presupuesto de vistas cubierto: "
+                    f"{accumulated_area} objetos-con-area en {len(extracted_views)} vistas "
+                    f"(budget={object_budget}). Se omiten {remaining} vistas restantes."
+                )
+            break
 
     return extracted_views, successful_view_count
 
@@ -588,6 +744,24 @@ def _build_failed_translation_message(
     )
 
 
+def _views_from_manifest_resources(manifest: dict | None) -> list[dict]:
+    """Build pseudo-view entries from manifest resource nodes when /metadata is empty."""
+    if not manifest:
+        return []
+    views: list[dict] = []
+    seen: set[str] = set()
+    for node in _iter_manifest_nodes(manifest):
+        guid = node.get("guid")
+        if not guid or guid in seen:
+            continue
+        role = str(node.get("role") or "").lower()
+        name = str(node.get("name") or node.get("type") or "manifest-view")
+        if "2d" in role or "3d" in role or "graphics" in role or "view" in role:
+            seen.add(str(guid))
+            views.append({"guid": guid, "name": name, "role": role})
+    return views
+
+
 def get_model_views(token: str | dict[str, object], urn: str) -> list[dict]:
     """
     Get model views (metadata). Each view includes the GUID needed to request
@@ -604,6 +778,9 @@ def get_model_views(token: str | dict[str, object], urn: str) -> list[dict]:
     data = response.json()
 
     views = data.get("data", {}).get("metadata", [])
+    if not views:
+        manifest = get_manifest(token, urn)
+        views = _views_from_manifest_resources(manifest)
     for view in views:
         print(
             f"   View: {view.get('name', '?')} | GUID: {view.get('guid', '?')} | "
@@ -738,6 +915,10 @@ def extract_dwg_data(
     max_property_wait_seconds: int = DEFAULT_MAX_PROPERTY_WAIT_SECONDS,
     failed_manifest_grace_polls: int = DEFAULT_FAILED_MANIFEST_GRACE_POLLS,
     failed_manifest_grace_sleep_seconds: int = DEFAULT_FAILED_MANIFEST_GRACE_SLEEP_SECONDS,
+    view_workers: int = APS_VIEW_WORKERS,
+    object_budget: int = APS_VIEW_OBJECT_BUDGET,
+    min_views: int = APS_MIN_VIEWS,
+    property_poll_start_seconds: int = DEFAULT_PROPERTY_POLL_START_SECONDS,
 ) -> dict:
     """
     Full pipeline: translate a DWG and extract all available properties.
@@ -868,6 +1049,10 @@ def extract_dwg_data(
                     normalized_views,
                     max_property_wait_seconds=max_property_wait_seconds,
                     poll_interval_seconds=poll_interval_seconds,
+                    view_workers=view_workers,
+                    object_budget=object_budget,
+                    min_views=min_views,
+                    property_poll_start_seconds=property_poll_start_seconds,
                 )
                 salvage_succeeded = successful_view_count > 0
         except Exception as exc:
@@ -901,6 +1086,10 @@ def extract_dwg_data(
             normalized_views,
             max_property_wait_seconds=max_property_wait_seconds,
             poll_interval_seconds=poll_interval_seconds,
+            view_workers=view_workers,
+            object_budget=object_budget,
+            min_views=min_views,
+            property_poll_start_seconds=property_poll_start_seconds,
         )
 
     all_results = {

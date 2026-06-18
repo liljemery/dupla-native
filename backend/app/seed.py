@@ -128,6 +128,7 @@ def _seed_workflow_meta() -> dict[str, Any]:
             "volumetry": {},
             "cost_analysis": {},
             "budget_versions": [],
+        
         }
     }
 

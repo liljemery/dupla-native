@@ -167,6 +167,13 @@ def map_to_structural_analysis_report(
             continue
         iid = str(inc.get("incident_id") or f"clash-{idx + 1}")
         priority = _priority_from_incident(inc)
+        rep = inc.get("representative_conflict") or {}
+        geo_sources = rep.get("geometry_sources") or inc.get("geometry_sources") or []
+        if isinstance(geo_sources, (list, tuple)):
+            geo_label = " / ".join(str(s) for s in geo_sources if s)
+        else:
+            geo_label = str(geo_sources) if geo_sources else ""
+        confidence = str(rep.get("confidence") or inc.get("confidence") or "")
         clashes.append(
             {
                 "id": iid,
@@ -176,6 +183,8 @@ def map_to_structural_analysis_report(
                 "location_label": str(inc.get("level_id") or None) or None,
                 "disciplines": _disciplines_from_incident(inc),
                 "thumbnail_url": None,
+                "confidence": confidence or None,
+                "geometry_sources": geo_label or None,
             }
         )
 

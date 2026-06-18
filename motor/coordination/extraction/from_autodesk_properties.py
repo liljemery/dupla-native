@@ -22,6 +22,55 @@ from coordination.core.units import to_mm
 DEFAULT_LINE_BUFFER_M = 0.15
 DEFAULT_BLOCK_SIDE_M = 1.0
 
+# Capas/bloques que NO representan componentes constructivos reales: anotación, texto,
+# acotación, ejes/grilla, rótulos, simbología, paisajismo y mobiliario. Clasharlos contra
+# tuberías o estructura produce falsos positivos (p.ej. "ARBOLES" vs "Tuberia").
+_NONPHYSICAL_LAYER_TOKENS = (
+    # Texto / anotación / acotación / notas / etiquetas
+    "TEXT", "TEXTO", "MTEXT", "DIM", "COTA", "ACOT", "ANNO", "A-ANNO", "NOTE", "NOTA",
+    "LABEL", "ETIQUET", "LEADER", "DIRECTRIZ", "TAG", "IDEN", "DETL", "DETALLE", "REVISION",
+    # Ejes / grilla / referencias
+    "EJE", "EJES", "GRID", "AXIS", "REJILLA", "MALLA", "REFERENC",
+    # Rótulo / formato / membrete / norte / escala / logo / leyenda
+    "TITLE", "ROTULO", "RÓTULO", "MEMBRETE", "CAJETIN", "CAJETÍN", "SHEET", "FORMATO",
+    "LOGO", "NORTE", "NORTH", "ESCALA", "SCALE", "LEYENDA", "LEGEND", "SIMBOL", "SÍMBOL", "SYMBOL",
+    # Paisajismo / mobiliario / figuras decorativas
+    "ARBOL", "ÁRBOL", "PLANT", "VEGET", "PAISAJ", "JARDIN", "JARDÍN", "GRAMA", "CESPED", "CÉSPED",
+    "MOBILIARIO", "FURNITURE", "MUEBLE", "VEHIC", "PERSONA", "FIGURA", "DECOR", "AMUEBL",
+    # Graficos auxiliares (hatch de muros/vigas se conserva; ver is_nonphysical_entity)
+    "ACHURAD", "POCHE", "SOMBRA", "SHADOW", "RAYAD",
+)
+
+# Hatch/achurado que sí representa masa constructiva (muros, losas, etc.).
+_PHYSICAL_HATCH_TOKENS = (
+    "MURO", "MUROS", "WALL", "VIGA", "VIGAS", "BEAM", "COLUMN", "COLUMNA",
+    "LOSA", "SLAB", "CONCRETE", "CONCRETO", "HORM", "ESTRUC", "STRUCT",
+)
+
+# Tipos de entidad APS que son intrínsecamente anotación (nunca componente físico).
+_NONPHYSICAL_ENTITY_TYPES = (
+    "text", "mtext", "dimension", "aligned dimension", "rotated dimension", "radial dimension",
+    "diametric dimension", "angular dimension", "leader", "mleader", "multileader",
+    "attribute definition", "attribute", "ole2 frame", "wipeout", "viewport",
+)
+
+
+def is_nonphysical_entity(layer: str, entity_type: str, block_name: str = "") -> bool:
+    """Heurística conservadora: True solo si la entidad es claramente anotación/símbolo.
+
+    Por defecto los elementos se consideran físicos (no se descartan), para no perder
+    componentes reales. Solo se excluye lo que coincide con anotación/paisajismo/rótulo.
+    """
+    et = (entity_type or "").strip().lower()
+    if et in _NONPHYSICAL_ENTITY_TYPES:
+        return True
+    haystack = f"{layer or ''} {block_name or ''}".upper()
+    if "HATCH" in haystack and any(token in haystack for token in _PHYSICAL_HATCH_TOKENS):
+        return False
+    if "DETALLES" in haystack or "DETALLE-" in haystack:
+        return False
+    return any(token in haystack for token in _NONPHYSICAL_LAYER_TOKENS)
+
 
 @dataclass(frozen=True)
 class AutodeskEntityPick:
@@ -372,6 +421,15 @@ def bulk_elements_from_autodesk_raw(
             general = props.get("General") or {}
             layer = str(general.get("Layer") or "")
             et = str(general.get("Name ") or "").strip()
+            block_name = str(
+                (props.get("Misc") or {}).get("Name")
+                or general.get("Block name")
+                or general.get("Block Name")
+                or ""
+            )
+            # Filtra anotación/paisajismo/rótulos: no son componentes constructivos reales.
+            if is_nonphysical_entity(layer, et, block_name):
+                continue
             area = _estimate_entity_area_m2(et, props)
             if area is None:
                 continue

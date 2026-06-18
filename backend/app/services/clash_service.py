@@ -70,6 +70,26 @@ def extract_clash_artifacts(result: dict[str, Any] | None) -> dict[str, Any]:
     return artifacts if isinstance(artifacts, dict) else {}
 
 
+def extract_extraction_progress(remote_payload: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(remote_payload, dict):
+        return None
+    progress = remote_payload.get("progress")
+    return progress if isinstance(progress, dict) else None
+
+
+def format_extraction_progress_message(progress: dict[str, Any] | None) -> str | None:
+    if not progress:
+        return None
+    processed = int(progress.get("processed") or 0)
+    total = int(progress.get("total") or 0)
+    phase = str(progress.get("phase") or "extraction")
+    if total <= 0:
+        return None
+    if phase == "clash":
+        return f"Detectando clashes ({processed}/{total} planos extraídos)…"
+    return f"Extrayendo planos {processed}/{total}…"
+
+
 def extract_output_dir(artifacts: dict[str, Any] | None) -> str | None:
     """Resolve coordination output path from job artifacts."""
     if not isinstance(artifacts, dict):
@@ -475,6 +495,9 @@ class ClashService:
 
         data = resp.json()
         remote_status = data.get("status", "")
+        progress = extract_extraction_progress(data)
+        if progress:
+            job.extraction_progress = progress  # type: ignore[attr-defined]
 
         if remote_status == "completed":
             job.status = "completed"
@@ -523,17 +546,20 @@ class ClashService:
 
         if job.status in ("queued", "processing"):
             project = await self._project_svc.get_project(user, project_uuid)
+            progress_msg = format_extraction_progress_message(getattr(job, "extraction_progress", None))
+            subtitle = progress_msg or "Análisis en curso…"
             return {
                 "run_status": "running",
                 "title": f"Informe de coordinación — {project.name}",
-                "subtitle": "Análisis en curso…",
+                "subtitle": subtitle,
                 "summary": {"errors": 0, "warnings": 0, "ok": 0},
                 "clashes": [],
                 "clash_relationships": [],
                 "analyzed_documents": [],
                 "ai_insight": "El análisis de clashes está en ejecución.",
                 "zoning_rows": [],
-                "footer_status_message": f"Estado del job: {job.status}",
+                "footer_status_message": progress_msg or f"Estado del job: {job.status}",
+                "extraction_progress": getattr(job, "extraction_progress", None),
             }
 
         if job.status == "failed":
