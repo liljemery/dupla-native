@@ -98,10 +98,7 @@ def registry_path_for_profile(profile_slug: str) -> Path | None:
         "tortuga_c40": root / "repositorios" / "TORTUGA C40" / "coordination" / "tortuga_c40_project_levels.json",
     }
     path = candidates.get(profile_slug)
-    if path and path.is_file():
-        return path
-    fallback = root / "aps_integration" / "NASAS 09" / "coordination" / "sample_project_levels.json"
-    return fallback if fallback.is_file() else None
+    return path if (path and path.is_file()) else None
 
 
 def _minimal_registry(project_name: str) -> dict[str, Any]:

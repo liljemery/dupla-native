@@ -55,9 +55,16 @@ def _conflicts_to_primary_incidents(report: dict[str, Any]) -> dict[str, Any]:
         # Using 1m² = 1_000_000 mm² as threshold for critical
         priority = "critical" if max_area >= 1_000_000 else "high"
 
-        rep = members[0]
+        rep = max(
+            members,
+            key=lambda c: (
+                c.get("plan_intersection_area_mm2") or 0,
+                c.get("overlap_depth_z_mm") or 0,
+            ),
+        )
         rep_centroid = rep.get("plan_intersection_centroid_mm") or [0, 0]
-        level_id = (rep.get("level_ids") or ["NASAS_ARQ_P1_NPT"])[0]
+        level_ids = rep.get("level_ids") or []
+        level_id = level_ids[0] if level_ids else None
 
         incidents.append({
             "incident_id": f"incident_{idx:04d}",

@@ -63,8 +63,22 @@ def _parse_json_field(raw: Any) -> dict[str, Any]:
     return {}
 
 
+_SEVERITY_ES_TO_ENUM: dict[str, str] = {
+    "crítica": Severity.CRITICAL.value,
+    "critica": Severity.CRITICAL.value,
+    "alta": Severity.HIGH.value,
+    "media": Severity.MEDIUM.value,
+    "baja": Severity.LOW.value,
+}
+
+
 def _safe_enum(value: str, allowed: set[str], default: str) -> str:
     return value if value in allowed else default
+
+
+def _severity_es_to_enum(value: str) -> str:
+    """Map compute_severity() Spanish output to Severity enum value."""
+    return _SEVERITY_ES_TO_ENUM.get(str(value).strip().lower(), Severity.LOW.value)
 
 
 def _priority_from_severity(severity: str) -> str:
@@ -85,7 +99,7 @@ def _incident_to_fields(incident: dict[str, Any]) -> dict[str, Any]:
     area = float(rep.get("plan_intersection_area_mm2") or 0.0)
     z_depth = rep.get("overlap_depth_z_mm")
     z_val = float(z_depth) if z_depth is not None else None
-    severity = compute_severity(area_mm2=area, z_depth_mm=z_val)
+    severity = _severity_es_to_enum(compute_severity(area_mm2=area, z_depth_mm=z_val))
     layers = rep.get("raw_layers") or []
     layer_a = str(layers[0]) if len(layers) > 0 and layers[0] else None
     layer_b = str(layers[1]) if len(layers) > 1 and layers[1] else None
@@ -100,7 +114,7 @@ def _incident_to_fields(incident: dict[str, Any]) -> dict[str, Any]:
     return {
         "clash_code": str(incident.get("incident_id") or "unknown"),
         "priority": _priority_from_severity(severity),
-        "severity": _safe_enum(severity, {s.value for s in Severity}, Severity.LOW.value),
+        "severity": severity,
         "report_confidence": _safe_enum(
             str(incident.get("confidence") or rep.get("confidence") or "low").lower(),
             {c.value for c in ReportConfidence},
