@@ -1,18 +1,13 @@
-import os
 import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
 from redis import Redis
 from rq import Queue, SimpleWorker, Worker
 
-load_dotenv()
-_backend_env = Path(__file__).resolve().parent.parent / "backend" / ".env"
-if _backend_env.is_file():
-    load_dotenv(_backend_env, override=False)
+from runtime_paths import default_redis_url, load_project_env
 
-redis_url = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
-redis_conn = Redis.from_url(redis_url)
+load_project_env()
+
+redis_conn = Redis.from_url(default_redis_url())
 
 if __name__ == "__main__":
     queues = [Queue("dupla_coordination", connection=redis_conn)]

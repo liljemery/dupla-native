@@ -34,6 +34,7 @@ class ClashConflict(BaseModel):
     confidence: Literal["low", "medium", "high"] = "medium"
     geometry_sources: tuple[str, str] = ("unknown", "unknown")
     level_assignment_sources: tuple[str, str] = ("unknown", "unknown")
+    raw_layers: tuple[str, str] = ("", "")
     source_refs: tuple[str, str]
     notes: list[str] = Field(default_factory=list)
 
@@ -169,6 +170,10 @@ def clash_pairs(
                 level_assignment_sources=(
                     str(ea.metadata.get("level_assignment_source") or "unknown"),
                     str(eb.metadata.get("level_assignment_source") or "unknown"),
+                ),
+                raw_layers=(
+                    str(ea.metadata.get("layer") or ""),
+                    str(eb.metadata.get("layer") or ""),
                 ),
                 source_refs=(ea.source_ref, eb.source_ref),
                 notes=notes,

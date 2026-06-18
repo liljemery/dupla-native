@@ -35,4 +35,9 @@ dump.rdb
 processor/output/
 processor/data/pricing_cache/
 
+# F2D spike — dumps y caché offline generados localmente (demasiado grandes para GitHub)
+scripts/spike_f2d/dump_svf1.json
+scripts/spike_f2d/dump_svf1_runtime.json
+scripts/spike_f2d/offline/
+
 .cursor/

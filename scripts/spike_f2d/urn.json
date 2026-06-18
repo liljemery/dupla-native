@@ -1,0 +1,78 @@
+{
+  "urn": "dXJuOmFkc2sub2JqZWN0czpvcy5vYmplY3Q6ZHVwbGFfc3Bpa2VfZjJkX3YxLzE1LjA0LjIwMjYgTEFTIE5BU0FTIDA5IEhTLUFHVUEgUE9UQUJMRS5kd2c",
+  "object_name": "15.04.2026 LAS NASAS 09 HS-AGUA POTABLE.dwg",
+  "bucket": "dupla_spike_f2d_v1",
+  "manifest_status": "success",
+  "viewables": [
+    {
+      "guid": "e3c8222a-8272-a68c-ea1a-3ff107a0adf5",
+      "role": "2d",
+      "name": "AP-1.1",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "95512443-5b2f-310c-81c7-ef230e16923c",
+      "role": "2d",
+      "name": "AP-1.2",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "0369e9f4-c13d-00a9-b97b-92995b36f246",
+      "role": "2d",
+      "name": "AP-1.3",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "fe65b88b-bfaf-53e2-c9fb-eb4437afc35e",
+      "role": "2d",
+      "name": "AP-1.4",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "7f5001c9-fea7-946e-5ca9-f02c4c1144c3",
+      "role": "2d",
+      "name": "AP-1.5",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "2e33bb39-a222-5ca6-77eb-69967f45069a",
+      "role": "2d",
+      "name": "AP-1.6",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "ca2bceb4-9f7b-489e-699f-1c4494d8b5d5",
+      "role": "2d",
+      "name": "AP-1.7",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "d7e91a3f-52a2-af07-7ba2-184d3a60ae52",
+      "role": "2d",
+      "name": "AP-1.8",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "6882be48-6626-5238-d3df-94e9f0a0019d",
+      "role": "2d",
+      "name": "2D View",
+      "mime": null,
+      "type": "geometry"
+    },
+    {
+      "guid": "3bb36b05-6fb7-1fd0-3c58-d83a4e8d4042",
+      "role": "3d",
+      "name": "3D View",
+      "mime": null,
+      "type": "geometry"
+    }
+  ]
+}

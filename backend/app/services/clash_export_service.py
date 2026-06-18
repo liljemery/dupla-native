@@ -15,6 +15,7 @@ from app.models.project import Project
 from app.models.project_clash_job import ProjectClashJob
 from app.models.user import User
 from app.services.clash_excel_export import build_corrida_technical_excel, build_final_technical_excel
+from app.services.clash_reports.checklist_pdf import build_checklist_pdf_from_items
 from app.services.clash_reports.coordination_report_pdf import build_coordination_report_pdf
 from app.services.clash_reports.data import build_report_bundle
 from app.services.clash_reports.final_pdf import build_final_technical_pdf
@@ -44,7 +45,7 @@ _FILENAME_TEMPLATES: dict[str, tuple[str, str]] = {
     "technical_excel": ("Reporte Tecnico de Clashes", "xlsx"),
     "final_technical": ("Informe Tecnico Final", "pdf"),
     "final_technical_excel": ("Informe Tecnico Final", "xlsx"),
-    "final_human": ("Informe Final", "pdf"),
+    "final_human": ("COORDINACION", "pdf"),
     "human": ("Reporte de Coordinacion", "pdf"),
 }
 
@@ -56,6 +57,15 @@ def build_export_filename(kind: str, meta: dict[str, Any], revision: int | None 
     date_str = str(meta.get("run_date") or datetime.now(timezone.utc).date().isoformat())
     number = f"{int(meta.get('run_sequence') or 1):02d}"
     title, ext = _FILENAME_TEMPLATES.get(kind, ("Reporte de Coordinacion", "pdf"))
+    if kind == "final_human":
+        rev = f"{int(revision):02d}" if revision else "01"
+        seq = f"{int(revision or 1)}"
+        display_date = date_str
+        try:
+            display_date = datetime.fromisoformat(date_str).strftime("%d.%m.%Y")
+        except ValueError:
+            pass
+        return f"{display_date} {folder} {title} REV.{rev} {seq}.{ext}"
     # Each download appends an incrementing version tag so successive exports of
     # the same run stay ordered (you can tell which followed which).
     rev_tag = f" v{int(revision):02d}" if revision else ""
@@ -220,14 +230,16 @@ class ClashExportService:
         job, items = await workflow.list_workflow_rows_for_export(user, project_uuid, job_id=job_id)
         meta = await self._export_meta(user, project, job)
         revision = self._bump_revision(job, "final_human")
-        tiles_root = workflow.resolve_tiles_root(job)
-        pdf_bytes = build_coordination_report_pdf(
-            meta=meta,
+        cache_root = workflow.resolve_aps_cache_root(job)
+        logo = workflow.resolve_checklist_logo_path()
+        pdf_bytes = build_checklist_pdf_from_items(
             items=items,
-            output_dir=tiles_root,
-            final=True,
-            revision_label=f"V.{revision:02d}",
+            meta=meta,
+            cache_root=cache_root,
+            logo_path=logo,
+            job_output_dir=job.output_dir,
             tile_path=lambda code, annotated: workflow.tile_path_for_export(job, code, annotated=annotated),
+            pdf_search_dirs=workflow.resolve_plan_pdf_search_dirs(job),
         )
         filename = build_export_filename("final_human", meta, revision)
         return pdf_bytes, filename

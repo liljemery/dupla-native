@@ -129,6 +129,8 @@ services:
       REDIS_URL: redis://redis:6379/0
       DUPLA_ROOT: /motor
       COORDINATION_OUTPUT_ROOT: /app/output
+      COORDINATION_CACHE_ROOT: /app/output/aps_cache
+      COORDINATION_MAX_WORKERS: "6"
       PYTHONPATH: /motor:/app
     volumes:
       - dupla_coord_outputs:/app/output
