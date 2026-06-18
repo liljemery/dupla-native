@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<ApplicationPackage SchemaVersion="1.0" AppVersion="1.0" Author="Dupla" Name="DuplaExtractor" Description="Extrae datos de bloques y polilineas a JSON">
-  <Components>
-    <RuntimeRequirements OS="Win64" Platform="AutoCAD" SeriesMin="R24.0" SeriesMax="R24.3" />
-    <ComponentEntry AppName="DuplaExtractor" Version="1.0" ModuleName="./Contents/DuplaExtractor.dll" AppDescription="Extractor de cantidades" LoadOnAutoCADStartup="true" />
-  </Components>
-</ApplicationPackage>
