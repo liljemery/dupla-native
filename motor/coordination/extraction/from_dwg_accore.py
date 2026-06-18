@@ -302,6 +302,7 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
     raw_primary_candidate_count = 0
     raw_bbox_only_count = 0
     type_counts: dict[str, int] = {}
+    layer_counts: dict[str, int] = {}
     min_x = min_y = min_z = float("inf")
     max_x = max_y = max_z = float("-inf")
     have_bounds = False
@@ -316,6 +317,7 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
         entity_type = str(entity.get("Type") or "")
         layer = str(entity.get("Layer") or "0")
         type_counts[entity_type] = type_counts.get(entity_type, 0) + 1
+        layer_counts[layer] = layer_counts.get(layer, 0) + 1
         if entity_type in ANNOTATION_TYPES or any(token in layer.lower() for token in NON_GEOMETRIC_LAYER_TOKENS):
             raw_annotation_count += 1
         if entity_type in {"Polyline", "Polyline2d", "Polyline3d", "Circle", "Arc", "Line"}:
@@ -380,6 +382,9 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
         entity_type
         for entity_type, _count in sorted(type_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
     ]
+    raw_layers_detected = [
+        layer for layer, _ in sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:50]
+    ]
     dominant_cluster_key = None
     dominant_cluster_bounds = None
     dominant_cluster_centroid = None
@@ -411,6 +416,7 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "dominant_cluster_bounds_mm": dominant_cluster_bounds,
         "dominant_cluster_centroid_mm": dominant_cluster_centroid,
         "dominant_entity_types": dominant_entity_types,
+        "raw_layers_detected": raw_layers_detected,
     }
 
 

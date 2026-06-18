@@ -50,6 +50,8 @@ from coordination.selection.fast_compare import (
     select_preferred_candidates,
     suppress_visual_backups,
 )
+from coordination.core.layer_role_mapper import layer_pair_is_constructive
+from coordination.reporting.coverage_report import build_coverage_report, render_coverage_report_markdown
 from coordination.selection.level_inference import infer_level_from_view_name
 from coordination import clash_pairs
 
@@ -87,6 +89,26 @@ class PipelineConfig:
     accore_timeout_seconds: int = 240
     strict_levels: bool = False
     cache_root: Path | None = None
+    # Tolerances (persisted in run artifacts for reproducibility)
+    linear_buffer_mm: float = 25.0
+    z_overlap_tolerance_mm: float = 25.0
+    grid_size_mm: float = 1.0
+    clearance_mm: float = 0.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "max_dwg_entities": self.max_dwg_entities,
+            "min_dwg_area_mm2": self.min_dwg_area_mm2,
+            "primary_min_plan_area_mm2": self.primary_min_plan_area_mm2,
+            "coordinate_band_cell_mm": self.coordinate_band_cell_mm,
+            "max_workers": self.max_workers,
+            "accore_timeout_seconds": self.accore_timeout_seconds,
+            "strict_levels": self.strict_levels,
+            "linear_buffer_mm": self.linear_buffer_mm,
+            "z_overlap_tolerance_mm": self.z_overlap_tolerance_mm,
+            "grid_size_mm": self.grid_size_mm,
+            "clearance_mm": self.clearance_mm,
+        }
 
 
 def _bucket_to_discipline(bucket: str) -> Discipline:
@@ -437,7 +459,7 @@ def run_clash_pipeline(
 
     if not selected_candidates:
         logger.warning("No candidates selected after filtering")
-        return _empty_result(project_name, output_dir, generated_at)
+        return _empty_result(project_name, output_dir, generated_at, run_config=config.to_dict())
 
     # Profile DWG files via accore
     profiled_payloads = _profile_candidates(
@@ -494,7 +516,14 @@ def run_clash_pipeline(
 
     if not scheduled_pairs:
         logger.warning("No scheduled pairs — returning empty result")
-        return _empty_result(project_name, output_dir, generated_at)
+        return _empty_result(
+            project_name,
+            output_dir,
+            generated_at,
+            candidate_audits=candidate_audits,
+            profiled_payloads=profiled_payloads,
+            run_config=config.to_dict(),
+        )
 
     # Extract elements
     extract_start = perf_counter()
@@ -516,12 +545,28 @@ def run_clash_pipeline(
     primary_conflicts = _build_primary_conflicts(
         all_elements, registry, unique_disciplines, config
     )
+
+    # Role-aware filter: suppress clashes between non-constructive layer pairs
+    role_suppressed = 0
+    filtered_conflicts = []
+    for conflict in primary_conflicts:
+        layer_a = conflict.source_refs[0].split("|")[1] if len(conflict.source_refs[0].split("|")) > 1 else ""
+        layer_b = conflict.source_refs[1].split("|")[1] if len(conflict.source_refs[1].split("|")) > 1 else ""
+        if layer_pair_is_constructive(layer_a, layer_b):
+            filtered_conflicts.append(conflict)
+        else:
+            role_suppressed += 1
+    if role_suppressed:
+        logger.info("Role filter suppressed %d non-constructive conflicts", role_suppressed)
+    primary_conflicts = filtered_conflicts
+
     primary_incidents = group_conflicts_into_incidents(primary_conflicts)
     logger.info(
-        "Clash detection: %d incidents from %d conflicts in %.2fs",
+        "Clash detection: %d incidents from %d conflicts in %.2fs (%d role-suppressed)",
         len(primary_incidents),
         len(primary_conflicts),
         perf_counter() - clash_start,
+        role_suppressed,
     )
 
     # Hotspots
@@ -559,6 +604,29 @@ def run_clash_pipeline(
         _write_json(output_dir / "hotspot_incidents.json", hotspot_payload)
 
     # Build report context (becomes the "report" key in the service result)
+    # Coverage telemetry
+    run_config = config.to_dict()
+    coverage_report = build_coverage_report(
+        candidate_audits=candidate_audits,
+        profiled_payloads=profiled_payloads,
+        pair_schedule=pair_schedule,
+        all_elements=all_elements,
+        suppressed_elements=suppressed_elements,
+        primary_conflicts=primary_conflicts,
+        role_suppressed_count=role_suppressed,
+        run_config=run_config,
+    )
+    _write_json(output_dir / "coverage_report.json", coverage_report)
+    coverage_md = render_coverage_report_markdown(coverage_report)
+    (output_dir / "coverage_report.md").write_text(coverage_md, encoding="utf-8")
+
+    _write_json(output_dir / "run_config.json", {
+        "generated_at": generated_at,
+        "project_name": project_name,
+        "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+        "config": run_config,
+    })
+
     summary_payload: dict[str, Any] = {
         "generated_at": generated_at,
         "project_name": project_name,
@@ -568,6 +636,16 @@ def run_clash_pipeline(
         "element_count": len(all_elements),
         "scheduled_pair_count": len(scheduled_pairs),
         "scheduled_file_count": len(scheduled_file_set),
+        "role_suppressed_conflict_count": role_suppressed,
+        "run_config": run_config,
+        "coverage": {
+            "files_evaluated": len(candidate_audits),
+            "pairs_scheduled": coverage_report["pairs"]["scheduled"],
+            "pairs_blocked": coverage_report["pairs"]["blocked"],
+            "entities_extracted": coverage_report["entities"]["total_extracted"],
+            "entities_primary": coverage_report["entities"]["total_primary"],
+            "entities_suppressed": coverage_report["entities"]["total_suppressed"],
+        },
     }
     report_context = build_coordination_report_context(
         summary_payload=summary_payload,
@@ -588,7 +666,14 @@ def run_clash_pipeline(
     }
 
 
-def _empty_result(project_name: str, output_dir: Path, generated_at: str) -> dict[str, Any]:
+def _empty_result(
+    project_name: str,
+    output_dir: Path,
+    generated_at: str,
+    candidate_audits: list[Any] | None = None,
+    profiled_payloads: dict[str, Any] | None = None,
+    run_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     primary_payload = {
         "generated_at": generated_at,
         "project_name": project_name,
@@ -597,11 +682,30 @@ def _empty_result(project_name: str, output_dir: Path, generated_at: str) -> dic
         "incident_conflict_count": 0,
         "incidents": [],
     }
+    # Always write the coverage report so CI tests can assert on it.
+    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        coverage = build_coverage_report(
+            candidate_audits=candidate_audits or [],
+            profiled_payloads=profiled_payloads or {},
+            pair_schedule=[],
+            all_elements=[],
+            suppressed_elements=[],
+            primary_conflicts=[],
+            run_config=run_config or {},
+        )
+        _write_json(output_dir / "coverage_report.json", coverage)
+        (output_dir / "coverage_report.md").write_text(
+            render_coverage_report_markdown(coverage), encoding="utf-8"
+        )
+    except Exception:
+        pass
     return {
         "report": {
             "project_name": project_name,
             "status": "no_clashes_detected",
             "generated_at": generated_at,
+            "incident_count": 0,
         },
         "artifacts": {
             "primary_incidents": primary_payload,

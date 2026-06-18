@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Optional
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -36,6 +36,12 @@ class ProjectClashJob(Base):
     result: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     export_revisions: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     output_dir: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_reanalysis: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reanalysis_item_uuid: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("project_clash_items.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

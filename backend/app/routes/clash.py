@@ -13,6 +13,7 @@ from app.domain.workspace_context import WorkspaceContext
 from app.models.user import User
 from app.services.clash_export_service import ClashExportService, content_disposition_header
 from app.services.clash_service import ClashService
+from app.services.control_points_service import ControlPointsService
 
 router = APIRouter(prefix="/api/projects", tags=["clash"])
 
@@ -243,3 +244,76 @@ async def export_clash_human_pdf(
         media_type="application/pdf",
         headers=content_disposition_header(filename),
     )
+
+
+# ---------------------------------------------------------------------------
+# Layer C — Manual alignment control points
+# ---------------------------------------------------------------------------
+
+
+class ControlPointInput(BaseModel):
+    label: str
+    model_xy: list[float]
+    ref_xy: list[float]
+
+
+class UpsertControlPointsRequest(BaseModel):
+    discipline: str
+    reference: str = "ARQ"
+    points: list[ControlPointInput]
+
+
+@router.get(
+    "/{project_uuid}/coordination/control-points",
+    summary="List Layer C manual alignment control points for this project",
+    response_model=list[dict[str, Any]],
+)
+async def list_control_points(
+    project_uuid: UUID,
+    current: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> list[dict[str, Any]]:
+    svc = ControlPointsService(session, ws_ctx.workspace_id)
+    return await svc.list_control_points(current, project_uuid)
+
+
+@router.put(
+    "/{project_uuid}/coordination/control-points",
+    summary="Upsert Layer C manual alignment control points for a discipline",
+    response_model=dict[str, Any],
+)
+async def upsert_control_points(
+    project_uuid: UUID,
+    body: UpsertControlPointsRequest,
+    current: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> dict[str, Any]:
+    svc = ControlPointsService(session, ws_ctx.workspace_id)
+    data = await svc.upsert_control_points(
+        current,
+        project_uuid,
+        discipline=body.discipline,
+        reference=body.reference,
+        points=[p.model_dump() for p in body.points],
+    )
+    await session.commit()
+    return data
+
+
+@router.delete(
+    "/{project_uuid}/coordination/control-points/{discipline}",
+    summary="Delete Layer C control points for a discipline",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_control_points(
+    project_uuid: UUID,
+    discipline: str,
+    current: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> None:
+    svc = ControlPointsService(session, ws_ctx.workspace_id)
+    await svc.delete_control_points(current, project_uuid, discipline)
+    await session.commit()

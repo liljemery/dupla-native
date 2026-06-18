@@ -2,20 +2,26 @@
 
 **Fecha:** 18 de junio de 2026  
 **Referencia:** [Pipeline de clashes](./clash_pipeline.md) · [Roadmap 100%](./ROADMAP_COMPLETITUD_100.md)  
-**Estado global de clashes (roadmap):** 75 / 100
+**Estado global de clashes (roadmap):** 85 / 100
+
+> Actualizado tras implementación de: telemetría de cobertura, filtrado por rol de capa,
+> quality gates con estados nombrados, tolerancias serializadas, diagnósticos per-archivo,
+> auditoría de vistas fallback-only, deduplicación de handles por clave compuesta,
+> mapeo de severidad ES→EN, selección determinista de representante, fallbacks NASAS eliminados,
+> retry de APS en estado 99% stuck.
 
 ---
 
 ## Resumen de progreso
 
-| # | Check | % Actual | Meta | Fase pipeline |
-|---|-------|:--------:|:----:|---------------|
-| 1 | Geometrías correctas | 70% | 100% | Fase 1 — Extracción y normalización |
-| 2 | Solapamiento (superposición de disciplinas) | 65% | 100% | Fase 2 — Alineación de marcos |
-| 3 | Apertura de planos (APS / ezdxf / accore) | 75% | 100% | Fase 0 — Selección y auditoría |
-| 4 | Identificación de clashes entre disciplinas | 75% | 100% | Fase 3 — Detección de clashes |
-| 5 | Remetrización (unidad de medida unificada) | 70% | 100% | Fase 1 — Normalización de unidades |
-| 6 | Identificación de clashes con coordenadas correctas | 60% | 100% | Fase 2 + Fase 3 — Alineación + Detección |
+| # | Check | % Anterior | % Actual | Meta | Fase pipeline |
+|---|-------|:----------:|:--------:|:----:|---------------|
+| 1 | Geometrías correctas | 70% | **78%** | 100% | Fase 1 — Extracción y normalización |
+| 2 | Solapamiento (superposición de disciplinas) | 65% | **70%** | 100% | Fase 2 — Alineación de marcos |
+| 3 | Apertura de planos (APS / ezdxf / accore) | 75% | **82%** | 100% | Fase 0 — Selección y auditoría |
+| 4 | Identificación de clashes entre disciplinas | 75% | **88%** | 100% | Fase 3 — Detección de clashes |
+| 5 | Remetrización (unidad de medida unificada) | 70% | **75%** | 100% | Fase 1 — Normalización de unidades |
+| 6 | Identificación de clashes con coordenadas correctas | 60% | **68%** | 100% | Fase 2 + Fase 3 — Alineación + Detección |
 
 ---
 
@@ -204,19 +210,47 @@
 
 ## Hoja de ruta para llegar al 100%
 
-| Prioridad | Tarea | Checks afectados | Ref roadmap |
-|-----------|-------|-----------------|-------------|
-| Alta | Implementar Layer C (puntos de control manual) | 2, 6 | A-03 |
-| Alta | Re-análisis clash que re-ejecuta motor real | 4, 6 | A-03, F2 |
-| Alta | Health check APS + CI motor/coordination | 3, 4 | A-07, A-05 |
-| Alta | E2E smoke automatizado con DWG fixtures | todos | A-06 |
-| Alta | Documentar plataforma: accore solo Windows, APS obligatorio en macOS/Linux | 1, 3 | B-13 |
-| Media | Clasificación IA por contenido CAD (no solo nombre/MIME) | 3 | B-01 |
-| Media | Alerta en UI cuando se aplica `unit_correction` | 5 | — |
-| Media | Tiles clash reales (eliminar placeholder SVG) | 4 | B-07 |
-| Media | Módulos motor REFACTOR_LOG (`layer_rules`, `pipeline_config`, etc.) | 1, 5 | B-08 |
-| Baja | Propagación de incertidumbre de coordenadas al `ProjectClashItem` | 6 | — |
-| Baja | Cobertura de planos que cruzan bandas de coordenadas | 6 | — |
+### ✅ Completado recientemente
+
+| Tarea | Checks | Ref |
+|-------|--------|-----|
+| Filtrado por rol de capa configurable (`layer_role_mapper.py`) | 4 | — |
+| Quality gates con estados nombrados (`PairScheduleStatus`) | 2, 6 | — |
+| Tolerancias serializadas en `run_config.json` + `summary_payload` | 1, 5 | B-08 |
+| Telemetría de cobertura + per-archivo (`coverage_report.py`) | todos | — |
+| `raw_layers_detected` en `profile_accore_payload` | 1, 3 | — |
+| Auditoría vistas fallback-only en `hybrid_geometry_audit.py` | 1, 3 | — |
+| Deduplicación de handles por clave compuesta `(handle, view_name)` | 1, 3 | — |
+| Mapeo severidad ES→EN en `clash_workflow_service.py` | 4 | — |
+| Selección determinista de representante en `run_clash_analysis.py` | 4 | — |
+| Fallbacks hardcoded NASAS eliminados (`manifest.py`) | 4, 6 | — |
+| Retry APS stuck 99% en `model_derivative.py` | 3 | — |
+
+### 🔴 Alta — Pendiente
+
+| Prioridad | Tarea | Checks | Ref |
+|-----------|-------|--------|-----|
+| **Alta** | Re-análisis clash que re-ejecuta el motor real (`request_reanalysis()` solo registra manualmente) | 4, 6 | F2, A-03 |
+| **Alta** | Layer C (puntos de control manual): `control_points.py` existe sin UI ni endpoint de ingesta | 2, 6 | A-03 |
+| **Alta** | E2E automatizado con fixtures DWG reales en CI | todos | A-06 |
+| **Alta** | Health check APS en `/health/integrations` | 3 | A-07 |
+
+### 🟡 Media — Pendiente
+
+| Prioridad | Tarea | Checks | Ref |
+|-----------|-------|--------|-----|
+| **Media** | Tiles clash reales (eliminar placeholder SVG) | 4 | B-07 |
+| **Media** | Alerta UI visible cuando se aplica `unit_correction` | 5 | — |
+| **Media** | Clasificación IA por contenido CAD (no solo nombre/MIME) | 3 | B-01 |
+| **Media** | Documentar matriz de plataforma: accore solo Windows, APS obligatorio en macOS/Linux | 1, 3 | B-13 |
+
+### 🟢 Baja — Pendiente
+
+| Prioridad | Tarea | Checks | Ref |
+|-----------|-------|--------|-----|
+| **Baja** | Propagación de incertidumbre de coordenadas al `ProjectClashItem` (radio de error) | 6 | — |
+| **Baja** | Planos grandes que cruzan bandas de coordenadas distintas | 6 | — |
+| **Baja** | Mapeo semántico Fase 4 completo para entidades `proxy` y bloques anónimos | 4 | — |
 
 ---
 

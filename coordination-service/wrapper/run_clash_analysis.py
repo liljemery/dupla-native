@@ -205,6 +205,7 @@ def _invoke_runner(
     registry_path: Path,
     output_dir: Path,
     include_disciplines: list[str] | None = None,
+    control_points_path: Path | None = None,
 ) -> int:
     script = _runner_script()
     if not script.is_file():
@@ -254,6 +255,9 @@ def _invoke_runner(
 
     if include_disciplines:
         cmd.extend(["--include-disciplines", ",".join(include_disciplines)])
+
+    if control_points_path and control_points_path.is_file():
+        cmd.extend(["--control-points", str(control_points_path)])
 
     logger.info("Running coordination: %s", " ".join(cmd))
     env = os.environ.copy()
@@ -492,6 +496,8 @@ def run_clash_analysis(
     profile_slug: str,
     project_name: str,
     output_dir: Path,
+    control_points: list[dict[str, Any]] | None = None,
+    reanalysis_clash_code: str | None = None,
 ) -> dict[str, Any]:
     """Run clash detection and return StructuralAnalysisReport-shaped dict."""
     output_dir = Path(output_dir)
@@ -514,11 +520,19 @@ def run_clash_analysis(
         primary = _smoke_primary_incidents(profile_slug, project_name, file_entries)
         context = None
     else:
+        control_points_path: Path | None = None
+        if control_points:
+            control_points_path = output_dir / "control_points.json"
+            control_points_path.write_text(
+                json.dumps(control_points, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+
         _invoke_runner(
             inputs_dir=inputs_dir,
             registry_path=Path(staging["registry_path"]),
             output_dir=output_dir,
             include_disciplines=staging.get("include_disciplines") or None,
+            control_points_path=control_points_path,
         )
         hybrid_geometry_summary = _build_hybrid_geometry_artifacts(
             inputs_dir=inputs_dir,
