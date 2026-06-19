@@ -391,11 +391,18 @@ class ClashService:
             sorted(classified),
         )
 
+        from app.services.control_points_service import ControlPointsService
+
+        cp_svc = ControlPointsService(self._session, self._workspace_id)
+        control_points = await cp_svc.get_for_job(project.id)
+
         form_data = {
             "profile_slug": slug,
             "project_name": project.name,
             "file_metadata": json.dumps(file_metadata, ensure_ascii=False),
         }
+        if control_points:
+            form_data["control_points_json"] = json.dumps(control_points, ensure_ascii=False)
 
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
@@ -503,13 +510,20 @@ class ClashService:
                         job.output_dir = output_dir
             else:
                 job.result = raw_result
-            try:
-                from app.services.clash_workflow_service import ClashWorkflowService
 
-                wf = ClashWorkflowService(self._session, self._workspace_id)
-                await wf.ensure_ingested(job, actor="system")
-            except Exception as exc:
-                logger.warning("Clash workflow ingest after job complete failed: %s", exc)
+            if job.is_reanalysis and job.reanalysis_item_uuid:
+                try:
+                    await self._resolve_reanalysis_item(job)
+                except Exception as exc:
+                    logger.warning("Reanalysis item resolution failed: %s", exc)
+            else:
+                try:
+                    from app.services.clash_workflow_service import ClashWorkflowService
+
+                    wf = ClashWorkflowService(self._session, self._workspace_id)
+                    await wf.ensure_ingested(job, actor="system")
+                except Exception as exc:
+                    logger.warning("Clash workflow ingest after job complete failed: %s", exc)
         elif remote_status == "failed":
             job.status = "failed"
             job.error = str(data.get("error") or "Unknown error")
@@ -517,6 +531,167 @@ class ClashService:
             job.status = "processing" if remote_status == "started" else "queued"
 
         return job
+
+    async def _resolve_reanalysis_item(self, job: ProjectClashJob) -> None:
+        """Auto-transition the reanalysis item to resolved or still_present."""
+        from app.domain.clash_workflow_enums import (
+            ClashStatus,
+            CorrectionResult,
+            EventType,
+            can_transition,
+        )
+        from app.models.project_clash_correction import ProjectClashCorrection
+        from app.models.project_clash_item import ProjectClashItem
+        from sqlalchemy.orm import selectinload
+
+        item = await self._session.get(
+            ProjectClashItem,
+            job.reanalysis_item_uuid,
+            options=[selectinload(ProjectClashItem.corrections)],
+        )
+        if item is None:
+            return
+
+        result = job.result or {}
+        clash_items = result.get("clash_items") or result.get("report", {}).get("clash_items") or []
+        clash_found = bool(clash_items)
+
+        try:
+            current = ClashStatus(item.status)
+        except ValueError:
+            return
+
+        target = ClashStatus.STILL_PRESENT if clash_found else ClashStatus.RESOLVED
+        if not can_transition(current, target):
+            return
+
+        from datetime import timezone
+
+        previous = item.status
+        item.status = target.value
+        item.updated_at = datetime.now(timezone.utc)
+
+        corrections = sorted(item.corrections, key=lambda c: c.uploaded_at or datetime.utcnow())
+        if corrections:
+            latest = corrections[-1]
+            latest.result = (
+                CorrectionResult.STILL_PRESENT.value if clash_found else CorrectionResult.RESOLVED.value
+            )
+            latest.reanalysis_run_id = job.job_id
+
+        from app.models.project_clash_event import ProjectClashEvent
+
+        self._session.add(
+            ProjectClashEvent(
+                id=uuid.uuid4(),
+                clash_item_id=item.id,
+                event_type=EventType.REANALYSIS.value,
+                actor="system",
+                previous_status=previous,
+                new_status=target.value,
+                comment=(
+                    "Reanálisis completado: el clash persiste." if clash_found
+                    else "Reanálisis completado: clash resuelto."
+                ),
+                related_run_id=job.job_id,
+            )
+        )
+
+    async def enqueue_pair_reanalysis(
+        self,
+        *,
+        job: ProjectClashJob,
+        item: Any,
+        corrected_path: Path,
+        corrected_original_name: str,
+        corrected_discipline: str | None,
+        ref_path: Path | None,
+        ref_original_name: str | None,
+        ref_discipline: str | None,
+        user: User,
+    ) -> str:
+        """Enqueue a 2-file clash reanalysis job and return the new job_id."""
+        from app.models.project_clash_item import ProjectClashItem
+
+        coordination_url = settings.coordination_url
+        correlation_id = str(uuid.uuid4())
+
+        file_metadata: list[dict] = [
+            {
+                "original_name": corrected_original_name,
+                "discipline": corrected_discipline,
+                "discipline_bucket": discipline_bucket(corrected_discipline or ""),
+            }
+        ]
+        multipart_files: list[tuple] = [
+            (
+                "files",
+                (corrected_original_name, corrected_path.read_bytes(), "application/octet-stream"),
+            )
+        ]
+
+        if ref_path and ref_original_name:
+            file_metadata.append(
+                {
+                    "original_name": ref_original_name,
+                    "discipline": ref_discipline,
+                    "discipline_bucket": discipline_bucket(ref_discipline or ""),
+                }
+            )
+            multipart_files.append(
+                ("files", (ref_original_name, ref_path.read_bytes(), "application/octet-stream"))
+            )
+
+        form_data = {
+            "profile_slug": "reanalysis",
+            "project_name": "reanalysis",
+            "file_metadata": json.dumps(file_metadata),
+            "reanalysis_clash_code": item.clash_code,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post(
+                    f"{coordination_url}/jobs/clash-analysis",
+                    files=multipart_files,
+                    data=form_data,
+                    headers={"X-Correlation-ID": correlation_id},
+                )
+        except Exception as exc:
+            logger.error("Failed to reach coordination service for reanalysis: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Coordination service unavailable",
+            ) from exc
+
+        if resp.status_code not in (200, 201, 202):
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Coordination service rejected reanalysis request",
+            )
+
+        data = resp.json()
+        new_job_id = data.get("job_id")
+        if not new_job_id:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Coordination service returned no job_id for reanalysis",
+            )
+
+        new_job = ProjectClashJob(
+            project_id=job.project_id,
+            job_id=str(new_job_id),
+            status="queued",
+            coordination_profile="reanalysis",
+            folder_id=job.folder_id,
+            folder_name=job.folder_name,
+            is_reanalysis=True,
+            reanalysis_item_uuid=item.id,
+            triggered_by_user_id=user.id,
+        )
+        self._session.add(new_job)
+        await self._session.flush()
+        return str(new_job_id)
 
     async def get_structural_analysis_report(self, user: User, project_uuid: UUID) -> dict[str, Any]:
         job = await self.get_latest_job(user, project_uuid)

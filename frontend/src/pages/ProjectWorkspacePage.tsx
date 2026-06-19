@@ -51,7 +51,6 @@ import {
   stablePliegoItemStatesSignature,
 } from '../lib/pliegoFormState'
 import { isPliegoReadyForApproval, buildPliegoDraftSpec, pliegoSectionsIncompleteMessage, isPliegoEditablePhase, pliegoReadOnlyMessage } from '../lib/pliegoApproval'
-import { userDisplayInitials } from '../lib/taskboard'
 import { hasElevatedAccess, canViewBudget, isBudgetWorkspaceTab, workflowPhaseLabelForRole, workflowStepTitleForRole, canApproveSpecifications } from '../lib/accessPermissions'
 import { useAuthStore } from '../store/authStore'
 import type { ConstructionLineValue } from '../types/constructionPliego'
@@ -70,9 +69,6 @@ export function ProjectWorkspacePage() {
   const elevated = hasElevatedAccess(role, isTeamLeader)
   const viewBudget = canViewBudget(role)
   const canApprovePliego = canApproveSpecifications(role, isTeamLeader)
-  const email = useAuthStore((s) => s.email)
-  const firstName = useAuthStore((s) => s.firstName)
-  const lastName = useAuthStore((s) => s.lastName)
   const [tab, setTab] = useState<string>('hub')
   const [project, setProject] = useState<Project | null>(null)
   const [flowTemplateDetail, setFlowTemplateDetail] = useState<WorkflowTemplateDetail | null>(null)
@@ -897,11 +893,12 @@ export function ProjectWorkspacePage() {
         tab={tab}
         onSelectTab={(id: WorkspaceConsoleTabId) => selectTab(id)}
         onOpenConfig={() => setConfigOpen(true)}
-        userInitials={userDisplayInitials(firstName, lastName, email ?? '?')}
-        userEmail={email}
         role={role}
         viewBudget={viewBudget}
         onGoPresupuesto={() => selectTab('presupuestoMaestro')}
+        phaseLabel={phaseLabel}
+        clientName={project?.client_name}
+        deadline={project?.deadline}
       />
 
       {tab === 'hub' && project ? (

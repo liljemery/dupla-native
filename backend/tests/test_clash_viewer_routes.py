@@ -22,10 +22,8 @@ async def _create_project(client, headers) -> uuid.UUID:
 
 
 async def _seed_job(session: AsyncSession, project_id: uuid.UUID) -> tuple[ProjectClashJob, ProjectClashItem]:
-    job = ProjectClashJob(id=uuid.uuid4(), project_id=project_id, job_id="job-viewer", status="completed")
     item = ProjectClashItem(
         id=uuid.uuid4(),
-        job_id=job.id,
         clash_code="incident_0001",
         priority="P1",
         severity="critical",
@@ -49,8 +47,14 @@ async def _seed_job(session: AsyncSession, project_id: uuid.UUID) -> tuple[Proje
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )
+    job = ProjectClashJob(
+        id=uuid.uuid4(),
+        project_id=project_id,
+        job_id="job-viewer",
+        status="completed",
+        clash_items=[item],
+    )
     session.add(job)
-    session.add(item)
     await session.commit()
     return job, item
 

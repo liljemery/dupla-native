@@ -92,7 +92,7 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
         await s.execute(
             text(
                 "TRUNCATE subcontract_quote_lines, subcontract_quotes, user_notifications, architecture_revisions, "
-                "plan_delivery_requests, project_clash_jobs, project_budget_jobs, project_files, project_events, project_members, "
+                "plan_delivery_requests, project_clash_items, project_clash_jobs, project_control_points, project_budget_jobs, project_files, project_events, project_members, "
                 "chat_messages, chat_conversation_members, chat_conversations, task_cards, task_lists, "
                 "workflow_template_steps, workflow_templates, project_architecture_data, projects, "
                 "workspace_members, workspaces, user_modules, users, modules "

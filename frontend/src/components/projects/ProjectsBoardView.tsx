@@ -1,8 +1,9 @@
 import { useMemo } from 'react'
-import { LayoutGrid } from 'lucide-react'
+import { LayoutGrid, Search } from 'lucide-react'
 
 import { FlowTemplateIcon } from '../flows/FlowTemplateIcon'
 import { Card } from '../Card'
+import { FilterBar } from '../ui/FilterBar'
 import {
   effectivePrevWorkflowPhase,
   NEXT_WORKFLOW_PHASE,
@@ -15,6 +16,7 @@ import {
   PROJECT_BOARD_PHASE_ICONS,
 } from '../../constants/projectsPage'
 import { projectKindLabel } from '../../constants/projectKind'
+import { workflowPhaseProgressPct } from '../../lib/projectDashboardBuckets'
 import type { Project } from '../../types/project'
 
 export type BoardColumnDef = {
@@ -30,6 +32,7 @@ type ProjectsBoardViewProps = {
   projects: Project[]
   filteredProjects: Project[]
   projectSearch: string
+  onProjectSearchChange?: (q: string) => void
   boardMsg: string | null
   onDropOnPhaseColumn: (e: React.DragEvent, columnId: string) => void
   onDragOverBoard: (e: React.DragEvent) => void
@@ -68,6 +71,7 @@ export function ProjectsBoardView({
   projects,
   filteredProjects,
   projectSearch,
+  onProjectSearchChange,
   boardMsg,
   onDropOnPhaseColumn,
   onDragOverBoard,
@@ -105,10 +109,39 @@ export function ProjectsBoardView({
   const columns: BoardColumnDef[] = useSteps ? boardColumns! : phaseColumns
 
   return (
-    <Card
-      data-tour="projects-board"
-      className="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
-    >
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      {onProjectSearchChange ? (
+        <FilterBar
+          search={
+            <label className="relative block" data-tour="projects-search">
+              <span className="sr-only">Buscar proyectos</span>
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+                strokeWidth={2}
+                aria-hidden
+              />
+              <input
+                type="search"
+                className="du-input h-9 w-full rounded-xl border-black/10 py-0 pl-9 pr-3 text-sm placeholder:text-muted/90"
+                placeholder="Buscar proyectos…"
+                value={projectSearch}
+                onChange={(e) => onProjectSearchChange(e.target.value)}
+                autoComplete="off"
+                aria-label="Buscar proyectos"
+              />
+            </label>
+          }
+        >
+          <span className="text-sm text-muted">Tablero Kanban</span>
+        </FilterBar>
+      ) : null}
+
+      <Card
+        data-tour="projects-board"
+        rounded2xl
+        elevated
+        className="flex min-h-0 flex-1 flex-col overflow-hidden p-0"
+      >
       {boardMsg ? (
         <div className="flex shrink-0 border-b border-black/10 bg-white px-4 py-3">
           <p className="text-sm text-primary">{boardMsg}</p>
@@ -117,14 +150,14 @@ export function ProjectsBoardView({
       {loadingList ? (
         <p className="shrink-0 px-4 py-6 text-sm text-muted">Cargando tablero…</p>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-1.5 pb-2">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 pb-4">
           {projectSearch.trim() && filteredProjects.length === 0 && projects.length > 0 ? (
-            <p className="shrink-0 px-2 pb-2 text-sm text-muted">
+            <p className="shrink-0 px-2 pb-3 text-sm text-muted">
               Ningún proyecto coincide con «{projectSearch.trim()}». Prueba otro término o borra la búsqueda.
             </p>
           ) : null}
           <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
-            <div className="flex h-full w-max min-w-full items-stretch gap-1.5">
+            <div className="flex h-full w-max min-w-full items-stretch gap-2">
               {columns.map((col) => {
                 const inColumn = filteredProjects.filter((p) =>
                   useSteps ? p.current_workflow_step_uuid === col.id : p.workflow_phase === col.id,
@@ -132,12 +165,12 @@ export function ProjectsBoardView({
                 return (
                   <div
                     key={col.id}
-                    className="flex h-full min-h-0 w-[10rem] shrink-0 flex-col rounded-lg border border-black/10 bg-black/[0.02] shadow-[var(--shadow-card)] sm:w-[11rem]"
+                    className="flex h-full min-h-0 w-[11rem] shrink-0 flex-col rounded-xl border border-black/8 bg-surface-elevated shadow-[var(--shadow-card)] sm:w-[12rem]"
                     onDragOver={onDragOverBoard}
                     onDrop={(e) => onDropOnPhaseColumn(e, col.id)}
                   >
                     <div
-                      className="flex min-h-[5.5rem] shrink-0 flex-col items-center justify-center gap-1.5 border-b border-white/25 bg-primary px-1.5 py-2.5 text-center text-white shadow-[inset_0_-1px_0_rgba(0,0,0,0.08)] sm:min-h-24"
+                      className="flex min-h-[5.5rem] shrink-0 flex-col items-center justify-center gap-1.5 rounded-t-xl border-b border-white/20 bg-primary px-2 py-3 text-center text-white shadow-sm sm:min-h-24"
                       title={col.title}
                     >
                       <ColumnHeaderGlyph
@@ -149,7 +182,7 @@ export function ProjectsBoardView({
                         {col.title}
                       </span>
                     </div>
-                    <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-1">
+                    <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2">
                       {inColumn.map((p) => {
                         const hasNext = useSteps
                           ? stepAdjacency(p).hasNext
@@ -158,13 +191,14 @@ export function ProjectsBoardView({
                           ? stepAdjacency(p).hasPrev
                           : effectivePrevWorkflowPhase(p.project_kind, p.workflow_phase) !== undefined
                         const canMovePhase = hasNext || hasPrev
+                        const pct = workflowPhaseProgressPct(p.workflow_phase)
                         return (
                           <div
                             key={p.uuid}
                             role="button"
                             tabIndex={0}
                             draggable={canMovePhase}
-                            className={`group relative cursor-pointer overflow-hidden rounded-md border border-black/10 bg-white text-left shadow-sm ring-1 ring-black/[0.04] transition-all duration-200 hover:-translate-y-px hover:border-black/20 hover:shadow-md hover:ring-black/10 ${
+                            className={`group relative cursor-pointer overflow-hidden rounded-xl border border-black/8 bg-white text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/25 hover:shadow-md ${
                               canMovePhase ? '' : 'opacity-[0.92]'
                             }`}
                             onClick={() => onOpenCard(p.uuid)}
@@ -181,17 +215,29 @@ export function ProjectsBoardView({
                               className={`absolute inset-y-1 left-0 w-0.5 rounded-full ${canMovePhase ? 'bg-primary' : 'bg-black/20'}`}
                               aria-hidden
                             />
-                            <div className="relative pl-2.5 pr-2 pb-2 pt-1.5">
+                            <div className="relative px-3 pb-2.5 pt-2">
                               <p className="mb-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted sm:text-xs">
                                 {projectKindLabel(p.project_kind)}
                               </p>
-                              <h3 className="line-clamp-2 pr-0.5 text-xs font-semibold leading-snug tracking-tight text-ink sm:text-sm">
+                              <h3 className="line-clamp-2 text-xs font-semibold leading-snug tracking-tight text-ink sm:text-sm">
                                 {p.name}
                               </h3>
                               {p.project_code?.trim() ? (
                                 <p className="mt-0.5 font-mono text-[10px] leading-tight text-muted">{p.project_code}</p>
                               ) : null}
-                              <div className="mt-1.5 space-y-1">
+                              <div className="mt-2">
+                                <div className="mb-1 flex justify-between text-[10px] font-semibold text-muted">
+                                  <span>Progreso</span>
+                                  <span className="tabular-nums text-ink">{pct}%</span>
+                                </div>
+                                <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
+                                  <div
+                                    className="h-full rounded-full bg-primary transition-[width] duration-300"
+                                    style={{ width: `${pct}%` }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-2 space-y-1">
                                 <div className="flex items-start gap-1">
                                   <span className="du-meta w-9 shrink-0 text-[10px] sm:text-xs">Cliente</span>
                                   <span className="min-w-0 flex-1 text-xs leading-snug text-ink sm:text-sm">
@@ -247,6 +293,7 @@ export function ProjectsBoardView({
           </div>
         </div>
       )}
-    </Card>
+      </Card>
+    </div>
   )
 }

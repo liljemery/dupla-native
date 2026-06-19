@@ -2,12 +2,28 @@
 
 @theme {
   --color-primary: #c10d12;
-  --color-ink: #1a1a1a;
-  --color-muted: #666666;
-  --color-surface: #fafafa;
-  --color-border: rgba(0, 0, 0, 0.1);
-  --color-border-strong: rgba(0, 0, 0, 0.15);
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --color-primary-bright: #e01117;
+  --color-ink: #111827;
+  --color-muted: #6b7280;
+  --color-surface: #f4f6f9;
+  --color-surface-elevated: #eef1f6;
+  --color-surface-page: #e8ecf2;
+  --color-surface-card: #ffffff;
+  --color-panel-dark: #15181c;
+  --color-panel-dark-muted: #22262c;
+  --color-panel-charcoal: #1a1a1a;
+  --color-panel-detail: #5c6e82;
+  --color-panel-detail-card: rgba(255, 255, 255, 0.1);
+  --shadow-panel: 0 20px 50px rgba(15, 23, 42, 0.22);
+  --radius-3xl: 2.5rem;
+  --color-border: rgba(15, 23, 42, 0.08);
+  --color-border-strong: rgba(15, 23, 42, 0.12);
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-elevated: 0 8px 32px rgba(15, 23, 42, 0.08);
+  --shadow-toolbar: 0 2px 12px rgba(15, 23, 42, 0.06);
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-2xl: 1.5rem;
   --font-sans: ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -62,6 +78,72 @@ body {
   }
   .du-pill-action:focus-visible {
     @apply ring-2 ring-primary/30 ring-offset-2 ring-offset-[var(--color-surface)];
+  }
+  .du-page-title {
+    @apply text-2xl font-bold tracking-tight text-ink sm:text-[1.625rem];
+  }
+  .du-section-title {
+    @apply text-lg font-semibold text-ink;
+  }
+  .du-kpi-value {
+    @apply text-3xl font-semibold tabular-nums tracking-tight text-ink;
+  }
+  .du-filter-bar {
+    @apply flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-[var(--shadow-toolbar)];
+  }
+  .du-page-toolbar {
+    @apply flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2 shadow-[var(--shadow-toolbar)];
+  }
+  .du-page-shell {
+    @apply rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[var(--shadow-elevated)] sm:p-6;
+  }
+  .du-cta-primary {
+    @apply inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(193,13,18,0.35)] outline-none transition hover:bg-primary-bright hover:shadow-[0_6px_20px_rgba(193,13,18,0.4)] focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-2;
+  }
+  .du-toolbar-divider {
+    @apply hidden h-6 w-px bg-slate-200 sm:block;
+  }
+  .du-master-detail-shell {
+    @apply min-h-0 bg-transparent;
+  }
+  .du-projects-folder-grid {
+    @apply grid w-full max-w-4xl grid-cols-1 gap-5 pl-3 sm:grid-cols-2 sm:pl-5 lg:grid-cols-3 lg:pl-6;
+  }
+  .du-panel-detail-surface {
+    @apply min-h-full bg-panel-detail text-white;
+  }
+  .du-invoice-inner-card {
+    @apply rounded-2xl bg-[var(--color-panel-detail-card)] p-4 backdrop-blur-sm;
+  }
+  .du-folder-tab-clip {
+    clip-path: polygon(0 0, 56% 0, 66% 17%, 100% 17%, 100% 100%, 0 100%);
+  }
+  .du-folder-card-title {
+    @apply truncate text-base font-bold leading-tight tracking-tight text-white;
+  }
+  .du-folder-card-subtitle {
+    @apply mt-0.5 truncate text-sm font-normal leading-snug text-white/45;
+  }
+  .du-folder-card-heading {
+    @apply absolute left-4 top-[6%] z-10 min-w-0 max-w-[calc(100%-2.75rem)];
+  }
+  .du-project-folder-card {
+    @apply relative h-[16rem] overflow-hidden rounded-[2rem] border-[3px] border-ink bg-ink outline-none;
+    transition:
+      transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+  }
+  .du-project-folder-card:hover {
+    transform: scale(1.012) translateY(-3px);
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  }
+  .du-project-folder-card:active {
+    transform: scale(0.995) translateY(0);
+    transition-duration: 0.15s;
+  }
+  .du-project-folder-card:focus-visible {
+    @apply ring-2 ring-primary ring-offset-2 ring-offset-surface-page;
   }
 }
 

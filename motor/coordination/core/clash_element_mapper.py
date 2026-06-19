@@ -11,7 +11,7 @@ from coordination.semantic.semantic_elements import SemanticElement25D
 
 ANNOTATION_LAYER_TOKENS = ("TITULOS", "ESCALA_HUMANA", "TEXT", "ANNO", "DIM", "LABEL")
 LOW_TRUST_LAYER_TOKENS = ("MARCO", "EST_PROYECCION")
-PROXY_GEOMETRY_SOURCES = ("dwg_accore_bbox", "dwg_com_bbox")
+PROXY_GEOMETRY_SOURCES = ("dwg_accore_bbox", "dwg_com_bbox", "proxy_FALLBACK")
 
 
 def map_primary_incidents_to_elements(

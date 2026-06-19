@@ -12,7 +12,41 @@ from pydantic import BaseModel, ConfigDict, Field
 from coordination.selection.fast_compare import PreMatchCandidate, primary_geometry_role
 from coordination.core.models_25d import Element25D
 
-AuditStatus = Literal["eligible", "needs_alignment", "annotation_noise", "bbox_only", "extract_failed"]
+AuditStatus = Literal["eligible", "needs_alignment", "annotation_noise", "bbox_only", "extract_failed", "detail_only"]
+
+
+class PairScheduleStatus:
+    """Typed block/ready codes for PairScheduleItem.block_reason / selection_reason."""
+    READY_HIGH = "READY_HIGH"
+    READY_MEDIUM = "READY_MEDIUM"
+    READY_LOW = "READY_LOW"
+    BLOCKED_ALIGNMENT = "BLOCKED_ALIGNMENT"
+    BLOCKED_NO_PRIMARY_GEOMETRY = "BLOCKED_NO_PRIMARY_GEOMETRY"
+    BLOCKED_DETAIL_ONLY = "BLOCKED_DETAIL_ONLY"
+    BLOCKED_COORDINATE_MISMATCH = "BLOCKED_COORDINATE_MISMATCH"
+    BLOCKED_LEVEL_MISMATCH = "BLOCKED_LEVEL_MISMATCH"
+    BLOCKED_ROLE_MISSING = "BLOCKED_ROLE_MISSING"
+
+
+_DETAIL_ONLY_NAME_TOKENS = (
+    "DETALLE", "DETALLES", "DETAIL", "DETAILS", "DET.", "AMPLIACION",
+    "AMPLIACIÓN", "TYPICAL", "SIMBOLOGIA", "SIMBOLOGÍA",
+)
+DETAIL_ONLY_MAX_PRIMARY_COUNT = 5
+
+COMBINED_AS_BUILT_NAME_TOKENS = (
+    "COMBINADO",
+    "TODAS",
+    "GENERAL",
+    "COORDINACION",
+    "COORDINACIÓN",
+    "AS-BUILT",
+    "AS BUILT",
+    "ASBUILT",
+)
+HIGH_ENTITY_COUNT_THRESHOLD = 50_000
+HIGH_LAYOUT_COUNT_THRESHOLD = 20
+LARGE_FILE_SIZE_BYTES = 75 * 1024 * 1024
 
 
 class SourceAudit(BaseModel):
@@ -40,6 +74,7 @@ class SourceAudit(BaseModel):
     selected_primary_count: int = 0
     dominant_entity_types: list[str] = Field(default_factory=list)
     audit_status: AuditStatus = "extract_failed"
+    detail_only: bool = False
     notes: list[str] = Field(default_factory=list)
 
 
@@ -59,6 +94,80 @@ class PairScheduleItem(BaseModel):
     documentary_cohort_relation: str = "same_cohort"
     scheduled: bool
     block_reason: str | None = None
+
+
+def selection_sanity_flags(
+    *,
+    path: str | Path,
+    raw_entity_count: int = 0,
+    layout_count: int = 0,
+    file_size_bytes: int | None = None,
+) -> list[str]:
+    """Flag combined/as-built files promoted from the SERENA sanitation POC."""
+    text = str(path).upper()
+    flags: list[str] = []
+    matched = [token for token in COMBINED_AS_BUILT_NAME_TOKENS if token in text]
+    if matched:
+        flags.append(f"name_pattern={','.join(matched)}")
+    if raw_entity_count > HIGH_ENTITY_COUNT_THRESHOLD:
+        flags.append(f"high_entity_count={raw_entity_count}")
+    if layout_count > HIGH_LAYOUT_COUNT_THRESHOLD:
+        flags.append(f"high_layout_count={layout_count}")
+    if file_size_bytes is not None and file_size_bytes > LARGE_FILE_SIZE_BYTES:
+        flags.append(f"large_file_size_mb={file_size_bytes / (1024 * 1024):.1f}")
+    return flags
+
+
+def hs_findings(
+    *,
+    path: str | Path,
+    raw_entity_count: int = 0,
+    layout_count: int = 0,
+    file_size_bytes: int | None = None,
+    alternatives: list[str | Path] | None = None,
+) -> dict[str, Any]:
+    """Return the HS-oriented selection sanity report used by Phase 1."""
+    flags = selection_sanity_flags(
+        path=path,
+        raw_entity_count=raw_entity_count,
+        layout_count=layout_count,
+        file_size_bytes=file_size_bytes,
+    )
+    return {
+        "path": str(path),
+        "raw_entity_count": raw_entity_count,
+        "layout_count": layout_count,
+        "file_size_bytes": file_size_bytes,
+        "flags": flags,
+        "selection_blocked": bool(flags),
+        "alternatives": [str(item) for item in alternatives or []],
+    }
+
+
+def _is_detail_only_file(
+    *,
+    path: str,
+    raw_primary_candidate_count: int,
+    raw_entity_count: int,
+    dominant_entity_types: list[str],
+) -> bool:
+    """Heuristic: return True when the file is likely a detail sheet, not a floor plan.
+
+    Signals used:
+    - File name contains known detail keywords (DETALLE, DETALLES, etc.)
+    - Very few primary geometry candidates relative to total entities
+    """
+    name_upper = Path(path).stem.upper()
+    if any(token in name_upper for token in _DETAIL_ONLY_NAME_TOKENS):
+        return True
+    if raw_entity_count > 0 and raw_primary_candidate_count <= DETAIL_ONLY_MAX_PRIMARY_COUNT:
+        annotation_heavy = any(
+            t.upper() in ("MTEXT", "TEXT", "DIMENSION", "LEADER", "INSERT", "HATCH")
+            for t in dominant_entity_types
+        )
+        if annotation_heavy:
+            return True
+    return False
 
 
 def build_source_audit(
@@ -121,6 +230,22 @@ def build_source_audit(
         centroid_mm = (float(raw_centroid[0]), float(raw_centroid[1]))
     coordinate_band_key, coordinate_band = _coordinate_band(centroid_mm, cell_size_mm=coordinate_band_cell_mm)
 
+    candidate_path = str(getattr(candidate, "path", "") or getattr(candidate, "rel_path", ""))
+    file_size_bytes = None
+    try:
+        path_obj = Path(candidate_path)
+        if path_obj.exists():
+            file_size_bytes = path_obj.stat().st_size
+    except Exception:
+        file_size_bytes = None
+    layout_count = int(accore_profile.get("layout_count") or accore_profile.get("paper_space_layout_count") or 0) if accore_profile else 0
+    sanity_flags = selection_sanity_flags(
+        path=candidate_path,
+        raw_entity_count=raw_entity_count,
+        layout_count=layout_count,
+        file_size_bytes=file_size_bytes,
+    )
+
     notes: list[str] = []
     if accore_profile and raw_entity_count > 0:
         annotation_ratio = (raw_annotation_count / raw_entity_count) if raw_entity_count > 0 else 0.0
@@ -150,6 +275,20 @@ def build_source_audit(
             if selected_primary < min_primary_elements:
                 notes.append(f"low_primary_count={selected_primary}")
 
+    if sanity_flags:
+        status = "needs_alignment"
+        notes.extend(f"selection_sanity:{flag}" for flag in sanity_flags)
+
+    detail_only = _is_detail_only_file(
+        path=str(getattr(candidate, "rel_path", "") or getattr(candidate, "path", "")),
+        raw_primary_candidate_count=raw_primary_candidate_count,
+        raw_entity_count=raw_entity_count,
+        dominant_entity_types=dominant_entity_types,
+    )
+    if detail_only and status == "eligible":
+        status = "detail_only"
+        notes.append("detected_as_detail_sheet")
+
     return SourceAudit(
         rel_path=str(candidate.rel_path),
         file_name=Path(str(candidate.rel_path)).name,
@@ -173,6 +312,7 @@ def build_source_audit(
         selected_primary_count=selected_primary,
         dominant_entity_types=dominant_entity_types,
         audit_status=status,
+        detail_only=detail_only,
         notes=notes,
     )
 
@@ -243,23 +383,31 @@ def build_pair_schedule(
             promotion_basis = None
             reason_codes = list(pair.reason_codes)
             updated_score = float(pair.score)
-            if left.audit_status != "eligible":
+            if left.audit_status == "detail_only":
                 scheduled = False
-                block_reason = f"{left.file_name}:{left.audit_status}"
-            elif right.audit_status != "eligible":
+                block_reason = PairScheduleStatus.BLOCKED_DETAIL_ONLY
+            elif right.audit_status == "detail_only":
                 scheduled = False
-                block_reason = f"{right.file_name}:{right.audit_status}"
+                block_reason = PairScheduleStatus.BLOCKED_DETAIL_ONLY
+            elif left.audit_status in ("needs_alignment",):
+                scheduled = False
+                block_reason = PairScheduleStatus.BLOCKED_ALIGNMENT
+            elif right.audit_status in ("needs_alignment",):
+                scheduled = False
+                block_reason = PairScheduleStatus.BLOCKED_ALIGNMENT
+            elif left.audit_status in ("bbox_only", "extract_failed", "annotation_noise"):
+                scheduled = False
+                block_reason = PairScheduleStatus.BLOCKED_NO_PRIMARY_GEOMETRY
+            elif right.audit_status in ("bbox_only", "extract_failed", "annotation_noise"):
+                scheduled = False
+                block_reason = PairScheduleStatus.BLOCKED_NO_PRIMARY_GEOMETRY
             elif left.level_id != right.level_id:
                 scheduled = False
-                block_reason = "level_mismatch"
+                block_reason = PairScheduleStatus.BLOCKED_LEVEL_MISMATCH
             elif left.coordinate_band_key != right.coordinate_band_key:
-                if pair.decision == "auto_comparable":
-                    scheduled = False
-                    block_reason = "coordinate_band_mismatch"
-                else:
-                    updated_score = max(updated_score - 0.15, 0.0)
-                    scheduled = False
-                    block_reason = "coordinate_band_mismatch"
+                scheduled = False
+                updated_score = max(updated_score - 0.15, 0.0)
+                block_reason = PairScheduleStatus.BLOCKED_COORDINATE_MISMATCH
             else:
                 updated_score = min(round(updated_score + 0.15, 3), 1.0)
                 if pair.documentary_cohort_relation == "cross_cohort":
@@ -276,7 +424,7 @@ def build_pair_schedule(
                         reason_codes.append("audit_promoted")
                 else:
                     scheduled = False
-                    block_reason = "manual_pairing_needed"
+                    block_reason = PairScheduleStatus.BLOCKED_ROLE_MISSING
 
             schedule.append(
                 PairScheduleItem(
@@ -309,19 +457,29 @@ def build_pair_schedule(
                     continue
                 block_reason = None
                 scheduled = True
-                if left.audit_status != "eligible":
+                if left.audit_status == "detail_only" or right.audit_status == "detail_only":
                     scheduled = False
-                    block_reason = f"{left.file_name}:{left.audit_status}"
-                elif right.audit_status != "eligible":
+                    block_reason = PairScheduleStatus.BLOCKED_DETAIL_ONLY
+                elif left.audit_status in ("needs_alignment",):
                     scheduled = False
-                    block_reason = f"{right.file_name}:{right.audit_status}"
+                    block_reason = PairScheduleStatus.BLOCKED_ALIGNMENT
+                elif right.audit_status in ("needs_alignment",):
+                    scheduled = False
+                    block_reason = PairScheduleStatus.BLOCKED_ALIGNMENT
+                elif left.audit_status in ("bbox_only", "extract_failed", "annotation_noise"):
+                    scheduled = False
+                    block_reason = PairScheduleStatus.BLOCKED_NO_PRIMARY_GEOMETRY
+                elif right.audit_status in ("bbox_only", "extract_failed", "annotation_noise"):
+                    scheduled = False
+                    block_reason = PairScheduleStatus.BLOCKED_NO_PRIMARY_GEOMETRY
                 elif left.coordinate_band_key != right.coordinate_band_key:
                     scheduled = False
-                    block_reason = "coordinate_band_mismatch"
+                    block_reason = PairScheduleStatus.BLOCKED_COORDINATE_MISMATCH
                 elif left.level_id != right.level_id:
                     scheduled = False
-                    block_reason = "level_mismatch"
+                    block_reason = PairScheduleStatus.BLOCKED_LEVEL_MISMATCH
 
+                pair_score = 1.0 if scheduled else 0.0
                 schedule.append(
                     PairScheduleItem(
                         cohort_id=left.cohort_id,
@@ -330,9 +488,13 @@ def build_pair_schedule(
                         coordinate_band=left.coordinate_band if left.coordinate_band == right.coordinate_band else None,
                         level_ids=(left.level_id, right.level_id),
                         decision="auto_comparable" if scheduled else "not_comparable",
-                        score=1.0 if scheduled else 0.0,
+                        score=pair_score,
                         reason_codes=[] if scheduled else [block_reason or "unknown"],
-                        selection_reason="same_cohort_schedule",
+                        selection_reason=(
+                            PairScheduleStatus.READY_HIGH if pair_score >= 0.75
+                            else PairScheduleStatus.READY_MEDIUM if pair_score >= 0.50
+                            else PairScheduleStatus.READY_LOW
+                        ) if scheduled else "same_cohort_schedule",
                         documentary_cohort_relation="same_cohort",
                         scheduled=scheduled,
                         block_reason=block_reason,

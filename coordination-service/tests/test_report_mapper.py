@@ -58,3 +58,34 @@ def test_report_mapper_uses_incident_description_and_disciplines() -> None:
     assert report["clashes"][0]["confidence"] == "high"
     assert report["clashes"][0]["geometry_sources"] == "dwg_aps_viewer_2d / dwg_aps_viewer_2d"
     assert report["summary"]["total_clashes"] == 1
+    assert report["geometry_audit"] is None
+
+
+def test_report_mapper_exposes_geometry_audit_from_context() -> None:
+    report = map_to_structural_analysis_report(
+        run_status="completed",
+        project_name="Demo",
+        profile_slug="folder",
+        primary_incidents={"incident_count": 0, "incidents": []},
+        coordination_context={
+            "hybrid_geometry": {
+                "audit": {
+                    "status": "warn",
+                    "summary": {"views_warn": 2, "issues_warn": 3},
+                }
+            },
+            "hybrid_geometry_audit_gate": {
+                "mode": "report_only",
+                "status": "warn",
+                "blocked": False,
+            },
+        },
+        analyzed_documents=[],
+        analysis_mode="real",
+    )
+
+    assert report["geometry_audit"] == {
+        "status": "warn",
+        "summary": {"views_warn": 2, "issues_warn": 3},
+        "gate": {"mode": "report_only", "status": "warn", "blocked": False},
+    }
