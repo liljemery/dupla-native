@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from uuid import UUID
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
 from app.models.workspace import DEFAULT_WORKSPACE_UUID
 from app.schemas.auth import UserResponse
+from app.services.permission_service import PermissionService
 from app.services.workspace_service import WorkspaceService
 
 
 async def build_user_response(session: AsyncSession, user: User) -> UserResponse:
+    perm_svc = PermissionService(session)
+    await perm_svc.ensure_catalog()
     ws_svc = WorkspaceService(session)
     workspaces = await ws_svc.workspaces_for_user(user)
     available = [
@@ -32,7 +33,7 @@ async def build_user_response(session: AsyncSession, user: User) -> UserResponse
     if active_ws is None and workspaces:
         active_ws = workspaces[0].id
         active_name = ws_svc.workspace_display_name(workspaces[0])
-    base = UserResponse.from_user(user)
+    base = await UserResponse.from_user(user, perm_svc)
     return base.model_copy(
         update={
             "active_workspace_uuid": active_ws,

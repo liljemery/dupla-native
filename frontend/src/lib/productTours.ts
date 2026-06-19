@@ -33,10 +33,7 @@ function afterRoute(fn: () => void): void {
   window.setTimeout(fn, ROUTE_DELAY_MS)
 }
 
-export function startSidebarTour(
-  role: string | null | undefined,
-  isTeamLeader = false,
-): void {
+export function startSidebarTour(permissions: readonly string[] | null | undefined): void {
   destroyActive()
   const steps: DriveStep[] = [
     {
@@ -88,7 +85,7 @@ export function startSidebarTour(
       },
     },
   ]
-  if (hasElevatedAccess(role as import('../constants/userRoles').UserRole | null, isTeamLeader)) {
+  if (hasElevatedAccess(permissions)) {
     steps.push({
       element: '[data-tour="sidebar-admin"]',
       popover: {
@@ -123,8 +120,7 @@ export function startSidebarTour(
 
 export function startProjectsTour(
   navigate: NavigateFunction,
-  role: string | null | undefined,
-  isTeamLeader = false,
+  permissions: readonly string[] | null | undefined,
 ): void {
   destroyActive()
   navigate('/app/projects')
@@ -135,7 +131,7 @@ export function startProjectsTour(
         popover: {
           title: 'Proyectos',
           description:
-            hasElevatedAccess(role as import('../constants/userRoles').UserRole | null, isTeamLeader)
+            hasElevatedAccess(permissions)
               ? 'Aquí ves las obras a las que puedes entrar. Con perfil de dirección también puedes crear una obra nueva y mover tarjetas entre etapas en el tablero cuando toque.'
               : 'Aquí ves las obras a las que puedes entrar. Abre una para trabajar dentro.',
           side: 'bottom',
@@ -162,7 +158,7 @@ export function startProjectsTour(
         },
       },
     ]
-    if (hasElevatedAccess(role as import('../constants/userRoles').UserRole | null, isTeamLeader)) {
+    if (hasElevatedAccess(permissions)) {
       steps.push({
         element: '[data-tour="projects-new"]',
         popover: {

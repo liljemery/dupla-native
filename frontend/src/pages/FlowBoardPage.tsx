@@ -15,9 +15,8 @@ export function FlowBoardPage() {
   const { flowUuid } = useParams<{ flowUuid: string }>()
   const navigate = useNavigate()
   const token = useAuthStore((s) => s.token)
-  const role = useAuthStore((s) => s.role)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
 
   const [template, setTemplate] = useState<WorkflowTemplateDetail | null>(null)
   const [projects, setProjects] = useState<Project[]>([])

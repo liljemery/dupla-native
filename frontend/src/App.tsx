@@ -1,6 +1,7 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 
 import { MainLayout } from './components/MainLayout'
+import { RequirePermission } from './components/RequirePermission'
 import { AdminUsersPage } from './pages/AdminUsersPage'
 import { ChatPage } from './pages/ChatPage'
 import { ChangePasswordPage } from './pages/ChangePasswordPage'
@@ -15,7 +16,6 @@ import { TaskboardPage } from './pages/TaskboardPage'
 import { TutorialesPage } from './pages/TutorialesPage'
 import { FlowsHubPage } from './pages/FlowsHubPage'
 import { FlowBoardPage } from './pages/FlowBoardPage'
-import { hasElevatedAccess } from './lib/accessPermissions'
 import { useAuthStore } from './store/authStore'
 
 function RequireAuth() {
@@ -27,13 +27,6 @@ function RequireAuth() {
 function RequirePasswordChanged() {
   const mustChangePassword = useAuthStore((s) => s.mustChangePassword)
   if (mustChangePassword) return <Navigate to="/change-password" replace />
-  return <Outlet />
-}
-
-function RequireElevatedAccess() {
-  const role = useAuthStore((s) => s.role)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  if (!hasElevatedAccess(role, isTeamLeader)) return <Navigate to="/app/projects" replace />
   return <Outlet />
 }
 
@@ -54,9 +47,13 @@ export default function App() {
             <Route path="/app/tasks" element={<TaskboardPage />} />
             <Route path="/app/settings" element={<SettingsPage />} />
             <Route path="/app/tutoriales" element={<TutorialesPage />} />
-            <Route element={<RequireElevatedAccess />}>
+            <Route element={<RequirePermission permission="admin.access" />}>
               <Route path="/app/admin" element={<AdminUsersPage />} />
+            </Route>
+            <Route element={<RequirePermission permission="dashboard.view" />}>
               <Route path="/app/dashboard" element={<DashboardPage />} />
+            </Route>
+            <Route element={<RequirePermission permission="workflow.templates.manage" />}>
               <Route path="/app/flows" element={<FlowsHubPage />} />
               <Route path="/app/flows/:flowUuid" element={<FlowBoardPage />} />
             </Route>

@@ -41,8 +41,8 @@ def _column_is_not_null(inspector: Inspector, table: str, column: str) -> bool:
 # Newest first: first matching revision is stamped before `alembic upgrade head`.
 _REVISION_DETECTORS: tuple[tuple[str, RevisionDetector], ...] = (
     (
-        "039_file_counts_for_budget",
-        lambda insp: "counts_for_budget" in _column_names(insp, "project_files"),
+        "042_rbac_permissions",
+        lambda insp: "user_role_assignments" in _table_names(insp),
     ),
     (
         "038_workspace_backfill",

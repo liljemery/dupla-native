@@ -10,8 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.workspace_context import WorkspaceContext
 from app.models.user import User, UserRole
 from app.models.workspace import Workspace
+from app.repositories.permission_repository import PermissionRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
+from app.services.permission_service import PermissionService
 from app.services.workspace_bootstrap_service import bootstrap_workspace_resources
 
 
@@ -20,6 +22,7 @@ class WorkspaceService:
         self._session = session
         self._workspaces = WorkspaceRepository(session)
         self._users = UserRepository(session)
+        self._perm_svc = PermissionService(session)
 
     async def list_workspaces(self) -> list[Workspace]:
         return await self._workspaces.list_all_ordered()
@@ -81,7 +84,7 @@ class WorkspaceService:
         user = await self._users.get_by_uuid(user_uuid)
         if user is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
-        if user.role == UserRole.GERENCIA:
+        if await self._perm_svc.repo.user_has_role_slug(user.id, UserRole.GERENCIA.value):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Gerencia no se asigna a workspaces",
@@ -107,7 +110,7 @@ class WorkspaceService:
         await self._session.flush()
 
     async def set_active_workspace(self, user: User, workspace_uuid: UUID) -> Workspace:
-        if user.role == UserRole.GERENCIA:
+        if await self._perm_svc.repo.user_has_role_slug(user.id, UserRole.GERENCIA.value):
             ws = await self._workspaces.get_by_uuid(workspace_uuid)
             if ws is None:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Workspace no encontrado")
@@ -132,7 +135,7 @@ class WorkspaceService:
         return "Workspace 1"
 
     async def workspaces_for_user(self, user: User) -> list[Workspace]:
-        if user.role == UserRole.GERENCIA:
+        if await self._perm_svc.repo.user_has_role_slug(user.id, UserRole.GERENCIA.value):
             return await self._workspaces.list_all_ordered()
         return await self._workspaces.list_workspaces_for_user(user.id)
 
@@ -140,6 +143,6 @@ class WorkspaceService:
         user = await self._users.get_by_uuid(user_uuid)
         if user is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
-        if user.role == UserRole.GERENCIA:
+        if await self._perm_svc.repo.user_has_role_slug(user.id, UserRole.GERENCIA.value):
             return [w.id for w in await self._workspaces.list_all_ordered()]
         return [w.id for w in await self._workspaces.list_workspaces_for_user(user.id)]

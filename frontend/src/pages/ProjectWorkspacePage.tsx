@@ -65,10 +65,10 @@ export function ProjectWorkspacePage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const token = useAuthStore((s) => s.token)
   const role = useAuthStore((s) => s.role)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role, isTeamLeader)
-  const viewBudget = canViewBudget(role)
-  const canApprovePliego = canApproveSpecifications(role, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
+  const viewBudget = canViewBudget(permissions)
+  const canApprovePliego = canApproveSpecifications(permissions)
   const [tab, setTab] = useState<string>('hub')
   const [project, setProject] = useState<Project | null>(null)
   const [flowTemplateDetail, setFlowTemplateDetail] = useState<WorkflowTemplateDetail | null>(null)
@@ -110,11 +110,11 @@ export function ProjectWorkspacePage() {
   const [findings, setFindings] = useState<TechnicalFindingRow[]>([])
   const [configOpen, setConfigOpen] = useState(false)
 
-  const workspaceTabs = useMemo(() => projectWorkspaceTabsForRole(role), [role])
+  const workspaceTabs = useMemo(() => projectWorkspaceTabsForRole(permissions), [permissions])
 
   const selectTab = useCallback(
     (id: string) => {
-      if (!canViewBudget(role) && isBudgetWorkspaceTab(id)) return
+      if (!canViewBudget(permissions) && isBudgetWorkspaceTab(id)) return
       setTab(id)
       setSearchParams(
         (prev) => {
@@ -130,7 +130,7 @@ export function ProjectWorkspacePage() {
         { replace: true },
       )
     },
-    [role, setSearchParams],
+    [permissions, setSearchParams],
   )
 
   const openBootstrapChecklist = useCallback(() => {
@@ -147,10 +147,10 @@ export function ProjectWorkspacePage() {
   }, [setSearchParams])
 
   useEffect(() => {
-    if (!canViewBudget(role) && isBudgetWorkspaceTab(tab)) {
+    if (!canViewBudget(permissions) && isBudgetWorkspaceTab(tab)) {
       setTab('hub')
     }
-  }, [role, tab])
+  }, [permissions, tab])
 
   useEffect(() => {
     if (!token || !project?.workflow_template_uuid) {
@@ -243,7 +243,7 @@ export function ProjectWorkspacePage() {
     }
     const candidate = raw ? aliases[raw] ?? raw : null
     if (candidate && workspaceTabs.some((t) => t.id === candidate)) {
-      if (!canViewBudget(role) && isBudgetWorkspaceTab(candidate)) {
+      if (!canViewBudget(permissions) && isBudgetWorkspaceTab(candidate)) {
         setTab('hub')
         return
       }
@@ -261,7 +261,7 @@ export function ProjectWorkspacePage() {
       )
       setTab('hub')
     }
-  }, [projectUuid, searchParams, workspaceTabs, role, setSearchParams])
+  }, [projectUuid, searchParams, workspaceTabs, permissions, setSearchParams])
 
   useEffect(() => {
     let cancelled = false
@@ -843,8 +843,8 @@ export function ProjectWorkspacePage() {
 
   const phaseLabel = project
     ? project.current_step_title?.trim()
-      ? workflowStepTitleForRole(project.current_step_title.trim(), role)
-      : workflowPhaseLabelForRole(project.workflow_phase, role)
+      ? workflowStepTitleForRole(project.current_step_title.trim(), permissions)
+      : workflowPhaseLabelForRole(project.workflow_phase, permissions)
     : ''
   const nextPhase = project ? NEXT_WORKFLOW_PHASE[project.workflow_phase] : undefined
   const pliegoReadyForApproval = useMemo(() => {

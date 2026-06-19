@@ -33,8 +33,8 @@ function readStoredCollapsed(): boolean {
 export function Sidebar() {
   const email = useAuthStore((s) => s.email)
   const role = useAuthStore((s) => s.role)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
   const token = useAuthStore((s) => s.token)
   const logout = useAuthStore((s) => s.logout)
   const hasUnread = useChatStore((s) => s.hasUnread)

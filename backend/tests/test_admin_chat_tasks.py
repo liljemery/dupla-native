@@ -1,6 +1,35 @@
 import pytest
 
 
+async def _role_uuid(client, headers: dict[str, str], slug: str) -> str:
+    res = await client.get("/api/admin/roles", headers=headers)
+    assert res.status_code == 200, res.text
+    for role in res.json():
+        if role["slug"] == slug:
+            return role["uuid"]
+    raise AssertionError(f"Role not found: {slug}")
+
+
+async def _create_user_payload(
+    client,
+    headers: dict[str, str],
+    *,
+    email: str,
+    first_name: str,
+    last_name: str,
+    password: str,
+    role_slugs: list[str],
+) -> dict:
+    role_uuids = [await _role_uuid(client, headers, slug) for slug in role_slugs]
+    return {
+        "first_name": first_name,
+        "last_name": last_name,
+        "email": email,
+        "password": password,
+        "role_uuids": role_uuids,
+        "module_ids": [1],
+    }
+
 @pytest.mark.asyncio
 async def test_admin_list_users_master_ok(client, master_auth_headers_async: dict[str, str]):
     res = await client.get("/api/admin/users", headers=master_auth_headers_async)
@@ -37,14 +66,15 @@ async def test_admin_create_user(client, master_auth_headers_async: dict[str, st
     res = await client.post(
         "/api/admin/users",
         headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={
-            "first_name": "Nuevo",
-            "last_name": "Usuario",
-            "email": "newuser@dupla.demo",
-            "password": "longpassword1",
-            "role": "PRESUPUESTO",
-            "module_ids": [1],
-        },
+        json=await _create_user_payload(
+            client,
+            master_auth_headers_async,
+            email="newuser@dupla.demo",
+            first_name="Nuevo",
+            last_name="Usuario",
+            password="longpassword1",
+            role_slugs=["PRESUPUESTO"],
+        ),
     )
     assert res.status_code == 201, res.text
     assert res.json()["email"] == "newuser@dupla.demo"
@@ -56,14 +86,15 @@ async def test_new_user_must_change_password_on_login(client, master_auth_header
     create = await client.post(
         "/api/admin/users",
         headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={
-            "first_name": "Primer",
-            "last_name": "Login",
-            "email": "firstlogin@dupla.demo",
-            "password": "temppass123",
-            "role": "PRESUPUESTO",
-            "module_ids": [1],
-        },
+        json=await _create_user_payload(
+            client,
+            master_auth_headers_async,
+            email="firstlogin@dupla.demo",
+            first_name="Primer",
+            last_name="Login",
+            password="temppass123",
+            role_slugs=["PRESUPUESTO"],
+        ),
     )
     assert create.status_code == 201, create.text
 
@@ -95,14 +126,15 @@ async def test_admin_delete_user(client, master_auth_headers_async: dict[str, st
     create = await client.post(
         "/api/admin/users",
         headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={
-            "first_name": "Borrar",
-            "last_name": "Prueba",
-            "email": "delete-me@dupla.demo",
-            "password": "longpassword1",
-            "role": "PRESUPUESTO",
-            "module_ids": [1],
-        },
+        json=await _create_user_payload(
+            client,
+            master_auth_headers_async,
+            email="delete-me@dupla.demo",
+            first_name="Borrar",
+            last_name="Prueba",
+            password="longpassword1",
+            role_slugs=["PRESUPUESTO"],
+        ),
     )
     assert create.status_code == 201, create.text
     user_uuid = create.json()["uuid"]
@@ -187,32 +219,18 @@ async def _team_leader_headers(client, master_auth_headers_async: dict[str, str]
     create = await client.post(
         "/api/admin/users",
         headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={
-            "first_name": "Team",
-            "last_name": "Leader",
-            "email": "tl@dupla.demo",
-            "password": "temppass123",
-            "role": "CONTROL",
-            "module_ids": [1],
-        },
+        json=await _create_user_payload(
+            client,
+            master_auth_headers_async,
+            email="tl@dupla.demo",
+            first_name="Team",
+            last_name="Leader",
+            password="temppass123",
+            role_slugs=["CONTROL", "TEAM_LEADER"],
+        ),
     )
     assert create.status_code == 201, create.text
-    user_uuid = create.json()["uuid"]
-
-    promote = await client.patch(
-        f"/api/admin/users/{user_uuid}",
-        headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={
-            "first_name": "Team",
-            "last_name": "Leader",
-            "email": "tl@dupla.demo",
-            "role": "CONTROL",
-            "module_ids": [1],
-            "is_team_leader": True,
-        },
-    )
-    assert promote.status_code == 200, promote.text
-    assert promote.json()["is_team_leader"] is True
+    assert "TEAM_LEADER" in create.json()["role_slugs"]
 
     login = await client.post(
         "/api/auth/token",
@@ -239,7 +257,7 @@ async def test_team_leader_elevated_admin_access(client, master_auth_headers_asy
 
     me = await client.get("/api/me", headers=tl_headers)
     assert me.status_code == 200, me.text
-    assert me.json()["is_team_leader"] is True
+    assert "TEAM_LEADER" in me.json()["role_slugs"]
 
 
 @pytest.mark.asyncio
@@ -251,14 +269,15 @@ async def test_team_leader_cannot_create_or_import_users(
     create = await client.post(
         "/api/admin/users",
         headers={**tl_headers, "Content-Type": "application/json"},
-        json={
-            "first_name": "Blocked",
-            "last_name": "Create",
-            "email": "blocked-create@dupla.demo",
-            "password": "longpassword1",
-            "role": "PRESUPUESTO",
-            "module_ids": [1],
-        },
+        json=await _create_user_payload(
+            client,
+            tl_headers,
+            email="blocked-create@dupla.demo",
+            first_name="Blocked",
+            last_name="Create",
+            password="longpassword1",
+            role_slugs=["PRESUPUESTO"],
+        ),
     )
     assert create.status_code == 403
 
@@ -289,17 +308,21 @@ async def test_team_leader_cannot_assign_team_leader_or_gerencia_role(
     victim = await client.post(
         "/api/admin/users",
         headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={
-            "first_name": "Victim",
-            "last_name": "User",
-            "email": "victim@dupla.demo",
-            "password": "longpassword1",
-            "role": "PRESUPUESTO",
-            "module_ids": [1],
-        },
+        json=await _create_user_payload(
+            client,
+            master_auth_headers_async,
+            email="victim@dupla.demo",
+            first_name="Victim",
+            last_name="User",
+            password="longpassword1",
+            role_slugs=["PRESUPUESTO"],
+        ),
     )
     assert victim.status_code == 201, victim.text
     victim_uuid = victim.json()["uuid"]
+    presupuesto_uuid = await _role_uuid(client, master_auth_headers_async, "PRESUPUESTO")
+    team_leader_uuid = await _role_uuid(client, master_auth_headers_async, "TEAM_LEADER")
+    gerencia_uuid = await _role_uuid(client, master_auth_headers_async, "GERENCIA")
 
     assign_tl = await client.patch(
         f"/api/admin/users/{victim_uuid}",
@@ -308,9 +331,8 @@ async def test_team_leader_cannot_assign_team_leader_or_gerencia_role(
             "first_name": "Victim",
             "last_name": "User",
             "email": "victim@dupla.demo",
-            "role": "PRESUPUESTO",
+            "role_uuids": [presupuesto_uuid, team_leader_uuid],
             "module_ids": [1],
-            "is_team_leader": True,
         },
     )
     assert assign_tl.status_code == 403
@@ -322,7 +344,7 @@ async def test_team_leader_cannot_assign_team_leader_or_gerencia_role(
             "first_name": "Victim",
             "last_name": "User",
             "email": "victim@dupla.demo",
-            "role": "GERENCIA",
+            "role_uuids": [gerencia_uuid],
             "module_ids": [1],
         },
     )

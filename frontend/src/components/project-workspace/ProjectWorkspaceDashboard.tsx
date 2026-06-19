@@ -94,7 +94,7 @@ export function ProjectWorkspaceDashboard({
   orderedTemplateSteps,
   flowMsg,
   nextPhase,
-  role,
+  role: _role,
   viewBudget,
   memberRows,
   quotesCount,
@@ -108,14 +108,14 @@ export function ProjectWorkspaceDashboard({
   canApprovePliego,
   onApprovePliego,
 }: ProjectWorkspaceDashboardProps) {
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role as import('../../constants/userRoles').UserRole | null, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
   const [recentEvents, setRecentEvents] = useState<ProjectEventRow[]>([])
   const [projectNotifs, setProjectNotifs] = useState<UserNotificationRow[]>([])
   const [findings, setFindings] = useState<TechnicalFindingRow[]>([])
   const [teamMenu, setTeamMenu] = useState<string | null>(null)
 
-  const hint = phaseWorkspaceHintForRole(project.workflow_phase, role as import('../../constants/userRoles').UserRole | null)
+  const hint = phaseWorkspaceHintForRole(project.workflow_phase, permissions)
   const bootstrapStats = useMemo(() => bootstrapRequiredPercent(bootstrapCriteria), [bootstrapCriteria])
   const bootstrapIncomplete = !isBootstrapComplete(bootstrapCriteria)
   const showBootstrapBanner =
@@ -175,14 +175,14 @@ export function ProjectWorkspaceDashboard({
     if (orderedTemplateSteps?.length && project.current_workflow_step_uuid) {
       return orderedTemplateSteps.map((s) => ({
         key: s.uuid,
-        label: workflowStepTitleForRole(s.title, role as import('../../constants/userRoles').UserRole | null),
+        label: workflowStepTitleForRole(s.title, permissions),
       }))
     }
     return WORKFLOW_PHASE_ORDER.map((key) => ({
       key,
-      label: workflowPhaseLabelForRole(key, role as import('../../constants/userRoles').UserRole | null),
+      label: workflowPhaseLabelForRole(key, permissions),
     }))
-  }, [orderedTemplateSteps, project.current_workflow_step_uuid, role])
+  }, [orderedTemplateSteps, project.current_workflow_step_uuid, permissions])
 
   const activeStepIdx = useMemo(() => {
     if (orderedTemplateSteps?.length && project.current_workflow_step_uuid) {

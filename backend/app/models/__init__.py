@@ -19,6 +19,7 @@ from app.models.project_viewer_coordinate_settings import ProjectViewerCoordinat
 from app.models.subcontract_quote import SubcontractQuote, SubcontractQuoteLine
 from app.models.task_board import TaskCard, TaskCardComment, TaskList
 from app.models.password_reset_token import PasswordResetToken
+from app.models.rbac import Permission, Role, RolePermission, UserPermissionOverride, UserRoleAssignment
 from app.models.user import User, UserModule
 from app.models.workspace import Workspace, WorkspaceMember
 from app.models.user_notification import UserNotification
@@ -51,6 +52,11 @@ __all__ = [
     "TaskCardComment",
     "TaskList",
     "PasswordResetToken",
+    "Permission",
+    "Role",
+    "RolePermission",
+    "UserPermissionOverride",
+    "UserRoleAssignment",
     "User",
     "UserModule",
     "UserNotification",

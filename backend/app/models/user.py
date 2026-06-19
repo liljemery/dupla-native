@@ -5,17 +5,20 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
 if TYPE_CHECKING:
+    from app.models.rbac import UserPermissionOverride, UserRoleAssignment
     from app.models.workspace import WorkspaceMember
 
 
 class UserRole(str, enum.Enum):
+    """Slugs de roles de sistema; la asignación vive en user_role_assignments."""
+
     GERENCIA = "GERENCIA"
     CONTROL = "CONTROL"
     PRESUPUESTO = "PRESUPUESTO"
@@ -30,9 +33,7 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     last_name: Mapped[str] = mapped_column(String(120), nullable=False, default="")
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[UserRole] = mapped_column(Enum(UserRole, name="user_role"), nullable=False)
     must_change_password: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=True)
-    is_team_leader: Mapped[bool] = mapped_column(Boolean(), nullable=False, default=False)
     active_workspace_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("workspaces.id", ondelete="SET NULL"),
@@ -41,6 +42,14 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     modules: Mapped[list[UserModule]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    role_assignments: Mapped[list["UserRoleAssignment"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    permission_overrides: Mapped[list["UserPermissionOverride"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )

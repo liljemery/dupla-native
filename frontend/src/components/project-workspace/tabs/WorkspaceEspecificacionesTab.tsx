@@ -49,7 +49,7 @@ export function WorkspaceEspecificacionesTab({
   projectUuid,
   projectDisplayName,
   token,
-  role,
+  role: _role,
   pliegoItemStates,
   setPliegoItemStates,
   pliegoApprovedSections,
@@ -78,9 +78,9 @@ export function WorkspaceEspecificacionesTab({
   onGoPresupuesto,
 }: WorkspaceEspecificacionesTabProps) {
   const userUuid = useAuthStore((s) => s.userUuid)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const canApprove = canApproveSpecifications(role as import('../../../constants/userRoles').UserRole | null, isTeamLeader)
-  const viewBudget = canViewBudget(role as import('../../../constants/userRoles').UserRole | null)
+  const permissions = useAuthStore((s) => s.permissions)
+  const canApprove = canApproveSpecifications(permissions)
+  const viewBudget = canViewBudget(permissions)
   const specDoc =
     project?.specifications_document && typeof project.specifications_document === 'object'
       ? (project.specifications_document as Record<string, unknown>)

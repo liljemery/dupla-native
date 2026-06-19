@@ -47,7 +47,8 @@ from app.domain.workflow_template_phase import (
     workflow_phase_from_template_step_index,
 )
 from app.domain.workflow_phase import LINEAR_NEXT, LINEAR_PREV, WorkflowPhase, upload_counts_for_budget
-from app.domain.user_permissions import can_view_budget, has_elevated_access
+from app.domain.user_permissions import primary_role_slug
+from app.repositories.permission_repository import PermissionRepository
 from app.models.architecture_revision import ArchitectureRevision, ArchitectureRevisionDecision
 from app.models.project import Project
 from app.models.task_board import TaskCard, TaskList
@@ -65,6 +66,7 @@ from app.repositories.workflow_template_repository import WorkflowTemplateReposi
 from app.schemas.chat import ChatPostRequest
 from app.services.chat_service import ChatService
 from app.services.pliego_business_service import PliegoBusinessService
+from app.services.permission_service import PermissionService
 from app.services.project_file_ai_service import ProjectFileAIService
 from app.services.folder_path_parts import folder_path_parts
 from app.services.project_service import ProjectService
@@ -80,6 +82,8 @@ class ProjectLifecycleService:
         self._project_svc = ProjectService(session, workspace_id)
         self._workflow_templates = WorkflowTemplateRepository(session)
         self._settings = get_settings()
+        self._perm_svc = PermissionService(session)
+        self._perm_repo = PermissionRepository(session)
 
     @staticmethod
     def _domain_phase_for_project(project: Project) -> WorkflowPhase:
@@ -292,7 +296,8 @@ class ProjectLifecycleService:
                     continue
                 mids = await self._users.list_ids_by_module_and_roles(
                     self._settings.architecture_module_id,
-                    [role_enum],
+                    [role_enum.value],
+                    self._perm_repo,
                 )
                 title = str(raw.get("title") or "Actualización de flujo").strip()
                 body = str(raw.get("body") or f"Proyecto «{project.name}».").strip()
@@ -441,7 +446,8 @@ class ProjectLifecycleService:
 
         if is_forward and target_step.requires_approval_role:
             need = target_step.requires_approval_role.strip().upper()
-            if user.role.value != need:
+            user_slugs = await self._perm_svc.list_user_role_slugs(user)
+            if need not in user_slugs:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Se requiere aprobación del rol {need}",
@@ -506,7 +512,8 @@ class ProjectLifecycleService:
     async def _notify_architecture_complete(self, project: Project) -> None:
         mids = await self._users.list_ids_by_module_and_roles(
             self._settings.architecture_module_id,
-            [UserRole.GERENCIA, UserRole.CONTROL],
+            [UserRole.GERENCIA.value, UserRole.CONTROL.value],
+            self._perm_repo,
         )
         title = "Fase de arquitectura completada"
         body = f"El proyecto «{project.name}» completó la definición arquitectónica."
@@ -529,7 +536,10 @@ class ProjectLifecycleService:
         )
 
     async def _notify_budget_approved(self, project: Project) -> None:
-        mids = await self._users.list_elevated_user_ids_by_module(self._settings.architecture_module_id)
+        mids = await self._users.list_elevated_user_ids_by_module(
+            self._settings.architecture_module_id,
+            self._perm_repo,
+        )
         title = "Presupuesto aprobado por el cliente"
         body = f"El proyecto «{project.name}» tiene una versión de presupuesto aprobada."
         for uid in mids:
@@ -768,7 +778,8 @@ class ProjectLifecycleService:
         user: User,
         project_uuid: UUID,
     ) -> Project:
-        if not (has_elevated_access(user) or user.role == UserRole.ARQUITECTURA):
+        can_approve = await self._perm_svc.has(user, "lifecycle.approve_specs")
+        if not can_approve:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo Gerencia, Líder de equipo o Arquitectura pueden aprobar el pliego de condiciones",
@@ -833,7 +844,7 @@ class ProjectLifecycleService:
         project = await self._project_svc.get_project(user, project_uuid)
         meta = dict(project.workflow_meta or {})
         if "budget_pipeline" in patch and isinstance(patch["budget_pipeline"], dict):
-            if not can_view_budget(user):
+            if not await self._perm_svc.has(user, "budget.view"):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="El rol Arquitectura no tiene acceso a presupuesto",
@@ -842,7 +853,7 @@ class ProjectLifecycleService:
             incoming = patch["budget_pipeline"]
             wants_volumetry = bool(incoming.get("volumetry_done"))
             had_volumetry = bool(bp_old.get("volumetry_done"))
-            if wants_volumetry and not had_volumetry and user.role != UserRole.GERENCIA:
+            if wants_volumetry and not had_volumetry and not await self._perm_svc.has(user, "admin.permissions.manage"):
                 if not await project_has_volumetry_qualifying_job(self._session, project.id):
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -851,7 +862,7 @@ class ProjectLifecycleService:
             wants_true = bool(incoming.get("control_review_done"))
             had_true = bool(bp_old.get("control_review_done"))
             if wants_true and not had_true:
-                if user.role != UserRole.CONTROL and not has_elevated_access(user):
+                if not await self._perm_svc.has(user, "lifecycle.control_review"):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Solo Control, Gerencia o Líder de equipo pueden marcar la revisión de Control",
@@ -930,9 +941,8 @@ class ProjectLifecycleService:
     ) -> ArchitectureRevision:
         project = await self._project_svc.get_project(user, project_uuid)
         ver = await self._next_revision_version(project.id)
-        role_val = user.role.value if hasattr(user.role, "value") else str(user.role)
-        if role_val not in {"GERENCIA", "ARQUITECTURA", "CONTROL", "PRESUPUESTO"}:
-            role_val = "GERENCIA"
+        role_slugs = await self._perm_svc.list_user_role_slugs(user)
+        role_val = primary_role_slug(role_slugs)
         rev = ArchitectureRevision(
             id=uuid.uuid4(),
             project_id=project.id,

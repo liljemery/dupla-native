@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_workspace_context, require_elevated_access
+from app.dependencies import get_workspace_context, require_permission
 from app.domain.task_board_constants import TASK_LIST_DONE_UUID
 from app.domain.workspace_context import WorkspaceContext
 from app.domain.workflow_phase import WorkflowPhase
@@ -26,7 +26,7 @@ class DashboardSummaryResponse(BaseModel):
 
 @router.get("/summary", response_model=DashboardSummaryResponse)
 async def dashboard_summary(
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("dashboard.view"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> DashboardSummaryResponse:
