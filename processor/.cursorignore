@@ -1,0 +1,101 @@
+# --- Sistema y Metadatos ---
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.Trash/
+.fseventsd/
+.Spotlight-V100/
+.AppleDouble/
+.LSOverride
+
+# --- Entornos, Dependencias y Cachés (Agresivo) ---
+**/node_modules/
+**/venv/
+**/env/
+**/.venv/
+**/.tox/
+**/.nox/
+**/bower_components/
+**/jspm_packages/
+**/*cache*/
+**/*cache/
+**/*Cache*/
+**/*Cache/
+**/dist/
+**/build/
+**/out/
+**/bin/
+**/obj/
+**/__pycache__/
+**/.cache/
+**/.parcel-cache/
+**/.eslintcache
+**/.stylelintcache
+**/.tsbuildinfo
+
+# --- Archivos de Base de Datos y Logs ---
+**/*.log*
+**/*.rdb
+**/*.sqlite*
+**/*.db
+**/*.bak
+**/*.tmp
+**/*.temp
+
+# --- Certificados, Llaves y Secretos ---
+**/*.pem
+**/*.crt
+**/*.cer
+**/*.key
+**/*.pub
+**/*.pfx
+**/*.p12
+**/*.env*
+!.env.example
+
+# --- Binarios, Multimedia y Documentación ---
+# Ignorar binarios y ejecutables
+**/*.exe
+**/*.dll
+**/*.so
+**/*.dylib
+**/*.app
+**/*.bin
+**/*.jar
+**/*.war
+
+# Ignorar multimedia (No es código)
+**/*.jpg
+**/*.jpeg
+**/*.png
+**/*.gif
+**/*.svg
+**/*.ico
+**/*.mp4
+**/*.mov
+**/*.pdf
+**/*.doc
+**/*.docx
+**/*.xls
+**/*.xlsx
+**/*.ppt
+**/*.pptx
+
+# Ignorar archivos de texto plano que usualmente son documentación o basura
+**/*.txt
+**/*.md
+!README.md
+!CHANGELOG.md
+!.cursorrules
+
+# --- VCS y Configuraciones ---
+**/.git/
+**/.svn/
+**/.hg/
+**/.terraform/
+**/.serverless/
+**/.vscode/
+**/.idea/
+**/.history/

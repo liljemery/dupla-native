@@ -6,6 +6,7 @@ export type ProjectFileRow = {
   folder_uuid: string | null
   description: string | null
   discipline: string | null
+  discipline_classifying?: boolean
   ingest_status: string
   counts_for_budget: boolean
   created_at: string

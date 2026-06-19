@@ -28,8 +28,8 @@ services:
   # Entrypoint: alembic upgrade → python -m app.seed → uvicorn
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     env_file:
       - ./backend/.env
     environment:
@@ -41,11 +41,17 @@ services:
       JWT_SECRET: demo-secret-change-in-production-min-32-chars!!
 
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://frontend:80,http://app.grupodupla.com
-      FRONTEND_URL: http://app.grupodupla.com
+      FRONTEND_URL: http://localhost:5173
+      COORDINATION_SMOKE_MODE: "false"
+      DUPLA_ROOT: /motor
+      PYTHONPATH: /motor:/app
+      COORDINATION_CACHE_ROOT: /app/var/coord_output/aps_cache
     ports:
       - "8000:8000"
     volumes:
+      - ./motor:/motor:ro
       - dupla_uploads:/app/var/uploads
+      - dupla_coord_outputs:/app/var/coord_output
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,10 +114,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       DUPLA_ROOT: /motor
       COORDINATION_OUTPUT_ROOT: /app/output
+      COORDINATION_SMOKE_MODE: "false"
       PYTHONPATH: /motor:/app
     ports:
       - "8002:8000"
     volumes:
+      - ./motor:/motor:ro
       - dupla_coord_outputs:/app/output
     depends_on:
       redis:
@@ -131,8 +139,10 @@ services:
       COORDINATION_OUTPUT_ROOT: /app/output
       COORDINATION_CACHE_ROOT: /app/output/aps_cache
       COORDINATION_MAX_WORKERS: "6"
+      COORDINATION_SMOKE_MODE: "false"
       PYTHONPATH: /motor:/app
     volumes:
+      - ./motor:/motor:ro
       - dupla_coord_outputs:/app/output
     depends_on:
       redis:

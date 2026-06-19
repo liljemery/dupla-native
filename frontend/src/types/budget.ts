@@ -7,6 +7,8 @@ export interface BudgetJob {
   status: BudgetJobStatus
   discipline?: string | null
   error?: string | null
+  phase?: string | null
+  phase_detail?: string | null
   created_at: string
   updated_at: string
 }

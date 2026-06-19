@@ -26,6 +26,8 @@ class BudgetJobResponse(BaseModel):
     status: str
     discipline: Optional[str]
     error: Optional[str]
+    phase: Optional[str] = None
+    phase_detail: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -57,6 +59,8 @@ async def enqueue_budget_job(
         status=job.status,
         discipline=job.discipline,
         error=job.error,
+        phase=getattr(job, "phase", None),
+        phase_detail=getattr(job, "phase_detail", None),
         created_at=job.created_at,
         updated_at=job.updated_at,
     )
@@ -86,6 +90,8 @@ async def get_latest_budget_job(
         status=job.status,
         discipline=job.discipline,
         error=job.error,
+        phase=getattr(job, "phase", None),
+        phase_detail=getattr(job, "phase_detail", None),
         created_at=job.created_at,
         updated_at=job.updated_at,
     )

@@ -28,6 +28,7 @@ from app.models.project_clash_job import ProjectClashJob
 from app.models.project_file import ProjectFile
 from app.models.project_file_folder import ProjectFileFolder
 from app.models.user import User
+from app.services.folder_path_parts import folder_path_parts
 from app.services.project_service import ProjectService
 
 logger = logging.getLogger(__name__)
@@ -123,20 +124,7 @@ class ClashService:
         return list(result.scalars().all())
 
     async def _folder_path_parts(self, project_id: UUID, folder_id: UUID | None) -> list[str]:
-        if folder_id is None:
-            return []
-        parts: list[str] = []
-        cur: UUID | None = folder_id
-        for _ in range(128):
-            if cur is None:
-                break
-            row = await self._session.get(ProjectFileFolder, cur)
-            if row is None or row.project_id != project_id:
-                break
-            parts.append(row.name)
-            cur = row.parent_id
-        parts.reverse()
-        return parts
+        return await folder_path_parts(self._session, project_id, folder_id)
 
     async def _descendant_folder_ids(self, project_id: UUID, root_folder_id: UUID) -> set[UUID]:
         all_folders = await self._all_folders(project_id)

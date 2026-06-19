@@ -56,6 +56,16 @@ function disciplineLabel(raw: string | null | undefined): string | null {
   return PROJECT_FILE_DISCIPLINE_LABELS[v] ?? raw
 }
 
+function isFileClassifying(f: { ingest_status: string; discipline?: string | null; discipline_classifying?: boolean }): boolean {
+  if (typeof f.discipline_classifying === 'boolean') return f.discipline_classifying
+  return f.ingest_status === 'PUBLISHED' && !f.discipline?.trim()
+}
+
+function disciplineBadgeText(f: { ingest_status: string; discipline?: string | null }): string {
+  if (isFileClassifying(f)) return 'Clasificando…'
+  return disciplineLabel(f.discipline) ?? 'Sin clasificar'
+}
+
 function fileCategoryLabel(raw: string | null | undefined): string | null {
   if (!raw?.trim()) return null
   return PROJECT_FILE_CATEGORY_LABELS[raw] ?? raw
@@ -134,6 +144,11 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
     void load()
   }, [load])
 
+  useEffect(() => {
+    if (!token || !projectUuid) return
+    void apiFetch(`/api/projects/${projectUuid}/files/reconcile-ingest`, { method: 'POST', token })
+  }, [projectUuid, token])
+
   function enterFolder(f: ProjectFileFolderRow) {
     setFilePageOffset(0)
     setFolderUuid(f.uuid)
@@ -186,6 +201,17 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
       window.clearTimeout(t)
     }
   }, [hasActiveFilters, loadSearchResults])
+
+  useEffect(() => {
+    const pending =
+      files.some(isFileClassifying) || (searchHits?.some(isFileClassifying) ?? false)
+    if (!pending || !token) return
+    const timer = window.setInterval(() => {
+      void load()
+      if (hasActiveFilters) void loadSearchResults()
+    }, 5000)
+    return () => window.clearInterval(timer)
+  }, [files, searchHits, token, load, hasActiveFilters, loadSearchResults])
 
   async function createFolderFromModal(): Promise<boolean> {
     if (!token || !folderModalName.trim()) return false
@@ -583,12 +609,16 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                           </span>
                         ) : null}
                         {budgetExcludedBadge(f.counts_for_budget)}
-                        {disciplineLabel(f.discipline) ? (
+                        {isFileClassifying(f) ? (
+                          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
+                            {disciplineBadgeText(f)}
+                          </span>
+                        ) : disciplineLabel(f.discipline) ? (
                           <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                            {disciplineLabel(f.discipline)}
+                            {disciplineBadgeText(f)}
                           </span>
                         ) : (
-                          <span className="text-[10px] text-muted">Sin clasificar</span>
+                          <span className="text-[10px] text-muted">{disciplineBadgeText(f)}</span>
                         )}
                         {fileCategoryLabel(f.category) ? (
                           <span className="rounded-full bg-black/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-ink">
@@ -658,12 +688,16 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                           </span>
                         ) : null}
                         <span className="mt-1 inline-block">{budgetExcludedBadge(f.counts_for_budget)}</span>
-                        {disciplineLabel(f.discipline) ? (
+                        {isFileClassifying(f) ? (
+                          <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+                            {disciplineBadgeText(f)}
+                          </span>
+                        ) : disciplineLabel(f.discipline) ? (
                           <span className="mt-1 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                            {disciplineLabel(f.discipline)}
+                            {disciplineBadgeText(f)}
                           </span>
                         ) : (
-                          <span className="mt-1 block text-[11px]">Sin clasificar</span>
+                          <span className="mt-1 block text-[11px]">{disciplineBadgeText(f)}</span>
                         )}
                         {fileCategoryLabel(f.category) ? (
                           <span className="mt-1 inline-block rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] font-medium text-ink">
@@ -776,12 +810,16 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                         </span>
                       ) : null}
                       {budgetExcludedBadge(f.counts_for_budget)}
-                      {disciplineLabel(f.discipline) ? (
+                      {isFileClassifying(f) ? (
+                        <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-900">
+                          {disciplineBadgeText(f)}
+                        </span>
+                      ) : disciplineLabel(f.discipline) ? (
                         <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
-                          {disciplineLabel(f.discipline)}
+                          {disciplineBadgeText(f)}
                         </span>
                       ) : (
-                        <span className="text-[10px] text-muted">Sin clasificar</span>
+                        <span className="text-[10px] text-muted">{disciplineBadgeText(f)}</span>
                       )}
                       {fileCategoryLabel(f.category) ? (
                         <span className="rounded-full bg-black/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-ink">
@@ -904,12 +942,16 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                         </span>
                       ) : null}
                       <span className="mt-1 inline-block">{budgetExcludedBadge(f.counts_for_budget)}</span>
-                      {disciplineLabel(f.discipline) ? (
+                      {isFileClassifying(f) ? (
+                        <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-900">
+                          {disciplineBadgeText(f)}
+                        </span>
+                      ) : disciplineLabel(f.discipline) ? (
                         <span className="mt-1 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
-                          {disciplineLabel(f.discipline)}
+                          {disciplineBadgeText(f)}
                         </span>
                       ) : (
-                        <span className="mt-1 block">Sin clasificar</span>
+                        <span className="mt-1 block">{disciplineBadgeText(f)}</span>
                       )}
                       {fileCategoryLabel(f.category) ? (
                         <span className="mt-1 inline-block rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] font-medium text-ink">

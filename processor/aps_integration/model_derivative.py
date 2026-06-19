@@ -39,6 +39,20 @@ APS_ASYNC_MAX_RETRIES = 4
 APS_RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
 
 
+class ApsCapacityError(RuntimeError):
+    """APS Model Derivative denied (403 ProductAccessRequiresCapacity / quota)."""
+
+
+def is_capacity_denied(status_code: int, body: str) -> bool:
+    text = (body or "").lower()
+    return status_code == 403 and (
+        "productaccessrequirescapacity" in text
+        or "token exchange denied" in text
+        or "token exchange access denied" in text
+        or "forbidden" in text
+    )
+
+
 def _get_headers(token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {token}",
@@ -331,6 +345,11 @@ def translate_to_svf2(
         if response.status_code in {201, 202}:
             print("[OK] Translation job started.")
             return response.json()
+        if is_capacity_denied(response.status_code, response.text):
+            raise ApsCapacityError(
+                "APS Model Derivative denegado (403). Cuota agotada o sin capacidad en la cuenta. "
+                f"Respuesta: {response.text[:300]}"
+            )
         if response.status_code in {429} or response.status_code >= 500:
             wait_seconds = 10 * attempt
             print(
@@ -344,6 +363,11 @@ def translate_to_svf2(
         response.raise_for_status()
 
     if last_response is not None:
+        if is_capacity_denied(last_response.status_code, last_response.text):
+            raise ApsCapacityError(
+                "APS Model Derivative denegado (403). Cuota agotada o sin capacidad en la cuenta. "
+                f"Respuesta: {last_response.text[:300]}"
+            )
         print(
             f"[ERROR] Translation failed after {max_retries} retries: "
             f"{last_response.status_code}: {last_response.text}"

@@ -31,6 +31,9 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from app.services.project_file_classification_service import requeue_pending_discipline_classifications
+
+    await requeue_pending_discipline_classifications()
     yield
 
 
