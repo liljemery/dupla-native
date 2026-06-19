@@ -9,11 +9,14 @@ from typing import Any
 
 
 def file_cache_key(path: Path) -> str:
+    """Content-based cache key so staged copies reuse APS extractions."""
     stat = path.stat()
     digest = hashlib.sha256()
-    digest.update(str(path.resolve()).encode("utf-8"))
     digest.update(str(stat.st_size).encode("ascii"))
     digest.update(str(int(stat.st_mtime_ns)).encode("ascii"))
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
     return digest.hexdigest()[:20]
 
 

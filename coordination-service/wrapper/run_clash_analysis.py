@@ -14,10 +14,66 @@ from typing import Any
 from adapters.dupla_reports import adapt_smoke_primary, generate_report_artifacts
 from adapters.manifest import stage_project_inputs
 from adapters.report_mapper import load_json_if_exists, map_to_structural_analysis_report
+from runtime_paths import coordination_cache_root, coordination_output_root, load_project_env
 
 logger = logging.getLogger(__name__)
 
 _MAC_ODA_CONVERTER = Path("/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter")
+
+FAST_COMPARE_APS_PROFILE = "fast_compare_aps"
+FAST_COMPARE_PROFILE = "fast_compare"
+
+load_project_env()
+
+
+def _shared_cache_root() -> Path:
+    """Persistent APS/accore cache shared across clash jobs."""
+    return coordination_cache_root()
+
+
+def _max_workers() -> int:
+    return max(1, int(os.getenv("COORDINATION_MAX_WORKERS", "6")))
+
+
+def _aps_configured() -> bool:
+    return bool((os.getenv("CLIENT_ID") or "").strip() and (os.getenv("CLIENT_SECRET") or "").strip())
+
+
+def _accore_available() -> bool:
+    import platform
+
+    if platform.system() != "Windows":
+        return False
+    accore = Path(
+        os.getenv(
+            "ACCORECONSOLE_PATH",
+            r"C:\Program Files\Autodesk\AutoCAD 2027\accoreconsole.exe",
+        )
+    )
+    dll = (
+        _dupla_root()
+        / "aps_integration"
+        / "DuplaExtractor"
+        / "bin"
+        / "Release"
+        / "net10.0-windows"
+        / "DuplaExtractor.dll"
+    )
+    return accore.is_file() and dll.is_file()
+
+
+def _resolve_analysis_profile() -> str:
+    """Pick the fast clash profile consistently on Windows, macOS and Linux."""
+    override = (os.getenv("COORDINATION_ANALYSIS_PROFILE") or "").strip()
+    if override:
+        return override
+    # Preferred: scheduling + parallel APS on every OS when credentials exist.
+    if _aps_configured():
+        return FAST_COMPARE_APS_PROFILE
+    # Windows without APS: local accore (still parallel via fast_compare).
+    if _accore_available():
+        return FAST_COMPARE_PROFILE
+    return FAST_COMPARE_APS_PROFILE
 
 
 def _extract_filename_from_source_ref(ref: str) -> str:
@@ -112,7 +168,9 @@ def _dupla_root() -> Path:
     bundled = Path(__file__).resolve().parents[2] / "motor"
     if bundled.is_dir():
         return bundled
-    return Path("/dupla")
+    raise FileNotFoundError(
+        "Motor Dupla no encontrado. Define DUPLA_ROOT o ejecuta desde el monorepo (motor/ en la raíz)."
+    )
 
 
 def _discipline_from_bucket(bucket: str) -> str:
@@ -210,16 +268,20 @@ def _invoke_runner(
     script = _runner_script()
     if not script.is_file():
         raise FileNotFoundError(
-            f"Dupla runner not found at {script}. Mount DUPLA_ROOT or set COORDINATION_SMOKE_MODE=true."
+            f"Dupla runner not found at {script}. Set DUPLA_ROOT or COORDINATION_SMOKE_MODE=true."
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     clash_report = output_dir / "clash_project_report.json"
 
-    # fast_compare uses accore (Windows-only) for DWG profiling.
-    # On non-Windows, fall back to the standard profile which supports --dwg-via-aps.
-    import platform as _platform
-    analysis_profile = "fast_compare" if _platform.system() == "Windows" else "standard"
+    analysis_profile = _resolve_analysis_profile()
+    logger.info(
+        "Clash analysis profile=%s aps=%s accore=%s workers=%d",
+        analysis_profile,
+        _aps_configured(),
+        _accore_available(),
+        _max_workers(),
+    )
 
     cmd = [
         sys.executable,
@@ -232,20 +294,16 @@ def _invoke_runner(
         str(registry_path),
         "--output",
         str(clash_report),
-        "--dwg-via-aps",
-        "--aps-translation-timeout",
-        str(_env_int("APS_DERIVATIVE_MAX_WAIT_SECONDS", 300)),
         "--shared-site-origin",
-        "--mix-issues",
-        "--allow-proxy-hard-clashes",
+        "--stage",
+        "full",
     ]
 
-    if analysis_profile == "fast_compare":
-        cmd.extend(["--stage", "full"])
+    if analysis_profile == FAST_COMPARE_APS_PROFILE:
+        cmd.append("--dwg-via-aps")
 
-    cache_root = output_dir / "cache"
-    cache_root.mkdir(parents=True, exist_ok=True)
-    cmd.extend(["--cache-root", str(cache_root)])
+    cache_root = _shared_cache_root()
+    cmd.extend(["--cache-root", str(cache_root), "--max-workers", str(_max_workers())])
 
     # For folder-driven runs, files often have mismatched dates → generate a
     # cohort manifest so the motor treats them as a single comparable set.
@@ -445,6 +503,22 @@ def _hybrid_geometry_audit_gate(summary: dict[str, Any] | None) -> dict[str, Any
     return result
 
 
+def _aps_diag_by_file() -> dict[str, dict[str, Any]]:
+    """Map file name -> APS diagnostics (result/aps_error) from the shared cache."""
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        cache_root = _shared_cache_root()
+    except Exception:
+        return out
+    if not cache_root.is_dir():
+        return out
+    for diag_path in cache_root.glob("*.diagnostics.json"):
+        diag = load_json_if_exists(diag_path)
+        if isinstance(diag, dict) and diag.get("path"):
+            out[str(diag["path"])] = diag
+    return out
+
+
 def _enrich_analyzed_documents(
     analyzed_documents: list[dict[str, Any]],
     *,
@@ -470,6 +544,8 @@ def _enrich_analyzed_documents(
             for source in group.get("source_files") or []:
                 element_counts[Path(str(source)).name] = count
 
+    aps_diags = _aps_diag_by_file()
+
     enriched: list[dict[str, Any]] = []
     for doc in analyzed_documents:
         if not isinstance(doc, dict):
@@ -479,9 +555,41 @@ def _enrich_analyzed_documents(
         status = str(doc.get("status") or "ok")
         if element_count <= 0 and status == "ok":
             status = "warning"
+
+        extra: dict[str, Any] = {}
+        diag = aps_diags.get(file_name)
+        if isinstance(diag, dict):
+            aps_result = str(diag.get("result") or "")
+            extra["aps_result"] = aps_result
+            viewer_count = int(diag.get("viewer_elements") or 0)
+            if aps_result in {"viewer_geometry", "viewer_cache"}:
+                extra["geometry_quality"] = "exact"
+                extra["geometry_source"] = "dwg_aps_viewer_2d"
+            elif aps_result == "proxy":
+                extra["geometry_quality"] = "proxy"
+                extra["geometry_source"] = "dwg_aps_properties_proxy"
+            elif aps_result == "quota_exceeded":
+                extra["aps_note"] = (
+                    "APS Model Derivative sin cuota (plan Free agotado o requiere "
+                    "Flex tokens). Se usó geometría de PDF/local como respaldo."
+                )
+            elif aps_result in {"invalid_file", "invalid_file_cached"}:
+                extra["aps_note"] = (
+                    "Autodesk no pudo traducir el DWG (archivo rechazado por el "
+                    "extractor). Se usó geometría de PDF/local como respaldo."
+                )
+            elif aps_result == "viewer_empty" and viewer_count == 0:
+                extra["aps_note"] = (
+                    "Volcado Viewer presente pero sin elementos convertidos; "
+                    "revise caché o re-ejecute extracción."
+                )
+            if viewer_count > 0:
+                extra["viewer_elements"] = viewer_count
+
         enriched.append(
             {
                 **doc,
+                **extra,
                 "element_count": element_count,
                 "status": status,
                 "retryable": status in {"error", "warning"},
@@ -542,8 +650,15 @@ def run_clash_analysis(
         hybrid_geometry_gate = _hybrid_geometry_audit_gate(hybrid_geometry_summary)
         # If the runner used the standard profile (non-Windows), convert its
         # clash_project_report.json (conflicts) → primary_incidents format.
+        primary_payload = load_json_if_exists(output_dir / "primary_incidents.json")
         clash_report = load_json_if_exists(output_dir / "clash_project_report.json")
-        if clash_report and clash_report.get("conflict_count", 0) > 0:
+        if isinstance(primary_payload, dict) and primary_payload.get("incidents") is not None:
+            primary = primary_payload
+            logger.info(
+                "Loaded %d primary incidents from fast_compare output",
+                int(primary.get("incident_count") or len(primary.get("incidents") or [])),
+            )
+        elif clash_report and clash_report.get("conflict_count", 0) > 0:
             primary = _conflicts_to_primary_incidents(clash_report)
             logger.info(
                 "Converted %d conflicts → %d primary incidents",
@@ -551,13 +666,16 @@ def run_clash_analysis(
                 primary["incident_count"],
             )
         else:
+            report_source = clash_report if isinstance(clash_report, dict) else {}
+            if not report_source and isinstance(primary_payload, dict):
+                report_source = primary_payload
             primary = {
                 "incidents": [],
                 "incident_count": 0,
-                "incident_conflict_count": int((clash_report or {}).get("conflict_count") or 0),
-                "generated_at": (clash_report or {}).get("generated_at"),
+                "incident_conflict_count": int(report_source.get("conflict_count") or 0),
+                "generated_at": report_source.get("generated_at"),
                 "project_name": project_name,
-                "analysis_profile": "standard",
+                "analysis_profile": report_source.get("analysis_profile", "standard"),
             }
         (output_dir / "primary_incidents.json").write_text(
             json.dumps(primary, ensure_ascii=False, indent=2), encoding="utf-8"

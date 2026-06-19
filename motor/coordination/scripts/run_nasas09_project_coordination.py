@@ -8,8 +8,10 @@ import json
 import logging
 import os
 import sys
+import threading
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
@@ -39,6 +41,9 @@ from coordination.extraction.from_dwg_accore import (
     load_accore_payload_via_accore,
     profile_accore_payload,
 )
+from coordination.extraction.companion_pdf import resolve_companion_pdf
+from coordination.extraction.aps_cache import file_cache_key, load_cached_json
+from coordination.extraction.from_aps_viewer_dump import viewer_dump_has_geometry
 from coordination.extraction.from_dwg_aps import extract_elements_from_dwg_via_aps
 from coordination.extraction.from_dwg_com import extract_elements_from_dwg_via_com
 from coordination.extraction.from_dwg_ezdxf import extract_elements_from_dwg
@@ -63,6 +68,7 @@ from coordination.selection.coordinate_audit import (
 from coordination.selection.fast_compare import (
     CAD_SUFFIXES,
     FAST_COMPARE_ANALYSIS_PROFILE,
+    FAST_COMPARE_APS_PROFILE,
     apply_manifest_selection,
     build_pre_match_candidates,
     build_source_candidates,
@@ -97,6 +103,46 @@ from coordination import clash_pairs, conflicts_to_conflict_notes
 
 logger = logging.getLogger("dupla.nasas09.coordination")
 
+from coordination.selection.clash_media_filter import (
+    MIN_EXACT_ELEMENTS_FOR_PDF_SKIP,
+    clear_exact_companion_pdfs,
+    exact_companion_pdf_names,
+    register_exact_companion_pdf,
+    should_skip_clash_media,
+)
+
+
+def _load_exact_companion_pdfs_from_cache(nasas_root: Path, cache_root: Path) -> None:
+    """Precarga PDFs cuyo DWG ya tiene geometría viewer exacta en caché APS."""
+    if not cache_root.is_dir():
+        return
+    for dwg in nasas_root.rglob("*.dwg"):
+        diag = load_cached_json(cache_root, key=file_cache_key(dwg), suffix="diagnostics")
+        if not isinstance(diag, dict):
+            continue
+        if str(diag.get("result") or "") not in {"viewer_geometry", "viewer_cache"}:
+            continue
+        if int(diag.get("viewer_elements") or 0) < MIN_EXACT_ELEMENTS_FOR_PDF_SKIP:
+            continue
+        companion = resolve_companion_pdf(dwg)
+        if companion is not None:
+            register_exact_companion_pdf(companion.name)
+
+
+def _register_exact_dwg_companion(dwg_path: Path, elements: list[Element25D]) -> None:
+    if len(elements) < MIN_EXACT_ELEMENTS_FOR_PDF_SKIP:
+        return
+    if not any(str(el.metadata.get("geometry_quality") or "") == "exact" for el in elements):
+        return
+    companion = resolve_companion_pdf(dwg_path)
+    if companion is not None:
+        register_exact_companion_pdf(companion.name)
+        logger.info(
+            "PDF compañero omitido en clash (DWG exacto): %s -> %s",
+            dwg_path.name,
+            companion.name,
+        )
+
 DEFAULT_NASAS = REPO_ROOT / "aps_integration" / "NASAS 09"
 DEFAULT_REGISTRY = DEFAULT_NASAS / "coordination" / "sample_project_levels.json"
 DEFAULT_OUT = DEFAULT_NASAS / "outputs" / "coordination" / "clash_project_report.json"
@@ -109,14 +155,263 @@ DEFAULT_AUTODESK = (
 )
 
 
+def _analysis_profile_label(args: argparse.Namespace) -> str:
+    return str(args.analysis_profile)
+
+
+def _heuristic_profile_for_candidate(candidate: Any) -> dict[str, object]:
+    """Lightweight stand-in for accore profiling when APS is used (any OS)."""
+    return {
+        "raw_entity_count": 100,
+        "raw_primary_candidate_count": 50,
+        "raw_annotation_count": 0,
+        "raw_bbox_only_count": 0,
+        "bounds_mm": [0.0, 0.0, 100_000.0, 100_000.0],
+        "centroid_mm": [50_000.0, 50_000.0],
+        "dominant_cluster_bounds_mm": [0.0, 0.0, 100_000.0, 100_000.0],
+        "dominant_cluster_centroid_mm": [50_000.0, 50_000.0],
+        "dominant_entity_types": ["LINE"],
+        "units_to_mm_factor": 1.0,
+        "profile_source": "heuristic",
+        "rel_path": str(candidate.rel_path),
+    }
+
+
+def _heuristic_profile_candidates(selected_candidates: list) -> dict[str, dict[str, object]]:
+    return {candidate.rel_path: {"profile": _heuristic_profile_for_candidate(candidate), "payload": None, "cache_hit": False} for candidate in selected_candidates}
+
+
+def _write_extraction_progress(progress_path: Path, payload: dict[str, Any]) -> None:
+    progress_path.parent.mkdir(parents=True, exist_ok=True)
+    progress_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+class _ExtractionProgressTracker:
+    def __init__(self, progress_path: Path, total: int) -> None:
+        self._path = progress_path
+        self._total = total
+        self._processed = 0
+        self._lock = threading.Lock()
+        self._start = perf_counter()
+        self._active: list[str] = []
+        _write_extraction_progress(
+            progress_path,
+            {
+                "processed": 0,
+                "total": total,
+                "current_files": [],
+                "elapsed_s": 0.0,
+                "phase": "extraction",
+            },
+        )
+
+    def begin(self, file_name: str) -> None:
+        with self._lock:
+            if file_name not in self._active:
+                self._active.append(file_name)
+            self._flush()
+
+    def complete(self, file_name: str) -> None:
+        with self._lock:
+            self._processed += 1
+            self._active = [name for name in self._active if name != file_name]
+            self._flush()
+
+    def _flush(self) -> None:
+        _write_extraction_progress(
+            self._path,
+            {
+                "processed": self._processed,
+                "total": self._total,
+                "current_files": list(self._active),
+                "elapsed_s": round(perf_counter() - self._start, 2),
+                "phase": "extraction",
+            },
+        )
+
+
+def _init_aps_session(args: argparse.Namespace) -> tuple[dict[str, Any] | None, str | None]:
+    if not args.dwg_via_aps:
+        return (None, None)
+    from aps_integration.aps_auth import get_aps_token
+    from aps_integration.oss_manager import APS_BUCKET_NAME, create_bucket
+
+    token_state: dict[str, Any] = {"access_token": get_aps_token(), "refresh_count": 0}
+    bucket = APS_BUCKET_NAME
+    create_bucket(token_state["access_token"], bucket)
+    return (token_state, bucket)
+
+
+@dataclass
+class _MediaExtractionResult:
+    path: Path
+    rel: str
+    issue_key: str
+    suffix: str
+    elements: list[Element25D]
+    skipped: bool
+    is_dwg: bool
+    is_pdf: bool
+    is_image: bool
+
+
+def _should_skip_media(path: Path, suffix: str, args: argparse.Namespace) -> bool:
+    skip = should_skip_clash_media(path, suffix, args)
+    if skip and suffix == ".pdf" and path.name in exact_companion_pdf_names():
+        logger.info("Omitiendo PDF compañero en clash (DWG con geometría exacta): %s", path.name)
+    return skip
+
+
+def _extract_media_item(
+    path: Path,
+    *,
+    nasas_root: Path,
+    args: argparse.Namespace,
+    default_level_id: str,
+    doc: ProjectLevelRegistryDocument,
+    aps_token: str | dict | None,
+    aps_bucket: str | None,
+    cache_root: Path,
+    progress: _ExtractionProgressTracker | None = None,
+) -> _MediaExtractionResult:
+    rel = relative_posix(path, nasas_root)
+    issue_key = coordination_issue_key(path, nasas_root)
+    suffix = path.suffix.lower()
+    if _should_skip_media(path, suffix, args):
+        return _MediaExtractionResult(path, rel, issue_key, suffix, [], True, False, False, False)
+
+    if progress is not None:
+        progress.begin(path.name)
+    discipline = discipline_from_nasas_relative_path(rel.lower())
+    translation = (0.0, 0.0) if args.shared_site_origin else file_translation_mm(path)
+    try:
+        elements = _extract_path_elements(
+            path,
+            suffix=suffix,
+            discipline=discipline,
+            issue_key=issue_key,
+            default_level_id=default_level_id,
+            translation_mm=translation,
+            doc=doc,
+            args=args,
+            aps_token=aps_token,
+            aps_bucket=aps_bucket,
+            cache_root=cache_root,
+        )
+    except Exception:
+        logger.exception("Fallo procesando %s", path)
+        if progress is not None:
+            progress.complete(path.name)
+        return _MediaExtractionResult(path, rel, issue_key, suffix, [], True, False, False, False)
+
+    if progress is not None:
+        progress.complete(path.name)
+    if suffix in {".dwg", ".dxf"} and elements:
+        _register_exact_dwg_companion(path, elements)
+    logger.info("%s -> %d elementos (%s)", path.name, len(elements), discipline.value)
+    return _MediaExtractionResult(
+        path,
+        rel,
+        issue_key,
+        suffix,
+        elements,
+        False,
+        suffix in {".dwg", ".dxf"},
+        suffix == ".pdf",
+        suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"},
+    )
+
+
+def _extract_standard_media_parallel(
+    *,
+    media: list[Path],
+    nasas_root: Path,
+    args: argparse.Namespace,
+    default_level_id: str,
+    doc: ProjectLevelRegistryDocument,
+    aps_token: str | dict | None,
+    aps_bucket: str | None,
+    cache_root: Path,
+) -> tuple[list[Element25D], dict[str, set[str]], dict[str, object]]:
+    summary: dict[str, object] = {
+        "selected_media": len(media),
+        "dwg": 0,
+        "pdf": 0,
+        "image": 0,
+        "skipped_runtime": 0,
+    }
+    issue_to_files: dict[str, set[str]] = defaultdict(set)
+    all_elements: list[Element25D] = []
+
+    clear_exact_companion_pdfs()
+    _load_exact_companion_pdfs_from_cache(nasas_root, cache_root)
+    media = sorted(media, key=lambda p: (p.suffix.lower() == ".pdf", p.name.lower()))
+
+    eligible = [path for path in media if not _should_skip_media(path, path.suffix.lower(), args)]
+    progress_path = args.output.parent / "extraction_progress.json"
+    progress = _ExtractionProgressTracker(progress_path, len(eligible)) if eligible else None
+
+    worker_count = max(1, int(args.max_workers or 1))
+
+    def _worker(path: Path) -> _MediaExtractionResult:
+        return _extract_media_item(
+            path,
+            nasas_root=nasas_root,
+            args=args,
+            default_level_id=default_level_id,
+            doc=doc,
+            aps_token=aps_token,
+            aps_bucket=aps_bucket,
+            cache_root=cache_root,
+            progress=progress,
+        )
+
+    results: list[_MediaExtractionResult] = []
+    if worker_count == 1 or len(media) <= 1:
+        for path in media:
+            results.append(_worker(path))
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {executor.submit(_worker, path): path for path in media}
+            for future in as_completed(futures):
+                results.append(future.result())
+
+    for result in results:
+        issue_to_files[result.issue_key].add(result.rel)
+        if result.skipped:
+            summary["skipped_runtime"] = int(summary["skipped_runtime"]) + 1
+            continue
+        all_elements.extend(result.elements)
+        if result.is_dwg:
+            summary["dwg"] = int(summary["dwg"]) + 1
+        elif result.is_pdf:
+            summary["pdf"] = int(summary["pdf"]) + 1
+        elif result.is_image:
+            summary["image"] = int(summary["image"]) + 1
+
+    if progress is not None:
+        _write_extraction_progress(
+            progress_path,
+            {
+                "processed": len(eligible),
+                "total": len(eligible),
+                "current_files": [],
+                "elapsed_s": round(perf_counter() - progress._start, 2),
+                "phase": "clash",
+            },
+        )
+
+    return all_elements, issue_to_files, summary
+
+
 def main() -> int:
     load_dotenv(REPO_ROOT / ".env")
     parser = argparse.ArgumentParser(description="Clashes proyecto NASAS 09 (multi-fuente, alta precision)")
     parser.add_argument(
         "--analysis-profile",
-        choices=("standard", FAST_COMPARE_ANALYSIS_PROFILE),
+        choices=("standard", FAST_COMPARE_ANALYSIS_PROFILE, FAST_COMPARE_APS_PROFILE),
         default="standard",
-        help="Perfil de analisis. fast_compare prioriza comparabilidad y bajo ruido.",
+        help="Perfil de analisis. fast_compare (accore Windows) y fast_compare_aps (APS, todos los SO) usan scheduling paralelo.",
     )
     parser.add_argument(
         "--stage",
@@ -203,8 +498,8 @@ def main() -> int:
     parser.add_argument(
         "--max-workers",
         type=int,
-        default=2,
-        help="Workers paralelos para profiling/extraccion en fast_compare.",
+        default=6,
+        help="Workers paralelos para profiling/extraccion (APS, accore o standard).",
     )
     parser.add_argument(
         "--include-autodesk-bulk",
@@ -265,12 +560,16 @@ def main() -> int:
     logging.getLogger("ezdxf").setLevel(logging.WARNING)
     logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
-    if args.analysis_profile == FAST_COMPARE_ANALYSIS_PROFILE:
+    is_fast_compare_profile = args.analysis_profile in (
+        FAST_COMPARE_ANALYSIS_PROFILE,
+        FAST_COMPARE_APS_PROFILE,
+    )
+    if is_fast_compare_profile:
         args.mix_issues = False
         args.include_images = False
         args.allow_proxy_hard_clashes = False
         args.allow_pdf_page_fallback = False
-        args.dwg_via_aps = False
+        args.dwg_via_aps = args.analysis_profile == FAST_COMPARE_APS_PROFILE
 
     if not args.registry.is_file():
         logger.error("Falta registro de niveles: %s", args.registry)
@@ -293,7 +592,7 @@ def main() -> int:
     )
     cache_root = args.cache_root.resolve() if args.cache_root else args.output.parent / "cache"
 
-    if args.analysis_profile == FAST_COMPARE_ANALYSIS_PROFILE:
+    if is_fast_compare_profile:
         return _run_fast_compare(
             args=args,
             doc=doc,
@@ -314,63 +613,29 @@ def main() -> int:
         "scan_skips": scan_skips,
     }
 
-    aps_token: str | dict | None = None
-    aps_bucket: str | None = None
-    if args.dwg_via_aps:
-        from aps_integration.aps_auth import get_aps_token
-        from aps_integration.oss_manager import APS_BUCKET_NAME, create_bucket
+    aps_token, aps_bucket = _init_aps_session(args)
 
-        aps_token = get_aps_token()
-        aps_bucket = APS_BUCKET_NAME
-        create_bucket(aps_token, aps_bucket)
-
-    all_elements: list[Element25D] = []
-    issue_to_files: dict[str, set[str]] = defaultdict(set)
-
-    for path in media:
-        rel = relative_posix(path, nasas_root)
-        issue_key = coordination_issue_key(path, nasas_root)
-        issue_to_files[issue_key].add(rel)
-        suffix = path.suffix.lower()
-        if suffix in {".dwg", ".dxf"} and args.skip_dwg:
-            summary["skipped_runtime"] = int(summary["skipped_runtime"]) + 1
-            continue
-        if suffix == ".pdf" and args.skip_pdf:
-            summary["skipped_runtime"] = int(summary["skipped_runtime"]) + 1
-            continue
-        if suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp"} and not args.include_images:
-            summary["skipped_runtime"] = int(summary["skipped_runtime"]) + 1
-            continue
-
-        discipline = discipline_from_nasas_relative_path(rel.lower())
-        translation = (0.0, 0.0) if args.shared_site_origin else file_translation_mm(path)
-        try:
-            elements = _extract_path_elements(
-                path,
-                suffix=suffix,
-                discipline=discipline,
-                issue_key=issue_key,
-                default_level_id=default_level_id,
-                translation_mm=translation,
-                doc=doc,
-                args=args,
-                aps_token=aps_token,
-                aps_bucket=aps_bucket,
-                cache_root=cache_root,
-            )
-        except Exception:
-            logger.exception("Fallo procesando %s", path)
-            summary["skipped_runtime"] = int(summary["skipped_runtime"]) + 1
-            continue
-
-        all_elements.extend(elements)
-        if suffix in {".dwg", ".dxf"}:
-            summary["dwg"] = int(summary["dwg"]) + 1
-        elif suffix == ".pdf":
-            summary["pdf"] = int(summary["pdf"]) + 1
-        else:
-            summary["image"] = int(summary["image"]) + 1
-        logger.info("%s -> %d elementos (%s)", path.name, len(elements), discipline.value)
+    extract_start = perf_counter()
+    all_elements, issue_to_files, extract_summary = _extract_standard_media_parallel(
+        media=media,
+        nasas_root=nasas_root,
+        args=args,
+        default_level_id=default_level_id,
+        doc=doc,
+        aps_token=aps_token,
+        aps_bucket=aps_bucket,
+        cache_root=cache_root,
+    )
+    summary.update(extract_summary)
+    summary["extract_seconds"] = round(perf_counter() - extract_start, 3)
+    summary["max_workers"] = int(args.max_workers or 1)
+    logger.info(
+        "Standard extract: %d archivos -> %d elementos en %.2fs (%d workers)",
+        len(media),
+        len(all_elements),
+        float(summary["extract_seconds"]),
+        summary["max_workers"],
+    )
 
     autodesk_bulk_count = 0
     if args.include_autodesk_bulk and args.autodesk_raw.is_file():
@@ -593,6 +858,13 @@ def _extract_path_elements(
                     level_assignment_source=level_resolution.source,
                     sheet_name=path.stem,
                 )
+            viewer_cached = load_cached_json(cache_root, key=file_cache_key(path), suffix="viewer")
+            if isinstance(viewer_cached, dict) and viewer_dump_has_geometry(viewer_cached):
+                logger.info(
+                    "DWG %s tiene viewer.json con geometría — omitiendo PDF compañero",
+                    path.name,
+                )
+                return []
         if suffix == ".dwg":
             accore_elements = extract_elements_from_dwg_via_accore(
                 path,
@@ -629,6 +901,33 @@ def _extract_path_elements(
                     geometry_quality="medium",
                     level_assignment_source=level_resolution.source,
                     sheet_name=path.stem,
+                )
+        companion_pdf = resolve_companion_pdf(path)
+        if companion_pdf is not None:
+            pdf_elements = extract_elements_from_pdf(
+                companion_pdf,
+                discipline,
+                level_id=level_resolution.level_id,
+                translation_mm=translation_mm,
+                page_z_step_mm=args.page_z_step_mm,
+                level_doc=doc,
+                allow_page_fallback=True,
+            )
+            if pdf_elements:
+                logger.info(
+                    "DWG %s sin geometría local/APS — usando PDF compañero %s (%d elementos)",
+                    path.name,
+                    companion_pdf.name,
+                    len(pdf_elements),
+                )
+                return _tag_elements(
+                    pdf_elements,
+                    issue_key=issue_key,
+                    file_name=path.name,
+                    geometry_source="pdf_companion_vector",
+                    geometry_quality="medium",
+                    level_assignment_source=level_resolution.source,
+                    sheet_name=companion_pdf.stem,
                 )
         return _tag_elements(
             extract_elements_from_dwg(
@@ -963,10 +1262,15 @@ def _extract_fast_compare_scheduled_elements(
     cache_root: Path,
     profiled_payloads: dict[str, dict[str, object]],
     alignment_overrides: dict[str, object] | None,
+    aps_token: str | dict | None = None,
+    aps_bucket: str | None = None,
 ) -> tuple[list[Element25D], list[Element25D], int]:
     scheduled_candidates = [candidate for candidate in selected_candidates if candidate.rel_path in scheduled_file_set]
     if not scheduled_candidates:
         return ([], [], 0)
+
+    progress_path = args.output.parent / "extraction_progress.json"
+    progress = _ExtractionProgressTracker(progress_path, len(scheduled_candidates))
 
     results: dict[str, list[Element25D]] = {}
     fallback_candidates: list = []
@@ -978,6 +1282,27 @@ def _extract_fast_compare_scheduled_elements(
             args=args,
             alignment_overrides=alignment_overrides,
         )
+        if candidate.suffix == ".dwg" and args.dwg_via_aps and aps_token and aps_bucket:
+            progress.begin(candidate.path.name)
+            try:
+                elements = _extract_path_elements(
+                    candidate.path,
+                    suffix=candidate.suffix,
+                    discipline=candidate.discipline,
+                    issue_key=candidate.issue_key,
+                    default_level_id=default_level_id,
+                    translation_mm=translation,
+                    doc=doc,
+                    args=args,
+                    aps_token=aps_token,
+                    aps_bucket=aps_bucket,
+                    cache_root=cache_root,
+                    file_level_id=candidate.level_id,
+                    file_level_source=candidate.level_source,
+                )
+            finally:
+                progress.complete(candidate.path.name)
+            return (candidate.rel_path, elements, not bool(elements))
         if candidate.suffix == ".dwg":
             payload = profiled_payloads.get(candidate.rel_path, {}).get("payload")
             if not payload:
@@ -1090,6 +1415,16 @@ def _extract_fast_compare_scheduled_elements(
         profiled_payloads=profiled_payloads,
         args=args,
         alignment_overrides=alignment_overrides,
+    )
+    _write_extraction_progress(
+        progress_path,
+        {
+            "processed": len(scheduled_candidates),
+            "total": len(scheduled_candidates),
+            "current_files": [],
+            "elapsed_s": round(perf_counter() - progress._start, 2),
+            "phase": "clash",
+        },
     )
     return (all_elements, suppressed_elements, skipped_runtime)
 
@@ -1228,6 +1563,8 @@ def _run_fast_compare(
     nasas_root: Path,
     cache_root: Path,
 ) -> int:
+    profile_label = _analysis_profile_label(args)
+    aps_token, aps_bucket = _init_aps_session(args)
     overall_metrics: dict[str, object] = {
         "audit_seconds": 0.0,
         "schedule_seconds": 0.0,
@@ -1267,7 +1604,7 @@ def _run_fast_compare(
         required_disciplines=include_disciplines,
         pre_match_candidates=pre_match_candidates,
     )
-    readiness_payload["analysis_profile"] = FAST_COMPARE_ANALYSIS_PROFILE
+    readiness_payload["analysis_profile"] = profile_label
     readiness_payload["project_name"] = doc.project_name
     readiness_payload["scan_skips"] = scan_skips
     alignment_overrides = (
@@ -1346,12 +1683,20 @@ def _run_fast_compare(
         )
 
     audit_start = perf_counter()
-    profiled_payloads, profile_metrics = _profile_fast_compare_candidates(
-        selected_candidates=selected_candidates,
-        cache_root=cache_root,
-        timeout_seconds=args.accore_timeout_seconds,
-        max_workers=args.max_workers,
-    )
+    if args.analysis_profile == FAST_COMPARE_APS_PROFILE:
+        profiled_payloads = _heuristic_profile_candidates(selected_candidates)
+        profile_metrics = {
+            "profiled_file_count": len(selected_candidates),
+            "accore_cache_hits": 0,
+            "accore_cache_misses": 0,
+        }
+    else:
+        profiled_payloads, profile_metrics = _profile_fast_compare_candidates(
+            selected_candidates=selected_candidates,
+            cache_root=cache_root,
+            timeout_seconds=args.accore_timeout_seconds,
+            max_workers=args.max_workers,
+        )
     overall_metrics.update(profile_metrics)
     candidate_audits = [
         build_source_audit(
@@ -1399,7 +1744,7 @@ def _run_fast_compare(
     coordinate_audit_payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_name": doc.project_name,
-        "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+        "analysis_profile": profile_label,
         "stage": args.stage,
         "audit_count": len(candidate_audits),
         "audits": [audit.model_dump() for audit in candidate_audits],
@@ -1426,7 +1771,7 @@ def _run_fast_compare(
     pair_schedule_payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_name": doc.project_name,
-        "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+        "analysis_profile": profile_label,
         "stage": args.stage,
         "pair_count": len(pair_schedule),
         "scheduled_pair_count": len(scheduled_pairs),
@@ -1488,6 +1833,8 @@ def _run_fast_compare(
         cache_root=cache_root,
         profiled_payloads=profiled_payloads,
         alignment_overrides=alignment_overrides,
+        aps_token=aps_token,
+        aps_bucket=aps_bucket,
     )
     overall_metrics["skipped_runtime"] = skipped_runtime
     overall_metrics["extract_seconds"] = round(perf_counter() - extract_start, 3)
@@ -1536,7 +1883,7 @@ def _run_fast_compare(
     primary_payload = {
         "generated_at": generated_at,
         "project_name": doc.project_name,
-        "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+        "analysis_profile": _analysis_profile_label(args),
         "incident_count": len(primary_incidents),
         "incident_conflict_count": len(primary_conflicts),
         "incidents": [incident.model_dump() for incident in primary_incidents],
@@ -1587,7 +1934,7 @@ def _run_fast_compare(
     debug_payload = {
         "generated_at": generated_at,
         "project_name": doc.project_name,
-        "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+        "analysis_profile": _analysis_profile_label(args),
         "debug_conflict_count": len(debug_conflicts),
         "suppressed_element_count": len(suppressed_elements),
         "suppressed_elements": [
@@ -1617,7 +1964,7 @@ def _run_fast_compare(
             hotspot_payload = {
                 "generated_at": generated_at,
                 "project_name": doc.project_name,
-                "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+                "analysis_profile": _analysis_profile_label(args),
                 "incident_count": len(hotspot_incidents),
                 "incidents": [incident.model_dump() for incident in hotspot_incidents],
             }
@@ -1660,7 +2007,7 @@ def _run_fast_compare(
         summary_payload={
             "generated_at": generated_at,
             "project_name": doc.project_name,
-            "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+            "analysis_profile": _analysis_profile_label(args),
             "status": "completed",
             "selected_candidate_count": len(selected_candidates),
             "element_count": len(all_elements),
@@ -1701,7 +2048,7 @@ def _run_fast_compare(
             summary_payload={
                 "generated_at": generated_at,
                 "project_name": doc.project_name,
-                "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+                "analysis_profile": _analysis_profile_label(args),
                 "status": "completed",
                 "selected_candidate_count": len(selected_candidates),
                 "element_count": len(all_elements),
@@ -1724,7 +2071,7 @@ def _run_fast_compare(
         summary_payload={
             "generated_at": generated_at,
             "project_name": doc.project_name,
-            "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+            "analysis_profile": _analysis_profile_label(args),
             "status": "completed",
         }
         | overall_metrics,
@@ -1742,7 +2089,7 @@ def _run_fast_compare(
         summary_payload={
             "generated_at": generated_at,
             "project_name": doc.project_name,
-            "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+            "analysis_profile": _analysis_profile_label(args),
             "status": "completed",
         }
         | overall_metrics,
@@ -1931,7 +2278,7 @@ def _write_fast_compare_summary(
     payload = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "project_name": doc.project_name,
-        "analysis_profile": FAST_COMPARE_ANALYSIS_PROFILE,
+        "analysis_profile": _analysis_profile_label(args),
         "status": status,
         "nasas_root": str(nasas_root),
         "selected_candidate_count": len(selected_candidates),

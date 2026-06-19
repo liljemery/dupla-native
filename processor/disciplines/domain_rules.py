@@ -9,6 +9,7 @@ which quantifier item_types are allowed in the budget.
 from __future__ import annotations
 
 import logging
+from functools import lru_cache
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -129,9 +130,13 @@ def load_domain_rules(path: str | Path) -> DomainRules:
     return rules
 
 
+@lru_cache(maxsize=None)
 def load_domain_rules_for_discipline(discipline_id: str) -> DomainRules | None:
     """Load domain rules from the standard path for a given discipline.
 
+    Cached: the report-writers call this once per element (100s of times per
+    run), which re-parsed the YAML and spammed the log. Rules are read-only
+    config, so caching by discipline is safe and removes the reload storm.
     Returns None if the YAML file does not exist (backward-compatible).
     """
     rules_path = (

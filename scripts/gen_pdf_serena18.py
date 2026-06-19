@@ -17,6 +17,10 @@ import sys
 import time
 from pathlib import Path
 
+_BACKEND = Path(__file__).resolve().parents[1] / "backend"
+if str(_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_BACKEND))
+
 # ── Configuración ──────────────────────────────────────────────────────────────
 CLIENT_ID     = os.getenv("CLIENT_ID",     "Oi9sCuGDQo8Xq52bwJOm9vdK1lQGKh7szRoes0oij016wGox")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET", "ubHMOGOkeSe39DPH8FG4PL04bGRONdHSKugUsFjqVHMmveQjSt6oPhafGewQfnu8")
@@ -26,23 +30,30 @@ OUT_PDF       = Path("/tmp/serena18_checklist.pdf")
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _find_best_job() -> Path | None:
-    root = Path("/tmp/dupla-coord-output")
-    if not root.is_dir():
-        return None
+    roots = [
+        Path(os.getenv("COORDINATION_OUTPUT_ROOT", "")),
+        Path(__file__).resolve().parents[1] / "var" / "coord_outputs",
+        Path("/tmp/dupla-coord-output"),
+    ]
     best = None
     best_count = 0
-    for d in root.iterdir():
-        pi = d / "primary_incidents.json"
-        if not pi.is_file():
+    for root in roots:
+        if not root.is_dir():
             continue
-        try:
-            data = json.loads(pi.read_text())
-            n = data.get("incident_count", 0)
-            if n > best_count:
-                best_count = n
-                best = d
-        except Exception:
-            pass
+        for d in root.iterdir():
+            if not d.is_dir():
+                continue
+            pi = d / "primary_incidents.json"
+            if not pi.is_file():
+                continue
+            try:
+                data = json.loads(pi.read_text())
+                n = data.get("incident_count", 0)
+                if n > best_count:
+                    best_count = n
+                    best = d
+            except Exception:
+                pass
     return best
 
 
@@ -105,8 +116,7 @@ def main() -> None:
     from app.services.clash_reports.checklist_pdf import build_checklist_pdf
 
     logo_path = str(
-        Path(__file__).resolve().parents[1]
-        / "backend/app/services/clash_reports/assets/grupo-dupla-logo.png"
+        _BACKEND / "app/services/clash_reports/assets/grupo-dupla-logo.png"
     )
 
     pdf_bytes = build_checklist_pdf(
@@ -120,6 +130,8 @@ def main() -> None:
         aps_token=aps_token,
         job_cache_dir=str(job_dir),
         file_discipline_hints=hints,
+        job_output_dir=str(job_dir),
+        pdf_search_dirs=[str(job_dir)],
     )
 
     OUT_PDF.write_bytes(pdf_bytes)

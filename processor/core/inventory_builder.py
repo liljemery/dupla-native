@@ -1210,6 +1210,21 @@ def _merge_level_scalar(
     return _scalar_merge(field_name, json_value, vision_value, conflict_notes)
 
 
+def _total_wall_area_m2(level: LevelInventory) -> float:
+    """Rough enclosed wall area for a level (area_m2, else length x height)."""
+    total = 0.0
+    for wall in (level.walls or []):
+        area = getattr(wall, "area_m2", None)
+        if area:
+            total += float(area)
+            continue
+        length = getattr(wall, "length_m", None)
+        height = getattr(wall, "height_m", None) or 2.8
+        if length:
+            total += float(length) * float(height)
+    return total
+
+
 def build_level_inventory(
     cad_facts: dict[str, Any],
     vision_inventory: LevelInventory | Mapping[str, Any] | None = None,
@@ -1248,6 +1263,25 @@ def build_level_inventory(
         conflict_notes,
         prefer_vision=True,
     )
+    # E2: reject an implausibly small floor area. Vision sometimes returns e.g.
+    # 15 m2 while the level has thousands of m2 of wall; a wall/floor ratio far
+    # above the physical range (~0.3-8) means the floor area is wrong and would
+    # distort $/m2 + finish quantities. Prefer the CAD hatch area, else drop it.
+    wall_area = _total_wall_area_m2(vision_level) or _total_wall_area_m2(json_level)
+    if floor_area_m2 and wall_area and float(floor_area_m2) < wall_area * 0.05:
+        json_fa = json_level.floor_area_m2
+        if json_fa and float(json_fa) >= wall_area * 0.05:
+            conflict_notes.append(
+                f"floor_area_m2: Vision {floor_area_m2} implausible vs wall area "
+                f"{wall_area:.0f} m2; using CAD {json_fa}."
+            )
+            floor_area_m2 = json_fa
+        else:
+            conflict_notes.append(
+                f"floor_area_m2: {floor_area_m2} implausible vs wall area {wall_area:.0f} m2; "
+                "dropped (needs measurement)."
+            )
+            floor_area_m2 = None
     ceiling_area_m2 = _merge_level_scalar(
         "ceiling_area_m2",
         json_level.ceiling_area_m2,

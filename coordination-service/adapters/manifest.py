@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -144,6 +145,25 @@ def _runner_disciplines_from_buckets(buckets_present: set[str]) -> list[str]:
     return out
 
 
+def _stage_companion_pdf(dest_dir: Path, source_path: Path | None, original_name: str) -> None:
+    """Copy companion PDF next to staged DWG so extraction/export can find it."""
+    if source_path is None or not source_path.is_file():
+        return
+    try:
+        dupla_root = _dupla_root()
+        root_str = str(dupla_root)
+        if root_str not in sys.path:
+            sys.path.insert(0, root_str)
+        from coordination.extraction.companion_pdf import resolve_companion_pdf
+
+        pdf = resolve_companion_pdf(source_path)
+        if pdf is not None and pdf.is_file():
+            shutil.copy2(pdf, dest_dir / pdf.name)
+            logger.info("PDF compañero copiado: %s -> %s", pdf.name, dest_dir)
+    except Exception as exc:
+        logger.warning("No se pudo copiar PDF compañero para %s: %s", original_name, exc)
+
+
 def stage_project_inputs(
     *,
     file_entries: list[dict[str, Any]],
@@ -177,6 +197,9 @@ def stage_project_inputs(
         safe_name = Path(original_name).name
         dest = dest_dir / safe_name
         dest.write_bytes(file_bytes)
+        source_path = Path(file_path) if file_path and Path(file_path).is_file() else None
+        if safe_name.lower().endswith(".dwg") and source_path is not None:
+            _stage_companion_pdf(dest_dir, source_path, safe_name)
         staged.append({"file_name": safe_name, "path": str(dest), "discipline_bucket": bucket})
         analyzed_documents.append(
             {
@@ -189,14 +212,12 @@ def stage_project_inputs(
         )
 
     registry_path = output_dir / "project_levels.json"
-    folder_driven = not profile_slug or profile_slug in ("folder", "auto")
-    if folder_driven:
-        registry_path.write_text(
-            json.dumps(_minimal_registry(project_name), ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    else:
-        source_registry = registry_path_for_profile(profile_slug)
+    effective_profile = resolve_profile_slug(profile_slug, None, project_name)
+    if not effective_profile or effective_profile in ("folder", "auto"):
+        effective_profile = resolve_profile_slug(None, None, project_name)
+
+    if effective_profile and effective_profile not in ("folder", "auto"):
+        source_registry = registry_path_for_profile(effective_profile)
         if source_registry is not None:
             shutil.copy2(source_registry, registry_path)
             try:
@@ -211,6 +232,11 @@ def stage_project_inputs(
                 json.dumps(_minimal_registry(project_name), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+    else:
+        registry_path.write_text(
+            json.dumps(_minimal_registry(project_name), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     buckets_present = {s["discipline_bucket"] for s in staged if s["discipline_bucket"] != "sin_clasificar"}
     include_disciplines = _runner_disciplines_from_buckets(buckets_present)

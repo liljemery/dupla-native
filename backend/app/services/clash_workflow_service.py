@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -904,6 +905,55 @@ class ClashWorkflowService:
             return found
         alt = f"{clash_code}.svg" if annotated else f"{clash_code}_annotated.svg"
         return self._tile_file(job, alt)
+
+    def resolve_aps_cache_root(self, job: ProjectClashJob) -> str | None:
+        """APS viewer/raw cache directory for GA-FO-08 plan backgrounds."""
+        override = (os.getenv("COORDINATION_CACHE_ROOT") or "").strip()
+        if override:
+            cache = Path(override)
+            if cache.is_dir():
+                return str(cache)
+        if job.output_dir:
+            out = Path(job.output_dir)
+            for candidate in (out.parent / "aps_cache", out / "aps_cache"):
+                if candidate.is_dir():
+                    return str(candidate)
+        for base in (Path.cwd(), Path(__file__).resolve().parents[3]):
+            cache = base / "var" / "coord_outputs" / "aps_cache"
+            if cache.is_dir():
+                return str(cache)
+        return None
+
+    def resolve_checklist_logo_path(self) -> str | None:
+        candidates = [
+            Path(__file__).resolve().parent / "clash_reports" / "assets" / "grupo-dupla-logo.png",
+            Path(__file__).resolve().parents[2] / "static" / "grupo-dupla-logo.png",
+        ]
+        for path in candidates:
+            if path.is_file():
+                return str(path)
+        return None
+
+    def resolve_plan_pdf_search_dirs(self, job: ProjectClashJob) -> list[str]:
+        """Folders where companion PDFs may live (job inputs, uploads)."""
+        dirs: list[str] = []
+        if job.output_dir:
+            out = Path(job.output_dir)
+            for sub in ("inputs", "."):
+                candidate = out / sub
+                if candidate.is_dir():
+                    dirs.append(str(candidate))
+        upload_clash = Path(get_settings().upload_root) / "clash_tiles" / str(job.id)
+        if upload_clash.is_dir():
+            dirs.append(str(upload_clash.parent))
+        extra = (os.getenv("NASAS09_DOWNLOADS") or "").strip()
+        if extra and Path(extra).is_dir():
+            dirs.append(extra)
+            for sub in ("ARQUITECTONICO", "ESTRUCTURAL", "ELECTRICO", "SANITARIO"):
+                p = Path(extra) / sub
+                if p.is_dir():
+                    dirs.append(str(p))
+        return dirs
 
     async def list_workflow_rows_for_export(
         self, user: User, project_uuid: UUID, job_id: UUID | None = None

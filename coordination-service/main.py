@@ -10,16 +10,19 @@ import logging
 import uuid
 import json
 
-load_dotenv()
+from runtime_paths import coordination_output_root, default_redis_url, load_project_env
+
+load_project_env()
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Dupla Coordination Service")
-redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
+redis_url = default_redis_url()
 redis_conn = Redis.from_url(redis_url)
 q = Queue("dupla_coordination", connection=redis_conn)
 
-OUTPUT_ROOT = Path(os.getenv("COORDINATION_OUTPUT_ROOT", "/app/output"))
+OUTPUT_ROOT = coordination_output_root()
+OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/health")
@@ -104,6 +107,7 @@ async def enqueue_clash_analysis(
             control_points,
             reanalysis_clash_code,
             job_timeout=int(os.getenv("COORDINATION_JOB_TIMEOUT_SECONDS", "3600")),
+            meta={"correlation_id": correlation_id},
         )
         return {"job_id": job.id, "status": "queued", "profile_slug": slug}
     except HTTPException:
@@ -111,6 +115,20 @@ async def enqueue_clash_analysis(
     except Exception as e:
         logger.exception("Failed to enqueue clash job")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _load_extraction_progress(correlation_id: str | None) -> dict | None:
+    if not correlation_id:
+        return None
+    progress_path = OUTPUT_ROOT / correlation_id / "extraction_progress.json"
+    if not progress_path.is_file():
+        return None
+    try:
+        payload = json.loads(progress_path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        logger.warning("Failed to read extraction progress for %s", correlation_id)
+        return None
 
 
 @app.get("/jobs/{job_id}")
@@ -122,8 +140,19 @@ def get_job_status(job_id: str, x_correlation_id: Optional[str] = Header(None)):
     except Exception:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    progress = _load_extraction_progress(job.meta.get("correlation_id") if job.meta else None)
+
     if job.is_finished:
-        return {"job_id": job_id, "status": "completed", "result": job.result}
+        response = {"job_id": job_id, "status": "completed", "result": job.result}
+        if progress:
+            response["progress"] = progress
+        return response
     if job.is_failed:
-        return {"job_id": job_id, "status": "failed", "error": str(job.exc_info)}
-    return {"job_id": job_id, "status": job.get_status()}
+        response = {"job_id": job_id, "status": "failed", "error": str(job.exc_info)}
+        if progress:
+            response["progress"] = progress
+        return response
+    response = {"job_id": job_id, "status": job.get_status()}
+    if progress:
+        response["progress"] = progress
+    return response

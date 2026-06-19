@@ -157,6 +157,18 @@ function ClashCard({
                   <span className="text-ink"> · {clash.disciplines.join(', ')}</span>
                 </p>
               ) : null}
+              {clash.confidence ? (
+                <p>
+                  <span className="font-medium text-muted">Confianza</span>
+                  <span className="text-ink"> · {clash.confidence}</span>
+                </p>
+              ) : null}
+              {clash.geometry_sources ? (
+                <p>
+                  <span className="font-medium text-muted">Fuentes geom.</span>
+                  <span className="text-ink"> · {clash.geometry_sources}</span>
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -175,6 +187,22 @@ function RelationshipBanner({ rel }: { rel: StructuralClashRelationship }) {
   )
 }
 
+function geometryBadge(doc: StructuralAnalyzedDocument): { text: string; className: string } | null {
+  if (doc.geometry_quality === 'exact') {
+    return { text: 'Geometría exacta (SVF1)', className: 'bg-emerald-600/12 text-emerald-800' }
+  }
+  if (doc.geometry_quality === 'proxy' || doc.aps_result === 'proxy') {
+    return { text: 'Proxy APS', className: 'bg-amber-500/15 text-amber-900' }
+  }
+  if (doc.geometry_source?.includes('pdf_companion')) {
+    return { text: 'PDF compañero', className: 'bg-slate-500/12 text-slate-700' }
+  }
+  if (doc.aps_result === 'quota_exceeded') {
+    return { text: 'APS sin cuota', className: 'bg-primary/12 text-primary' }
+  }
+  return null
+}
+
 function DocumentRow({
   doc,
   onRetry,
@@ -184,6 +212,7 @@ function DocumentRow({
 }) {
   const ok = doc.status === 'ok'
   const warning = doc.status === 'warning'
+  const badge = geometryBadge(doc)
   return (
     <li className="flex items-start gap-2 border-b border-black/6 py-2.5 text-sm last:border-0">
       {ok ? (
@@ -198,8 +227,17 @@ function DocumentRow({
         <p className="text-xs text-muted">
           {doc.discipline_label}
           {typeof doc.element_count === 'number' ? ` · ${doc.element_count} elementos` : ''}
+          {typeof doc.viewer_elements === 'number' && doc.viewer_elements > 0
+            ? ` · ${doc.viewer_elements} exactos`
+            : ''}
           {warning ? ' · sin geometría extraíble' : ''}
         </p>
+        {badge ? (
+          <span className={`mt-1 inline-flex rounded-md px-2 py-0.5 text-xs font-semibold ${badge.className}`}>
+            {badge.text}
+          </span>
+        ) : null}
+        {doc.aps_note ? <p className="mt-1 text-xs text-muted">{doc.aps_note}</p> : null}
         {!ok && doc.retryable ? (
           <button
             type="button"
@@ -462,7 +500,13 @@ export function WorkspaceHallazgosTab({
               {statusPill.label}
             </span>
             {isPolling ? (
-              <span className="text-xs text-muted">Actualizando cada 5 s…</span>
+              <span className="text-xs text-muted">
+                {report.extraction_progress && report.extraction_progress.total > 0
+                  ? `Extrayendo planos ${report.extraction_progress.processed}/${report.extraction_progress.total}…`
+                  : job?.progress && job.progress.total > 0
+                    ? `Extrayendo planos ${job.progress.processed}/${job.progress.total}…`
+                    : 'Actualizando cada 5 s…'}
+              </span>
             ) : null}
           </div>
           {jobError ? <p className="text-sm text-primary">{jobError}</p> : null}
@@ -478,7 +522,15 @@ export function WorkspaceHallazgosTab({
                 onClick={runAnalysis}
               >
                 {isPolling || report.run_status === 'running'
-                  ? 'Análisis en curso…'
+                  ? (() => {
+                      const p = report.extraction_progress ?? job?.progress
+                      if (p && p.total > 0) {
+                        return p.phase === 'clash'
+                          ? `Detectando clashes (${p.processed}/${p.total})…`
+                          : `Extrayendo planos ${p.processed}/${p.total}…`
+                      }
+                      return 'Análisis en curso…'
+                    })()
                   : 'Ejecutar análisis de clashes'}
               </PrimaryButton>
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
@@ -765,7 +817,7 @@ export function WorkspaceHallazgosTab({
               disabled={pdfBusy !== null}
               onClick={() => handleDownload('final_human')}
             >
-              {pdfBusy === 'final_human' ? 'Descargando…' : 'Informe final de coordinación (PDF)'}
+              {pdfBusy === 'final_human' ? 'Descargando…' : 'Lista de chequeo GA-FO-08 (PDF)'}
             </button>
           </div>
         </section>

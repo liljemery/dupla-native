@@ -30,12 +30,28 @@ class ClashJobResponse(BaseModel):
     status: str
     coordination_profile: Optional[str]
     error: Optional[str]
+    progress: Optional[dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 
 
 class ProjectFilesCountResponse(BaseModel):
     total: int
+
+
+def _clash_job_response(job) -> ClashJobResponse:
+    progress = getattr(job, "extraction_progress", None)
+    return ClashJobResponse(
+        id=job.id,
+        project_id=job.project_id,
+        job_id=job.job_id,
+        status=job.status,
+        coordination_profile=job.coordination_profile,
+        error=job.error,
+        progress=progress if isinstance(progress, dict) else None,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
 
 
 @router.get(
@@ -106,16 +122,7 @@ async def enqueue_clash_job(
         folder_uuid=body.folder_uuid,
     )
     await session.commit()
-    return ClashJobResponse(
-        id=job.id,
-        project_id=job.project_id,
-        job_id=job.job_id,
-        status=job.status,
-        coordination_profile=job.coordination_profile,
-        error=job.error,
-        created_at=job.created_at,
-        updated_at=job.updated_at,
-    )
+    return _clash_job_response(job)
 
 
 @router.get(
@@ -135,16 +142,7 @@ async def get_latest_clash_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No clash job found for this project")
     job = await svc.sync_job_status(job)
     await session.commit()
-    return ClashJobResponse(
-        id=job.id,
-        project_id=job.project_id,
-        job_id=job.job_id,
-        status=job.status,
-        coordination_profile=job.coordination_profile,
-        error=job.error,
-        created_at=job.created_at,
-        updated_at=job.updated_at,
-    )
+    return _clash_job_response(job)
 
 
 @router.get(

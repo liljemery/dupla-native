@@ -1,24 +1,20 @@
-"""GA-FO-08 (04.2025) V.01 — Lista de Chequeo de Planos.
-
-Pixel-faithful replica built from the reverse-engineered reference geometry.
-The whole document is ONE unified Table (meta rows + column headers + data rows)
-rendered on letter-landscape pages with a two-pass footer for "Página N de M".
-"""
+"""GA-FO-08 — Lista de Chequeo - Planos (control de planos con observaciones de clash)."""
 
 from __future__ import annotations
 
-import io
-import asyncio
-import logging
+import os
 import re
-from dataclasses import dataclass, field
-from datetime import date
+import tempfile
+from datetime import date, datetime
+from io import BytesIO
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from reportlab.lib import colors
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.pdfgen import canvas
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import landscape, letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
@@ -31,97 +27,45 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
-from reportlab.platypus.doctemplate import LayoutError
 
-from app.services.clash_reports.clash_plan_images import get_plan_images_for_file
-from app.services.clash_reports.plan_renderer import (
-    load_clash_zones_by_file,
-    load_plan_geometry,
-    render_plan_image,
+from app.models.project_clash_item import ProjectClashItem
+from app.services.clash_reports.plan_background_svg import (
+    render_annotated_plan_svg,
+    resolve_plan_pdf,
 )
 
-logger = logging.getLogger(__name__)
-coord_logger = logging.getLogger("COORD")
+_PROCESS_TITLE = "PROCESO: GESTIÓN DE ARQUITECTURA Y CONTROL DE PLANOS"
+_CHECKLIST_TITLE = "LISTA DE CHEQUEO - PLANOS"
+_FORM_CODE = "GA-FO-08 (04.2025) V.01"
 
-# ── Exact page geometry (points, letter landscape) ──────────────────────────────
-PAGE_W = 792.0
-PAGE_H = 612.0
-TABLE_X0 = 38.6
-TABLE_Y_TOP = 105.6          # from PDF top
-TABLE_W = 714.7
-FOOTER_Y_FROM_BOTTOM = 22.1
+_TABLE_PAGE = landscape(letter)  # 792×612 pt — matches reference checklist pages
+_PLAN_PAGE = (1728.0, 1296.0)  # large plan sheets like reference pages 3+
+_MARGIN = 12 * mm
+_TABLE_FOOTER_H = 16 * mm
+_PLAN_FOOTER_H = 10 * mm
+_TABLE_W = _TABLE_PAGE[0] - 2 * _MARGIN
+_PLAN_W = _PLAN_PAGE[0] - 2 * _MARGIN
+_PLAN_H = _PLAN_PAGE[1] - 2 * _MARGIN - _PLAN_FOOTER_H
 
-COL_WIDTHS = [70.2, 69.6, 69.6, 126.1, 47.4, 47.4, 89.9, 194.5]  # sum = 714.7
+_DATE_RE = re.compile(r"(\d{2})[.\-/](\d{2})[.\-/](\d{4})")
+_PLAN_CODE_RE = re.compile(r"\b([A-Z]{2,4}[-_]?\d{1,3})\b", re.IGNORECASE)
 
-# ── Exact colors ────────────────────────────────────────────────────────────────
-GRAY_FILL = colors.Color(0.749, 0.749, 0.749)
-BLACK = colors.black
-
-# ── Fonts (never above 9.6pt) ────────────────────────────────────────────────────
-FONT = "Helvetica"
-FONT_BOLD = "Helvetica-Bold"
-TITLE_SIZE = 9.6
-TABLE_SIZE = 6.6
-FOOTER_SIZE = 6.0
-
-CENTER_TITLE_1 = "PROCESO: GESTIÓN DE ARQUITECTURA Y CONTROL DE PLANOS"
-CENTER_TITLE_2 = "LISTA DE CHEQUEO - PLANOS"
-FOOTER_LEFT = "Este documento es confidencial"
-FOOTER_CENTER = "GA-FO-08 (04.2025) V.01"
-
-COLUMN_HEADERS = [
-    "DISCIPLINA",
-    "NÚMERO DE PLANO",
-    "TÍTULO DEL PLANO",
-    "DESCRIPCIÓN DE PLANOS Y/O\nCAMBIOS",
-    "FECHA DEL\nPLANO",
-    "REVISIÓN",
-    "CORRELACIÓN CON\nDEMÁS DISCIPLINAS",
-    "OBSERVACIONES",
-]
-
-# ── Extraction regexes (per spec) ────────────────────────────────────────────────
-RE_DRAWING_CODE = re.compile(r"\b([A-Z]{1,5}[-–]\d{1,3}[A-Z]?)\b", re.IGNORECASE)
-RE_DATE = re.compile(r"\b(\d{2}[.\-/]\d{2}[.\-/]\d{4}|\d{4}[.\-/]\d{2}[.\-/]\d{2})\b")
-RE_REVISION = re.compile(r"\b(REV?\.?\s*\d+|RV\s*\d+|R\d{1,2})\b", re.IGNORECASE)
-
-_NA = "—"
-
-_DISCIPLINE_DISPLAY = {
-    "ARQUITECTURA": "ARQUITECTURA",
-    "ESTRUCTURA": "ESTRUCTURA",
-    "ESTRUCTURAL": "ESTRUCTURA",
-    "ELECTRICIDAD": "ELÉCTRICA",
-    "ELECTRICA": "ELÉCTRICA",
-    "ELECTRICO": "ELÉCTRICA",
-    "CLIMATIZACION": "CLIMATIZACIÓN",
-    "MECANICA": "CLIMATIZACIÓN",
-    "SANITARIO": "SANITARIOS",
-    "SANITARIOS": "SANITARIOS",
+_DISCIPLINE_LABELS: dict[str, str] = {
+    "ARQUITECTURA": "ARQUITECTÓNICOS",
+    "ARQ": "ARQUITECTÓNICOS",
+    "ESTRUCTURA": "ESTRUCTURALES",
+    "EST": "ESTRUCTURALES",
+    "ELECTRICA": "ELÉCTRICOS",
+    "ELECTRICO": "ELÉCTRICOS",
+    "ELE": "ELÉCTRICOS",
+    "ELC": "ELÉCTRICOS",
     "PLOMERIA": "SANITARIOS",
-    "FONTANERIA": "SANITARIOS",
+    "SANITARIO": "SANITARIOS",
+    "SAN": "SANITARIOS",
+    "HIDRO": "SANITARIOS",
+    "MECANICA": "MECÁNICOS",
+    "MEC": "MECÁNICOS",
 }
-
-
-def normalize_discipline(raw: str | None) -> str:
-    if not raw:
-        return _NA
-    key = str(raw).strip().upper()
-    return _DISCIPLINE_DISPLAY.get(key, key)
-
-
-# ── Cell paragraph styles ─────────────────────────────────────────────────────────
-def _cell_style(align: str = "CENTER", bold: bool = False) -> ParagraphStyle:
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-
-    return ParagraphStyle(
-        f"chk_{align}_{bold}",
-        fontName=FONT_BOLD if bold else FONT,
-        fontSize=TABLE_SIZE,
-        leading=TABLE_SIZE + 1.6,
-        alignment=TA_CENTER if align == "CENTER" else TA_LEFT,
-        wordWrap="LTR",
-    )
 
 
 def _esc(text: Any) -> str:
@@ -129,595 +73,523 @@ def _esc(text: Any) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-# ── Per-file aggregation ──────────────────────────────────────────────────────────
-@dataclass
-class ObsEntry:
-    incident: dict[str, Any]
-    bullets: str
+def _font() -> tuple[str, str]:
+    from reportlab.pdfbase.pdfmetrics import getRegisteredFontNames
+
+    names = set(getRegisteredFontNames())
+    if "DuplaSans" in names:
+        return "DuplaSans", "DuplaSans-Bold"
+    return "Helvetica", "Helvetica-Bold"
 
 
-@dataclass
-class FileEntry:
-    filename: str
-    discipline: str = _NA
-    numero_plano: str = _NA
-    titulo: str = _NA
-    descripcion: str = _NA
-    fecha: str = _NA
-    revision: str = _NA
-    correlacion_set: set = field(default_factory=set)
-    observations: list[ObsEntry] = field(default_factory=list)
-    plan_bytes: bytes | None = None
-    plan_image_paths: list[str] = field(default_factory=list)
-    annex_no: int | None = None
-    annex_labels: list[str] = field(default_factory=list)
+def _styles() -> dict[str, ParagraphStyle]:
+    from app.services.clash_reports import pdf_base  # noqa: F401
 
-    @property
-    def clash_count(self) -> int:
-        return len(self.observations)
+    body, bold = _font()
+    base = getSampleStyleSheet()
+    mk = ParagraphStyle
+    return {
+        "process": mk("proc", parent=base["Normal"], fontName=bold, fontSize=9, leading=11, alignment=TA_CENTER),
+        "title": mk("tit", parent=base["Title"], fontName=bold, fontSize=16, leading=20, alignment=TA_CENTER, spaceAfter=4),
+        "project": mk("proj", parent=base["Normal"], fontName=bold, fontSize=12, leading=15, alignment=TA_CENTER),
+        "date": mk("dt", parent=base["Normal"], fontName=body, fontSize=10, leading=13, alignment=TA_CENTER, spaceAfter=8),
+        "cell": mk("c", parent=base["BodyText"], fontName=body, fontSize=7, leading=9, wordWrap="LTR"),
+        "cell_head": mk("ch", parent=base["BodyText"], fontName=bold, fontSize=7, leading=9, textColor=colors.white),
+        "small": mk("sm", parent=base["BodyText"], fontName=body, fontSize=7, leading=9, textColor=colors.HexColor("#555555")),
+    }
 
 
-def _basename(path: Any) -> str:
-    return Path(str(path or "")).name
+def _p(text: Any, style: str, st: dict[str, ParagraphStyle]) -> Paragraph:
+    return Paragraph(_esc(text), st[style])
 
 
-def _strip_tokens(stem: str) -> str:
-    cleaned = RE_DATE.sub("", stem)
-    cleaned = RE_REVISION.sub("", cleaned)
-    cleaned = re.sub(r"\s{2,}", " ", cleaned).strip(" -_.")
-    return cleaned or stem
+def _discipline_label(raw: str | None) -> str:
+    key = str(raw or "").strip().upper()
+    if not key:
+        return "—"
+    for prefix, label in _DISCIPLINE_LABELS.items():
+        if key.startswith(prefix):
+            return label
+    return key
 
 
-def observation_bullets(inc: dict[str, Any], discipline_display: str) -> str:
-    lines = ["El plano presenta las siguientes observaciones:"]
-
-    disciplines = [normalize_discipline(d) for d in (inc.get("disciplines") or [])]
-    counterpart = [d for d in disciplines if d != discipline_display]
-    if counterpart:
-        lines.append(f"- Clash HARD con {counterpart[0]}.")
-
-    area_mm2 = inc.get("max_area_mm2") or 0
-    if area_mm2 and area_mm2 > 0:
-        lines.append(f"- Área de intersección: {area_mm2 / 1_000_000:.2f} m².")
-
-    z = inc.get("max_overlap_depth_z_mm") or 0
-    if z and z > 0:
-        lines.append(f"- Solapamiento vertical: {z:.0f} mm.")
-
-    level = inc.get("level_id") or ""
-    if level and level != "GENERAL":
-        lines.append(f"- Nivel: {level}.")
-
-    if inc.get("priority") == "critical":
-        lines.append("- Prioridad CRÍTICA — resolver antes de construcción.")
-    elif inc.get("priority") == "high":
-        lines.append("- Prioridad ALTA — coordinar con disciplina.")
-
-    bounds = (inc.get("representative_conflict") or {}).get("plan_intersection_bounds_mm")
-    if isinstance(bounds, (list, tuple)) and len(bounds) == 4:
-        try:
-            lines.append(
-                f"- AutoCAD ZOOM W {float(bounds[0]):.0f},{float(bounds[1]):.0f} "
-                f"{float(bounds[2]):.0f},{float(bounds[3]):.0f}"
-            )
-        except (TypeError, ValueError):
-            pass
-
-    return "\n".join(lines)
+def _plan_code_from_name(filename: str) -> str:
+    stem = Path(filename).stem.upper()
+    match = _PLAN_CODE_RE.search(stem)
+    if match:
+        return match.group(1).replace("_", "-")
+    # Abbreviated stem (max 12 chars) when no code pattern found.
+    clean = re.sub(r"[^A-Z0-9]+", "-", stem).strip("-")
+    return clean[:12] or "PLANO"
 
 
-def group_incidents_by_file(
-    incidents: list[dict[str, Any]],
-    file_discipline_hints: dict[str, str],
-) -> dict[str, FileEntry]:
-    """One FileEntry per DWG that participates in any clash."""
-    entries: dict[str, FileEntry] = {}
-
-    def _entry_for(fname: str) -> FileEntry:
-        key = _basename(fname)
-        if key not in entries:
-            stem = Path(key).stem
-            disc_hint = file_discipline_hints.get(key)
-            code = RE_DRAWING_CODE.search(stem)
-            date_m = RE_DATE.search(stem)
-            rev_m = RE_REVISION.search(stem)
-            entries[key] = FileEntry(
-                filename=key,
-                discipline=normalize_discipline(disc_hint) if disc_hint else _NA,
-                numero_plano=code.group(1).upper() if code else _NA,
-                titulo=_strip_tokens(stem),
-                descripcion=_NA,
-                fecha=date_m.group(1) if date_m else _NA,
-                revision=rev_m.group(1).upper() if rev_m else _NA,
-            )
-        return entries[key]
-
-    for inc in incidents:
-        pair = inc.get("file_pair") or []
-        if not isinstance(pair, (list, tuple)):
-            continue
-        disciplines = [normalize_discipline(d) for d in (inc.get("disciplines") or [])]
-        for fname in pair:
-            entry = _entry_for(str(fname))
-            # Counterpart disciplines = those of the OTHER files in this incident.
-            others = [str(o) for o in pair if _basename(str(o)) != entry.filename]
-            for other in others:
-                other_disc = file_discipline_hints.get(_basename(other))
-                if other_disc:
-                    entry.correlacion_set.add(normalize_discipline(other_disc))
-            # Fallback: use the incident disciplines minus the file's own.
-            if not entry.correlacion_set:
-                for d in disciplines:
-                    if d != entry.discipline:
-                        entry.correlacion_set.add(d)
-            entry.observations.append(
-                ObsEntry(incident=inc, bullets=observation_bullets(inc, entry.discipline))
-            )
-
-    return entries
+def _title_from_name(filename: str, level_id: str | None) -> str:
+    stem = Path(filename).stem
+    level = (level_id or "").strip()
+    if level and level.lower() not in stem.lower():
+        return f"{stem} — {level}"
+    return stem
 
 
-# ── High-res plan rendering (B2: from motor geometry) ──────────────────────────────
-def _render_entry_plan(
-    entry: FileEntry,
-    plan_geometry: dict[str, Any],
-    clash_zones_by_file: dict[str, list[dict[str, Any]]],
-) -> None:
-    """Render a full-page high-res plan (footprints + clash overlay) onto the entry."""
-    geo = plan_geometry.get(entry.filename)
-    zones = clash_zones_by_file.get(entry.filename) or []
-    numero = entry.numero_plano if entry.numero_plano != _NA else "s/n"
-    header = f"{entry.discipline} - {numero}   {entry.filename}"
-    legend_left = f"Disciplina: {entry.discipline}    Clashes: {entry.clash_count}"
-    if not geo and not zones:
-        logger.warning("No geometry/zones to render plan for %s", entry.filename)
-        return
-    entry.plan_bytes = render_plan_image(
-        file_geometry=geo or {},
-        clash_zones=zones,
-        header_text=header,
-        legend_left=legend_left,
-    )
-    if not entry.plan_bytes:
-        logger.warning("Could not render plan for %s", entry.filename)
+def _date_from_filename(filename: str) -> str:
+    match = _DATE_RE.search(filename)
+    if match:
+        d, m, y = match.groups()
+        return f"{d}.{m}.{y}"
+    return "—"
 
 
-def _entry_incidents_for_plan(
-    entry: FileEntry,
-    clash_zones_by_file: dict[str, list[dict[str, Any]]],
-) -> list[dict[str, Any]]:
-    incidents = [obs.incident for obs in entry.observations]
-    has_bounds = any(
-        (inc.get("representative_conflict") or {}).get("plan_intersection_bounds_mm")
-        for inc in incidents
-    )
-    if has_bounds:
-        return incidents
-    zones = clash_zones_by_file.get(entry.filename) or []
-    return [
-        {
-            "priority": "critical" if str(zone.get("clash_type") or "").upper() == "HARD" else "high",
-            "representative_conflict": {
-                "plan_intersection_bounds_mm": zone.get("bounds_mm"),
-                "plan_intersection_centroid_mm": zone.get("centroid_mm"),
-            },
-        }
-        for zone in zones
-    ] or incidents
+def _observation_text(obs: dict[str, Any]) -> str:
+    text = (obs.get("observation") or obs.get("recommended_action") or "").strip()
+    if text:
+        return text
+    layer_a = obs.get("layer_a") or "—"
+    layer_b = obs.get("layer_b") or "—"
+    return f"Verificar solapamiento entre capas {layer_a} y {layer_b}."
 
 
-def _render_entry_real_plan(
-    entry: FileEntry,
-    *,
-    incidents_for_plan: list[dict[str, Any]],
-    output_dir: Path,
-    aps_token: str,
-    plan_geometry: dict[str, Any],
-) -> None:
-    geo = plan_geometry.get(entry.filename) or {}
-    elements = geo.get("elements") if isinstance(geo, dict) else None
-    try:
-        entry.plan_image_paths = asyncio.run(
-            get_plan_images_for_file(
-                filename=entry.filename,
-                incidents_for_file=incidents_for_plan,
-                job_output_dir=str(output_dir),
-                aps_token=aps_token,
-                elements_for_file=elements if isinstance(elements, list) else None,
-            )
+def _incident_to_obs(inc: dict[str, Any]) -> dict[str, Any]:
+    rep = inc.get("representative_conflict") or {}
+    pair = inc.get("file_pair") or ["", ""]
+    if not isinstance(pair, list):
+        pair = ["", ""]
+    while len(pair) < 2:
+        pair.append("")
+    bounds = inc.get("plan_bounds_mm") or rep.get("plan_intersection_bounds_mm") or [0, 0, 0, 0]
+    centroid = inc.get("plan_centroid_mm") or rep.get("plan_intersection_centroid_mm") or [0, 0]
+    layers = rep.get("raw_layers") or []
+    b = bounds if isinstance(bounds, list) and len(bounds) == 4 else [0, 0, 0, 0]
+    return {
+        "dwg_a": Path(str(pair[0])).name if pair[0] else "—",
+        "dwg_b": Path(str(pair[1])).name if len(pair) > 1 and pair[1] else "—",
+        "level_id": str(inc.get("level_id") or "") or None,
+        "discipline_a": str(rep.get("discipline_a") or "") or None,
+        "discipline_b": str(rep.get("discipline_b") or "") or None,
+        "layer_a": str(layers[0]) if layers else None,
+        "layer_b": str(layers[1]) if len(layers) > 1 else None,
+        "observation": None,
+        "recommended_action": "Revisar el par directamente en planta.",
+        "centroid_x_mm": float(centroid[0]) if len(centroid) > 0 else 0.0,
+        "centroid_y_mm": float(centroid[1]) if len(centroid) > 1 else 0.0,
+        "bounds_minx_mm": float(b[0]),
+        "bounds_miny_mm": float(b[1]),
+        "bounds_maxx_mm": float(b[2]),
+        "bounds_maxy_mm": float(b[3]),
+        "plan_bounds_mm": b,
+        "clash_code": str(inc.get("incident_id") or ""),
+    }
+
+
+def _item_to_obs(item: ProjectClashItem) -> dict[str, Any]:
+    return {
+        "dwg_a": item.dwg_a or "—",
+        "dwg_b": item.dwg_b or "—",
+        "level_id": item.level_id,
+        "discipline_a": item.discipline_a,
+        "discipline_b": item.discipline_b,
+        "layer_a": item.layer_a,
+        "layer_b": item.layer_b,
+        "observation": item.observation,
+        "recommended_action": item.recommended_action,
+        "centroid_x_mm": item.centroid_x_mm or 0.0,
+        "centroid_y_mm": item.centroid_y_mm or 0.0,
+        "bounds_minx_mm": item.bounds_minx_mm,
+        "bounds_miny_mm": item.bounds_miny_mm,
+        "bounds_maxx_mm": item.bounds_maxx_mm,
+        "bounds_maxy_mm": item.bounds_maxy_mm,
+        "clash_code": item.clash_code,
+    }
+
+
+def _group_table_rows(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group observations by (discipline, plan file) for the 8-column checklist table."""
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for obs in observations:
+        key = (_discipline_label(obs.get("discipline_a")), obs.get("dwg_a") or "—")
+        groups.setdefault(key, []).append(obs)
+    rows: list[dict[str, Any]] = []
+    for (discipline, plan), group in sorted(groups.items()):
+        first = group[0]
+        correl = sorted({_discipline_label(o.get("discipline_b")) for o in group if o.get("discipline_b")})
+        correl = [c for c in correl if c != "—"]
+        bullets = [_observation_text(o) for o in group]
+        obs_html = (
+            "El plano presenta las siguientes observaciones:<br/>"
+            + "<br/>".join(f"- {_esc(b)}" for b in bullets)
         )
-    except RuntimeError:
-        logger.warning("Could not start APS plan renderer for %s", entry.filename)
+        rows.append(
+            {
+                "discipline": discipline,
+                "plan_code": _plan_code_from_name(plan),
+                "plan_title": _title_from_name(plan, first.get("level_id")),
+                "description": "Coordinación de clashes detectados automáticamente.",
+                "plan_date": _date_from_filename(plan),
+                "revision": "REV. 1",
+                "correlation": ", ".join(correl) if correl else "Demás disciplinas del proyecto",
+                "observations": obs_html,
+                "plan_file": plan,
+                "level_id": first.get("level_id"),
+                "group_obs": group,
+            }
+        )
+    return rows
 
 
-def _build_observation_cell(entry: FileEntry) -> list:
-    """OBSERVACIONES cell: bullet text only, with a reference to the annex page."""
-    cell: list = []
-    obs_style = _cell_style("LEFT")
-
-    bullets = "\n\n".join(o.bullets for o in entry.observations) or _NA
-    for block in bullets.split("\n"):
-        cell.append(Paragraph(_esc(block), obs_style))
-
-    if entry.annex_labels:
-        cell.append(Spacer(1, 3))
-        ref_style = _cell_style("LEFT", bold=True)
-        if len(entry.annex_labels) == 1:
-            ref = entry.annex_labels[0]
-        else:
-            ref = f"{entry.annex_labels[0]} a {entry.annex_labels[-1]}"
-        cell.append(Paragraph(f"Ver Anexo {ref} (plano).", ref_style))
-    return cell
-
-
-# ── Header + footer drawing ───────────────────────────────────────────────────────
-class _PageDrawer:
-    """Draws the floating logos + center titles on every page (no background)."""
-
-    def __init__(self, logo_left: str | None, logo_right: str | None) -> None:
-        self.logo_left = logo_left if logo_left and Path(logo_left).is_file() else None
-        self.logo_right = logo_right if logo_right and Path(logo_right).is_file() else None
-
-    def __call__(self, cnv: canvas.Canvas, doc) -> None:
-        cnv.saveState()
-        if self.logo_left:
-            # PDF-top box x=14.2 y=8.5 w=110.3 h=51.0 → RL bottom-left
-            cnv.drawImage(
-                self.logo_left, 14.2, PAGE_H - 8.5 - 51.0, width=110.3, height=51.0,
-                preserveAspectRatio=True, mask="auto",
-            )
-        if self.logo_right:
-            cnv.drawImage(
-                self.logo_right, 667.2, PAGE_H - 26.4 - 33.1, width=110.6, height=33.1,
-                preserveAspectRatio=True, mask="auto",
-            )
-        cnv.setFont(FONT_BOLD, TITLE_SIZE)
-        cnv.drawCentredString(396, PAGE_H - 26, CENTER_TITLE_1)
-        cnv.drawCentredString(396, PAGE_H - 50, CENTER_TITLE_2)
-        cnv.restoreState()
-
-
-class NumberedCanvas(canvas.Canvas):
-    """Two-pass canvas: collects page states, then stamps 'Página N de M'."""
-
-    def __init__(self, *args, **kwargs) -> None:
-        super().__init__(*args, **kwargs)
-        self._saved_states: list[dict] = []
-
-    def showPage(self) -> None:
-        self._saved_states.append(dict(self.__dict__))
-        self._startPage()
-
-    def save(self) -> None:
-        total = len(self._saved_states)
-        for state in self._saved_states:
-            self.__dict__.update(state)
-            self._draw_footer(total)
-            super().showPage()
-        super().save()
-
-    def _draw_footer(self, total: int) -> None:
-        self.saveState()
-        self.setFont(FONT, FOOTER_SIZE)
-        y = FOOTER_Y_FROM_BOTTOM
-        self.drawString(15.2, y, FOOTER_LEFT)
-        self.drawCentredString(PAGE_W / 2, y, FOOTER_CENTER)
-        self.drawRightString(PAGE_W - 38.7, y, f"Página {self._pageNumber} de {total}")
-        self.restoreState()
-
-
-# ── Table assembly ────────────────────────────────────────────────────────────────
-def _build_table(
-    entries: list[FileEntry],
-    *,
-    project_name: str,
-    checklist_number: str,
-    fecha: str,
-    reviewer: str,
-    merge_disciplines: bool = True,
-) -> Table:
-    label = _cell_style("CENTER", bold=True)
-    value = _cell_style("CENTER")
-    header = _cell_style("CENTER", bold=True)
-
-    data: list[list[Any]] = []
-
-    # Row 0 — PROYECTO / No. LISTA
-    data.append([
-        Paragraph("PROYECTO:", label), "", "",
-        Paragraph(_esc(project_name), value),
-        Paragraph("No. LISTA DE CHEQUEO:", label), "",
-        Paragraph(_esc(checklist_number), value), "",
-    ])
-    # Row 1 — FECHA / REVISADO POR
-    data.append([
-        Paragraph("FECHA:", label), "", "",
-        Paragraph(_esc(fecha), value),
-        Paragraph("REVISADO POR:", label), "",
-        Paragraph(_esc(reviewer), value), "",
-    ])
-    # Row 2 — column headers
-    data.append([Paragraph(_esc(h).replace("\n", "<br/>"), header) for h in COLUMN_HEADERS])
-
-    # Data rows (one per file)
-    discipline_runs: list[tuple[int, int]] = []  # (start_row, end_row) for col-0 vertical spans
-    run_start = 3
-    prev_disc: str | None = None
-    for idx, entry in enumerate(entries):
-        row_idx = 3 + idx
-        correlacion = "\n".join(sorted(entry.correlacion_set)) or _NA
-        obs_cell = _build_observation_cell(entry)
-        data.append([
-            Paragraph(_esc(entry.discipline), value),
-            Paragraph(_esc(entry.numero_plano), value),
-            Paragraph(_esc(entry.titulo), value),
-            Paragraph(_esc(entry.descripcion), value),
-            Paragraph(_esc(entry.fecha), value),
-            Paragraph(_esc(entry.revision), value),
-            Paragraph(_esc(correlacion).replace("\n", "<br/>"), value),
-            obs_cell,
-        ])
-        if entry.discipline != prev_disc:
-            if prev_disc is not None:
-                discipline_runs.append((run_start, row_idx - 1))
-            run_start = row_idx
-            prev_disc = entry.discipline
-    if entries:
-        discipline_runs.append((run_start, 3 + len(entries) - 1))
-
-    if not entries:
-        data.append([Paragraph("Sin incidencias primarias en esta corrida.", value)] + [""] * 7)
-
-    style_cmds: list[tuple] = [
-        # Meta spans
-        ("SPAN", (0, 0), (2, 0)), ("SPAN", (4, 0), (5, 0)), ("SPAN", (6, 0), (7, 0)),
-        ("SPAN", (0, 1), (2, 1)), ("SPAN", (4, 1), (5, 1)), ("SPAN", (6, 1), (7, 1)),
-        # Meta gray fills (labels only)
-        ("BACKGROUND", (0, 0), (2, 0), GRAY_FILL),
-        ("BACKGROUND", (4, 0), (5, 0), GRAY_FILL),
-        ("BACKGROUND", (0, 1), (2, 1), GRAY_FILL),
-        ("BACKGROUND", (4, 1), (5, 1), GRAY_FILL),
-        # Column header row — full gray
-        ("BACKGROUND", (0, 2), (-1, 2), GRAY_FILL),
-        # Grid
-        ("GRID", (0, 0), (-1, -1), 0.5, BLACK),
-        ("LINEBELOW", (0, 2), (-1, 2), 1.0, BLACK),
-        # Fonts
-        ("FONTNAME", (0, 0), (-1, -1), FONT),
-        ("FONTSIZE", (0, 0), (-1, -1), TABLE_SIZE),
-        ("FONTNAME", (0, 2), (-1, 2), FONT_BOLD),
-        ("FONTNAME", (0, 0), (2, 1), FONT_BOLD),
-        ("FONTNAME", (4, 0), (5, 1), FONT_BOLD),
-        # Alignment
-        ("ALIGN", (0, 0), (-1, 2), "CENTER"),
-        ("ALIGN", (0, 3), (6, -1), "CENTER"),
-        ("ALIGN", (7, 3), (7, -1), "LEFT"),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("VALIGN", (0, 0), (-1, 2), "MIDDLE"),
-        # Padding
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+def _checklist_table(rows: list[dict[str, Any]], st: dict[str, ParagraphStyle]) -> Table:
+    headers = [
+        "DISCIPLINA",
+        "NÚMERO DE PLANO",
+        "TÍTULO DEL PLANO",
+        "DESCRIPCIÓN DE PLANOS Y/O CAMBIOS",
+        "FECHA DEL PLANO",
+        "REVISIÓN",
+        "CORRELACIÓN CON DEMÁS DISCIPLINAS",
+        "OBSERVACIONES",
     ]
-
-    # Vertical discipline merges in col 0. Spanned rows cannot be split across
-    # pages, so this is skipped on the fallback pass when a group is too tall.
-    if merge_disciplines:
-        for start, end in discipline_runs:
-            if end > start:
-                style_cmds.append(("SPAN", (0, start), (0, end)))
-                style_cmds.append(("VALIGN", (0, start), (0, end), "MIDDLE"))
-
-    table = Table(data, colWidths=COL_WIDTHS, repeatRows=3, splitByRow=1)
-    table.setStyle(TableStyle(style_cmds))
+    col_widths = [22 * mm, 18 * mm, 32 * mm, 28 * mm, 18 * mm, 14 * mm, 32 * mm, 66 * mm]
+    head = [_p(h, "cell_head", st) for h in headers]
+    body = []
+    for row in rows:
+        body.append(
+            [
+                _p(row["discipline"], "cell", st),
+                _p(row["plan_code"], "cell", st),
+                _p(row["plan_title"], "cell", st),
+                _p(row["description"], "cell", st),
+                _p(row["plan_date"], "cell", st),
+                _p(row["revision"], "cell", st),
+                _p(row["correlation"], "cell", st),
+                Paragraph(row["observations"], st["cell"]),
+            ]
+        )
+    data = [head, *body]
+    table = Table(data, colWidths=col_widths, repeatRows=1, hAlign="LEFT", splitByRow=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#333333")),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#888888")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fafafa")]),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ]
+        )
+    )
     return table
 
 
-def _default_checklist_number(project_name: str) -> str:
-    slug = re.sub(r"[^A-Za-z0-9]+", "", project_name).upper()[:4] or "PROJ"
-    return f"LDC-{slug}-01"
-
-
-def _annex_caption_style(align_center: bool = True) -> ParagraphStyle:
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
-
-    return ParagraphStyle(
-        "chk_annex_caption",
-        fontName=FONT_BOLD,
-        fontSize=TITLE_SIZE,
-        leading=TITLE_SIZE + 2,
-        alignment=TA_CENTER if align_center else TA_LEFT,
+def _meta_footer_table(meta: dict[str, Any], st: dict[str, ParagraphStyle]) -> Table:
+    folder = str(meta.get("folder_name") or "PLANOS").upper().replace(" ", "")
+    folder_short = re.sub(r"[^A-Z0-9]", "", folder)[:12] or "PLANOS"
+    ldc = meta.get("checklist_number") or f"LDC-{folder_short}-05"
+    rows = [
+        [
+            _p("PROYECTO:", "cell", st),
+            _p(meta.get("project_name", ""), "cell", st),
+            _p("No. LISTA DE CHEQUEO:", "cell", st),
+            _p(ldc, "cell", st),
+        ],
+        [
+            _p("FECHA:", "cell", st),
+            _p(meta.get("run_date", ""), "cell", st),
+            _p("REVISADO POR:", "cell", st),
+            _p(meta.get("user_display", ""), "cell", st),
+        ],
+    ]
+    t = Table(rows, colWidths=[28 * mm, 60 * mm, 38 * mm, 60 * mm])
+    t.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#cfd4da")),
+                ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#cfd4da")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#9aa3af")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ]
+        )
     )
+    return t
 
 
-def _draw_plan_legend(cnv: canvas.Canvas, doc) -> None:
-    """Bottom legend strip for real plan pages."""
-    cnv.saveState()
-    cnv.setFillColor(colors.HexColor("#1A1A1A"))
-    cnv.rect(0, 0, PAGE_W, 22, fill=1, stroke=0)
-    cnv.setFillColor(colors.white)
-    cnv.setFont(FONT_BOLD, 7)
-    cnv.drawString(10, 7, "Plano de coordinación con zonas de clash")
-    cnv.setFont(FONT, 7)
-    cnv.drawString(580, 7, "GrupoDupla / Dupla Constructora")
-    cnv.restoreState()
-
-
-def _scaled_image(img_bytes: bytes, max_w: float, max_h: float):
-    """Build a ReportLab Image scaled to fit the box, preserving aspect ratio."""
-    from PIL import Image as PILImage
-
-    with PILImage.open(io.BytesIO(img_bytes)) as im:
-        iw, ih = im.size
-    if iw <= 0 or ih <= 0:
+def _sheet_drawing(svg_str: str, max_w: float, max_h: float):
+    try:
+        from svglib.svglib import svg2rlg
+    except Exception:
         return None
-    scale = min(max_w / iw, max_h / ih)
-    return Image(io.BytesIO(img_bytes), width=iw * scale, height=ih * scale, kind="proportional")
-
-
-def _scaled_image_path(img_path: str, max_w: float, max_h: float):
-    from PIL import Image as PILImage
-
-    if not Path(img_path).is_file():
-        logger.warning("Skipping missing plan image: %s", img_path)
+    tmp = tempfile.NamedTemporaryFile("w", suffix=".svg", delete=False, encoding="utf-8")
+    try:
+        tmp.write(svg_str)
+        tmp.close()
+        drawing = svg2rlg(tmp.name)
+    except Exception:
         return None
-    with PILImage.open(img_path) as im:
-        iw, ih = im.size
-    if iw <= 0 or ih <= 0:
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+    if drawing is None or not drawing.width:
         return None
-    scale = min(max_w / iw, max_h / ih)
-    coord_logger.info(
-        "COORD_PDF_IMAGE px=(%d,%d) frame=(%.1f,%.1f,%.1f,%.1f) scale=%.6f final_pt=(%.1f,%.1f)",
-        iw,
-        ih,
-        10.0,
-        FOOTER_Y_FROM_BOTTOM + 4,
-        max_w,
-        max_h,
-        scale,
-        iw * scale,
-        ih * scale,
-    )
-    return Image(img_path, width=iw * scale, height=ih * scale, kind="proportional")
+    scale = min(max_w / drawing.width, max_h / drawing.height) * 0.98
+    drawing.width *= scale
+    drawing.height *= scale
+    drawing.scale(scale, scale)
+    return drawing
 
 
-def _build_annex_flowables(entries: list[FileEntry], avail_w: float, avail_h: float) -> list:
-    """Full-bleed plan pages (one per file). File/discipline/legend baked into image."""
-    flowables: list = []
-    for entry in entries:
-        if entry.annex_no is None or (not entry.plan_image_paths and not entry.plan_bytes):
-            continue
-        image_paths = entry.plan_image_paths
-        if image_paths:
-            for img_path in image_paths:
-                flowables.append(NextPageTemplate("plan_page"))
-                flowables.append(PageBreak())
-                plan_img = _scaled_image_path(img_path, avail_w, avail_h)
-                if plan_img is not None:
-                    plan_img.hAlign = "CENTER"
-                    flowables.append(plan_img)
-        elif entry.plan_bytes:
-            flowables.append(NextPageTemplate("plan_page"))
-            flowables.append(PageBreak())
-            plan_img = _scaled_image(entry.plan_bytes, avail_w, avail_h)
-            if plan_img is not None:
-                plan_img.hAlign = "CENTER"
-                flowables.append(plan_img)
-    return flowables
+class _GaFo08Doc(BaseDocTemplate):
+    def __init__(
+        self,
+        buffer: BytesIO,
+        *,
+        meta: dict[str, Any],
+        table_page_count: int,
+    ) -> None:
+        self._meta = meta
+        self._table_page_count = max(table_page_count, 1)
+        self._on_plan_section = False
+        super().__init__(
+            buffer,
+            pagesize=_TABLE_PAGE,
+            leftMargin=_MARGIN,
+            rightMargin=_MARGIN,
+            topMargin=_MARGIN,
+            bottomMargin=_MARGIN + _TABLE_FOOTER_H,
+            title="Lista de Chequeo - Planos",
+        )
+        table_frame = Frame(
+            self.leftMargin,
+            self.bottomMargin,
+            self.width,
+            self.height,
+            id="table",
+        )
+        plan_frame = Frame(
+            _MARGIN,
+            _MARGIN + _PLAN_FOOTER_H,
+            _PLAN_PAGE[0] - 2 * _MARGIN,
+            _PLAN_PAGE[1] - 2 * _MARGIN - _PLAN_FOOTER_H,
+            id="plan",
+        )
+        self.addPageTemplates(
+            [
+                PageTemplate(id="table", frames=[table_frame], pagesize=_TABLE_PAGE, onPage=self._on_table_page),
+                PageTemplate(id="plan", frames=[plan_frame], pagesize=_PLAN_PAGE, onPage=self._on_plan_page),
+            ]
+        )
+
+    def _on_table_page(self, canvas, doc) -> None:
+        pw, _ = doc.pagesize
+        canvas.saveState()
+        body, _ = _font()
+        canvas.setFont(body, 7)
+        canvas.setFillColor(colors.HexColor("#555555"))
+        page_label = f"Página {doc.page} de {self._table_page_count}"
+        canvas.drawCentredString(pw / 2, 7 * mm, f"Este documento es confidencial  {_FORM_CODE}  {page_label}")
+        canvas.restoreState()
+
+    def _on_plan_page(self, canvas, doc) -> None:
+        pw, _ = doc.pagesize
+        canvas.saveState()
+        body, _ = _font()
+        canvas.setFont(body, 7)
+        canvas.setFillColor(colors.HexColor("#666666"))
+        canvas.drawCentredString(pw / 2, 5 * mm, f"Este documento es confidencial  {_FORM_CODE}")
+        canvas.restoreState()
+
+
+def _table_header_block(meta: dict[str, Any], st: dict[str, ParagraphStyle]) -> list[Any]:
+    return [
+        _p(_PROCESS_TITLE, "process", st),
+        Spacer(1, 2),
+        _p(_CHECKLIST_TITLE, "title", st),
+        Spacer(1, 4),
+        _p(meta.get("project_name", ""), "project", st),
+        _p(meta.get("run_date", ""), "date", st),
+        Spacer(1, 4),
+    ]
+
+
+def _build_story(
+    observations: list[dict[str, Any]],
+    meta: dict[str, Any],
+    *,
+    cache_root: str | None,
+    logo_path: str | None,
+    job_output_dir: str | None = None,
+    tile_path: Callable[[str, bool], Path | None] | None = None,
+    pdf_search_dirs: list[str | Path] | None = None,
+) -> list[Any]:
+    st = _styles()
+    table_rows = _group_table_rows(observations)
+    if not table_rows:
+        table_rows = [
+            {
+                "discipline": "—",
+                "plan_code": "—",
+                "plan_title": "Sin observaciones",
+                "description": "—",
+                "plan_date": "—",
+                "revision": "—",
+                "correlation": "—",
+                "observations": "No se detectaron clashes en esta corrida.",
+                "plan_file": "—",
+                "level_id": None,
+                "group_obs": [],
+            }
+        ]
+
+    story: list[Any] = []
+    if logo_path and Path(logo_path).is_file():
+        try:
+            story.append(Image(logo_path, width=40 * mm, height=12 * mm, kind="proportional"))
+            story.append(Spacer(1, 4))
+        except Exception:
+            pass
+
+    story.extend(_table_header_block(meta, st))
+    story.append(_checklist_table(table_rows, st))
+    story.append(Spacer(1, 8))
+    story.append(_meta_footer_table(meta, st))
+
+    numbered_all: list[tuple[int, dict[str, Any]]] = []
+    counter = 1
+    for row in table_rows:
+        for obs in row.get("group_obs") or []:
+            numbered_all.append((counter, obs))
+            counter += 1
+
+    by_sheet: dict[tuple[str, str | None], list[tuple[int, dict[str, Any]]]] = {}
+    for number, obs in numbered_all:
+        key = (obs.get("dwg_a") or "—", obs.get("level_id"))
+        by_sheet.setdefault(key, []).append((number, obs))
+
+    search_dirs: list[str | Path] = list(pdf_search_dirs or [])
+    if job_output_dir:
+        search_dirs.append(job_output_dir)
+
+    plan_sheets = [(k, v) for k, v in sorted(by_sheet.items()) if k[0] != "—"]
+    if plan_sheets:
+        story.append(NextPageTemplate("plan"))
+        story.append(PageBreak())
+
+    for idx, ((plan_file, level_id), numbered) in enumerate(plan_sheets):
+        pdf_bg = resolve_plan_pdf(search_dirs, plan_file)
+        svg = render_annotated_plan_svg(
+            numbered=numbered,
+            dwg_name=plan_file,
+            level_id=level_id,
+            cache_root=cache_root,
+            width=_PLAN_PAGE[0],
+            height=_PLAN_PAGE[1],
+            pdf_background_path=pdf_bg,
+            tile_path=tile_path,
+        )
+        drawing = _sheet_drawing(svg, _PLAN_W, _PLAN_H)
+        if drawing is not None:
+            story.append(drawing)
+        else:
+            story.append(_p("Vista de plano no disponible.", "small", st))
+        if idx < len(plan_sheets) - 1:
+            story.append(PageBreak())
+
+    return story
 
 
 def build_checklist_pdf(
-    incidents: list[dict[str, Any]],
-    project_name: str,
-    checklist_number: str | None,
-    reviewer_name: str,
-    export_date: str | None,
-    logo_grupodupla_path: str | None,
-    logo_constructora_path: str | None,
-    aps_token: str | None,
-    job_cache_dir: str | None,
     *,
+    incidents: list[dict[str, Any]] | None = None,
+    items: list[ProjectClashItem] | None = None,
+    project_name: str,
+    checklist_number: str | None = None,
+    reviewer_name: str = "Revisión Técnica",
+    export_date: str | date | None = None,
+    folder_name: str | None = None,
+    logo_grupodupla_path: str | None = None,
+    logo_constructora_path: str | None = None,
+    aps_token: str | None = None,
+    job_cache_dir: str | None = None,
     file_discipline_hints: dict[str, str] | None = None,
-    plan_geometry: dict[str, Any] | None = None,
+    job_output_dir: str | None = None,
+    tile_path: Callable[[str, bool], Path | None] | None = None,
+    pdf_search_dirs: list[str | Path] | None = None,
 ) -> bytes:
-    file_discipline_hints = file_discipline_hints or {}
-    checklist_number = checklist_number or _default_checklist_number(project_name)
-    export_date = export_date or date.today().strftime("%d.%m.%Y")
+    """Build the GA-FO-08 checklist PDF from motor incidents or workflow items."""
+    del aps_token, logo_constructora_path, file_discipline_hints  # reserved for future APS live fetch
 
-    # plan_geometry.json + clash_project_report.json live next to the job cache.
-    output_dir = Path(job_cache_dir) if job_cache_dir else None
-    if output_dir and output_dir.name == "cache":
-        output_dir = output_dir.parent
-    if plan_geometry is None and output_dir:
-        hybrid_geometry_path = output_dir / "hybrid_geometry" / "plan_geometry.hybrid.json"
-        plan_geometry = load_plan_geometry(hybrid_geometry_path)
-        if not plan_geometry:
-            plan_geometry = load_plan_geometry(output_dir / "plan_geometry.json")
-    plan_geometry = plan_geometry or {}
-    clash_zones_by_file = (
-        load_clash_zones_by_file(output_dir / "clash_project_report.json") if output_dir else {}
+    if items:
+        observations = [_item_to_obs(it) for it in items]
+    elif incidents:
+        observations = [_incident_to_obs(inc) for inc in incidents if isinstance(inc, dict)]
+    else:
+        observations = []
+
+    if export_date is None:
+        run_date = datetime.now().date().isoformat()
+    elif isinstance(export_date, date):
+        run_date = export_date.isoformat()
+    else:
+        run_date = str(export_date)
+
+    meta = {
+        "project_name": project_name,
+        "folder_name": folder_name or project_name,
+        "user_display": reviewer_name,
+        "run_date": run_date,
+        "checklist_number": checklist_number,
+    }
+
+    cache_root = job_cache_dir
+    if cache_root:
+        # Prefer APS cache sibling when job dir is the coordination output root.
+        sibling = Path(cache_root).parent / "aps_cache"
+        if sibling.is_dir():
+            cache_root = str(sibling)
+
+    story = _build_story(
+        observations,
+        meta,
+        cache_root=cache_root,
+        logo_path=logo_grupodupla_path,
+        job_output_dir=job_output_dir or job_cache_dir,
+        tile_path=tile_path,
+        pdf_search_dirs=pdf_search_dirs,
     )
 
-    entries_map = group_incidents_by_file(incidents, file_discipline_hints)
-    # Sort by discipline (groups same-discipline rows for vertical merge), then file
-    entries = sorted(entries_map.values(), key=lambda e: (e.discipline, e.filename))
+    table_pages = max(1, (len(_group_table_rows(observations)) + 1) // 2)
+    story.insert(0, NextPageTemplate("table"))
 
-    # Render a high-res plan per file (single pass), then number annexes
-    # contiguously over the files that actually produced a plan.
-    annex_counter = 0
-    for entry in entries:
-        incidents_for_plan = _entry_incidents_for_plan(entry, clash_zones_by_file)
-        if aps_token and output_dir:
-            _render_entry_real_plan(
-                entry,
-                incidents_for_plan=incidents_for_plan,
-                output_dir=output_dir,
-                aps_token=aps_token,
-                plan_geometry=plan_geometry,
-            )
-        if not entry.plan_image_paths and not aps_token:
-            _render_entry_plan(entry, plan_geometry, clash_zones_by_file)
-        page_count = len(entry.plan_image_paths) if entry.plan_image_paths else (1 if entry.plan_bytes else 0)
-        if page_count:
-            annex_counter += 1
-            entry.annex_no = annex_counter
-            entry.annex_labels = [
-                f"{annex_counter}-{chr(ord('A') + idx)}" for idx in range(page_count)
-            ]
+    buf = BytesIO()
+    doc = _GaFo08Doc(buf, meta=meta, table_page_count=table_pages)
+    doc.build(story)
+    return buf.getvalue()
 
-    frame_bottom = FOOTER_Y_FROM_BOTTOM + 5
-    frame_top = PAGE_H - TABLE_Y_TOP
-    frame_height = frame_top - frame_bottom
-    # Full-bleed plan page geometry (small margin, above footer).
-    plan_margin = 10.0
-    plan_frame_bottom = FOOTER_Y_FROM_BOTTOM + 4
-    plan_frame_top = PAGE_H - plan_margin
-    drawer = _PageDrawer(logo_grupodupla_path, logo_constructora_path)
 
-    def _render(merge_disciplines: bool) -> bytes:
-        table = _build_table(
-            entries,
-            project_name=project_name,
-            checklist_number=checklist_number,
-            fecha=export_date,
-            reviewer=reviewer_name or _NA,
-            merge_disciplines=merge_disciplines,
-        )
-        plan_w = PAGE_W - 2 * plan_margin
-        plan_h = plan_frame_top - plan_frame_bottom
-        story: list = [table]
-        story.extend(_build_annex_flowables(entries, plan_w, plan_h))
-
-        buf = io.BytesIO()
-        frame = Frame(
-            TABLE_X0, frame_bottom, TABLE_W, frame_height,
-            leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="main",
-        )
-        main_tpl = PageTemplate(id="main", frames=[frame], onPage=drawer, pagesize=(PAGE_W, PAGE_H))
-        plan_frame = Frame(
-            plan_margin, plan_frame_bottom, plan_w, plan_h,
-            leftPadding=0, rightPadding=0, topPadding=0, bottomPadding=0, id="plan",
-        )
-        plan_tpl = PageTemplate(
-            id="plan_page",
-            frames=[plan_frame],
-            onPage=_draw_plan_legend,
-            pagesize=(PAGE_W, PAGE_H),
-        )
-        doc = BaseDocTemplate(
-            buf, pagesize=(PAGE_W, PAGE_H),
-            pageTemplates=[main_tpl, plan_tpl],
-            leftMargin=0, rightMargin=0, topMargin=0, bottomMargin=0,
-            title="Lista de Chequeo de Planos",
-        )
-        doc.build(story, canvasmaker=NumberedCanvas)
-        return buf.getvalue()
-
-    try:
-        return _render(merge_disciplines=True)
-    except LayoutError:
-        # A same-discipline group was too tall to keep merged across a page break;
-        # retry without vertical discipline spans so rows can split.
-        logger.warning("Checklist layout overflow with merged disciplines; retrying unmerged")
-        return _render(merge_disciplines=False)
+def build_checklist_pdf_from_items(
+    *,
+    items: list[ProjectClashItem],
+    meta: dict[str, Any],
+    cache_root: str | None = None,
+    logo_path: str | None = None,
+    job_output_dir: str | None = None,
+    tile_path: Callable[[str, bool], Path | None] | None = None,
+    pdf_search_dirs: list[str | Path] | None = None,
+) -> bytes:
+    """Convenience wrapper used by ClashExportService."""
+    folder = meta.get("folder_name") or meta.get("project_name") or "PLANOS"
+    folder_key = re.sub(r"[^A-Z0-9]", "", str(folder).upper())[:12] or "PLANOS"
+    return build_checklist_pdf(
+        items=items,
+        project_name=str(meta.get("project_name") or "Proyecto"),
+        checklist_number=meta.get("checklist_number") or f"LDC-{folder_key}-05",
+        reviewer_name=str(meta.get("user_display") or "Revisión Técnica"),
+        export_date=meta.get("run_date"),
+        folder_name=str(folder),
+        logo_grupodupla_path=logo_path,
+        job_cache_dir=cache_root,
+        job_output_dir=job_output_dir,
+        tile_path=tile_path,
+        pdf_search_dirs=pdf_search_dirs,
+    )

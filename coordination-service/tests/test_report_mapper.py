@@ -31,6 +31,8 @@ def test_report_mapper_uses_incident_description_and_disciplines() -> None:
                         "clash_type": "HARD",
                         "overlap_depth_z_mm": 250,
                         "plan_intersection_area_mm2": 1_500_000,
+                        "confidence": "high",
+                        "geometry_sources": ["dwg_aps_viewer_2d", "dwg_aps_viewer_2d"],
                     },
                 }
             ],
@@ -53,6 +55,8 @@ def test_report_mapper_uses_incident_description_and_disciplines() -> None:
     assert report["clashes"][0]["description"] == "Descripción explícita del incidente."
     assert report["clashes"][0]["disciplines"] == ["Estructura", "Plomería"]
     assert report["clashes"][0]["priority"] == "critical"
+    assert report["clashes"][0]["confidence"] == "high"
+    assert report["clashes"][0]["geometry_sources"] == "dwg_aps_viewer_2d / dwg_aps_viewer_2d"
     assert report["summary"]["total_clashes"] == 1
     assert report["geometry_audit"] is None
 

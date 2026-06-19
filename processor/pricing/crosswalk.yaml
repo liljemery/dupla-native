@@ -1,0 +1,88 @@
+# P0.2 — Deterministic crosswalk: takeoff item_type (+ attributes) -> APU code.
+#
+# Turns pricing from fuzzy similarity into a lookup. Rules are evaluated top to
+# bottom; FIRST match wins. Curate this file by hand — it is the source of truth.
+#
+# target:
+#   "<code>"    -> price this takeoff with that APU (codigo_apu in precios_relacional)
+#   EXCLUDE     -> do NOT price separately; cost already bundled in another APU
+#                  (the constructor's concrete APUs are all-inclusive: a m3 of
+#                  "COLUMNAS C1" already contains steel + formwork + labour, so the
+#                  separate reinforcement_kg / formwork_area_hint takeoffs must not
+#                  be billed again — that would double/triple count).
+#   UNMATCHED   -> no APU exists for this in the price file (e.g. MEP, carpentry).
+#                  Honest gap: add the APU to the workbook to price it.
+#
+# Predicates (all optional, ANDed):
+#   item_type:     exact item_type
+#   item_type_in:  list of item_types
+#   section_any:   list of "WxH" (m); matches section_width_m x section_height_m
+#                  order-insensitive, 2 cm tolerance
+#   thickness_in:  6 | 8 | 12 | 4   (derived from thickness_m of the takeoff)
+#   thickness_m:   approximate thickness in m (3 cm tolerance)
+#   discipline:    plumbing | electrical | ...  (from inputs.discipline)
+
+version: 1
+currency: DOP
+
+rules:
+  # ======================= ESTRUCTURA: concreto (todo-incluido m3) =======================
+  # COLUMNAS -> 6.0x by section (all-in: concrete+steel+formwork)
+  - {id: col_c1,     item_type: column_concrete_volume, section_any: ["0.30x0.20"], target: "6.01"}
+  - {id: col_c2,     item_type: column_concrete_volume, section_any: ["0.40x0.20"], target: "6.02"}
+  - {id: col_amarre, item_type: column_concrete_volume, section_any: ["0.20x0.20"], target: "6.03"}
+  - {id: col_def,    item_type: column_concrete_volume, target: "6.01"}
+
+  # VIGAS -> 8.0x by section
+  - {id: viga_3040,  item_type: beam_concrete_volume, section_any: ["0.30x0.40"], target: "8.01"}
+  - {id: viga_1520,  item_type: beam_concrete_volume, section_any: ["0.15x0.20"], target: "8.02"}
+  - {id: viga_enr8,  item_type: beam_concrete_volume, section_any: ["0.20x0.40"], target: "8.05"}
+  - {id: viga_enr6,  item_type: beam_concrete_volume, section_any: ["0.15x0.30"], target: "8.06"}
+  - {id: viga_dintel,item_type: beam_concrete_volume, section_any: ["0.20x0.20"], target: "8.03"}
+  - {id: viga_def,   item_type: beam_concrete_volume, target: "8.01"}
+
+  # LOSAS -> 9.0x by thickness (section_height_m)
+  - {id: losa_012,   item_type: slab_concrete_volume, thickness_m: 0.12, target: "9.01"}
+  - {id: losa_015,   item_type: slab_concrete_volume, thickness_m: 0.15, target: "9.02"}
+  - {id: losa_def,   item_type: slab_concrete_volume, target: "9.01"}
+
+  # ZAPATAS -> 5.0x
+  - {id: zap_def,    item_type_in: [footing_concrete_volume, footing_volume], target: "5.06"}
+
+  # Derived structural measures already bundled in the m3 APU -> EXCLUDE (no doble cobro)
+  - {id: rebar_excl,    item_type_in: [column_reinforcement_kg, beam_reinforcement_kg, slab_reinforcement_kg, footing_reinforcement_kg, reinforcement_kg], target: EXCLUDE}
+  - {id: formwork_excl, item_type_in: [column_formwork_area_hint, beam_formwork_area_hint, slab_formwork_area_hint, footing_formwork_area_hint, formwork_area], target: EXCLUDE}
+  # Intermediate measures of the same element (length/area/non-concrete volume) -> EXCLUDE
+  - {id: col_inter,  item_type_in: [column_length, column_area, column_volume], target: EXCLUDE}
+  - {id: beam_inter, item_type_in: [beam_length, beam_area, beam_volume], target: EXCLUDE}
+  - {id: slab_inter, item_type_in: [slab_length, slab_area, slab_volume], target: EXCLUDE}
+  - {id: foot_inter, item_type_in: [footing_length, footing_area, footing_volume], target: EXCLUDE}
+
+  # ======================= ARQUITECTURA: muros de bloque (todo-incluido m2) =======================
+  - {id: muro_12, item_type: wall_net_area, thickness_in: 12, target: "10.01"}
+  - {id: muro_8,  item_type: wall_net_area, thickness_in: 8,  target: "10.04"}
+  - {id: muro_6,  item_type: wall_net_area, thickness_in: 6,  target: "10.07"}
+  - {id: muro_4,  item_type: wall_net_area, thickness_in: 4,  target: "10.11"}
+  - {id: muro_def, item_type: wall_net_area, target: "10.07"}          # 6" default
+  - {id: muro_inter, item_type_in: [wall_length, wall_gross_area, wall_volume], target: EXCLUDE}
+
+  # Pañete / acabados de muro (cuando P1.4 los genere)
+  - {id: panete_int, item_type: wall_finish_plaster, target: "11.03"}
+  - {id: panete_ext, item_type: wall_finish_stucco,  target: "11.04"}
+
+  # Pisos -> default porcelanato (curar por material/zona en P0.2b)
+  - {id: piso_def, item_type_in: [floor_area, floor_finish, floor_tile_area], target: "13.14"}
+
+  # Cielos/techos
+  - {id: techo_fino, item_type_in: [ceiling_area, ceiling_finish], target: "12.02"}
+
+  # ======================= SIN PRECIO EN EL CATALOGO (gap de datos) =======================
+  # MEP: el archivo no trae APUs eléctricas/sanitarias.
+  - {id: mep_fixtures, item_type_in: [fixture_count, wet_area_fixture_count, fixture_count_plumbing, fixture_count_electrical], target: UNMATCHED}
+  # Carpintería: no hay APUs de puertas/ventanas.
+  - {id: puertas, item_type_in: [door_count, door_leaf_wood_count, door_frame_count], target: UNMATCHED}
+  - {id: ventanas, item_type_in: [window_count, window_frame_count, window_glazing_area], target: UNMATCHED}
+  # Estructural genérico (element_type desconocido desde CAD) -> ambiguo, requiere clasificación
+  - {id: struct_generic, item_type_in: [structural_count, structural_length, structural_area, structural_volume, structural_concrete_volume], target: UNMATCHED}
+  # Conteos varios sin APU directa
+  - {id: misc_counts, item_type_in: [stair_count, kitchen_count, wet_area_count], target: UNMATCHED}

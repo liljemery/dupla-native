@@ -50,6 +50,7 @@ class MaterialPrice:
     category: str
     updated_date: str | None
     source: str
+    currency: str = "USD"  # constructor xlsx is USD per the office
 
 
 @dataclass
@@ -60,6 +61,7 @@ class LaborRate:
     unit_price: float
     category: str
     source: str
+    currency: str = "USD"
 
 
 @dataclass
@@ -81,6 +83,7 @@ class APUBreakdown:
     category: str
     components: list[APUComponent]
     source: str
+    currency: str = "USD"
 
 
 @dataclass

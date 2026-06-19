@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 from collections import Counter, defaultdict
@@ -125,21 +126,51 @@ def _extract_numeric(properties: dict[str, Any], *candidate_keys: str) -> float 
     return None
 
 
+def _bbox_diagonal_length(bbox: dict[str, Any]) -> float | None:
+    """Length of a straight segment from its bounding box diagonal.
+
+    Model Derivative does not expose a "Length" property for plain LINE
+    entities (only polylines get one), so a segment referenced from a plan /
+    legend used to come through unmeasurable. For a straight line the bbox
+    diagonal equals the true length, which recovers the measurement. Returns
+    None when the bbox is not a structured {min:{x,y}, max:{x,y}} pair (e.g.
+    APS returned it as a raw string) so the caller falls back to no length.
+    """
+    if not isinstance(bbox, dict):
+        return None
+    lo, hi = bbox.get("min"), bbox.get("max")
+    if not isinstance(lo, dict) or not isinstance(hi, dict):
+        return None
+    try:
+        dx = float(hi.get("x")) - float(lo.get("x"))
+        dy = float(hi.get("y")) - float(lo.get("y"))
+    except (TypeError, ValueError):
+        return None
+    diagonal = math.hypot(dx, dy)
+    return diagonal if diagonal > 0 else None
+
+
 def _geometry_hint_record(
     obj: dict[str, Any],
     layer: str,
     entity_type: str,
     properties: dict[str, Any],
 ) -> dict[str, Any]:
+    bbox = _extract_bbox(properties)
+    length = _extract_numeric(properties, "Length", "Perimeter")
+    # Recover the length of a plain LINE from its bbox when APS gives no
+    # explicit Length (only valid for straight segments, not arcs/polylines).
+    if length is None and entity_type.strip().lower() == "line":
+        length = _bbox_diagonal_length(bbox)
     return {
         "layer": layer,
         "entity_type": entity_type,
         "name": str(obj.get("name", "")).strip(),
         "handle": _extract_handle(properties),
-        "length": _extract_numeric(properties, "Length", "Perimeter"),
+        "length": length,
         "area": _extract_numeric(properties, "Area"),
         "radius": _extract_numeric(properties, "Radius"),
-        "bbox": _extract_bbox(properties),
+        "bbox": bbox,
     }
 
 

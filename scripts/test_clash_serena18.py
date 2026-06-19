@@ -88,8 +88,8 @@ def main() -> None:
     upload_and_tag_files(headers, project_uuid, folder_uuid)
     verify_inventory(headers, project_uuid, folder_uuid)
     enqueue_job(headers, project_uuid, folder_uuid)
-    poll_job(headers, project_uuid)
-    get_report(headers, project_uuid)
+    elapsed = poll_job(headers, project_uuid)
+    get_report(headers, project_uuid, elapsed_s=elapsed)
 
     print("\n" + "=" * 60)
     print("  Pipeline completado exitosamente")
@@ -203,10 +203,11 @@ def enqueue_job(headers: dict, project_uuid: str, folder_uuid: str) -> str:
     return data["id"]
 
 
-def poll_job(headers: dict, project_uuid: str) -> dict:
+def poll_job(headers: dict, project_uuid: str) -> float:
     step("7. Polling hasta completar")
     deadline = time.time() + POLL_TIMEOUT
     last_status = None
+    started = time.time()
     while time.time() < deadline:
         r = requests.get(
             f"{BASE_URL}/api/projects/{project_uuid}/clash/jobs/latest",
@@ -216,19 +217,27 @@ def poll_job(headers: dict, project_uuid: str) -> dict:
             fail(f"Poll falló {r.status_code}: {r.text}")
         data = r.json()
         status = data["status"]
+        progress = data.get("progress") or {}
         if status != last_status:
             print(f"     status={status}")
             last_status = status
+        if progress.get("total"):
+            print(
+                f"     progress={progress.get('processed', 0)}/{progress.get('total')} "
+                f"phase={progress.get('phase')} elapsed={progress.get('elapsed_s')}s"
+            )
         if status == "completed":
-            ok("Job completado")
-            return data
+            elapsed = round(time.time() - started, 1)
+            ok(f"Job completado en {elapsed}s")
+            return elapsed
         if status == "failed":
             fail(f"Job falló: {data.get('error')}")
         time.sleep(POLL_INTERVAL)
     fail(f"Timeout esperando el job ({POLL_TIMEOUT}s)")
+    return 0.0
 
 
-def get_report(headers: dict, project_uuid: str) -> None:
+def get_report(headers: dict, project_uuid: str, *, elapsed_s: float | None = None) -> None:
     step("8. Obtener reporte de coordinación")
     r = requests.get(
         f"{BASE_URL}/api/projects/{project_uuid}/structural-analysis-report",
@@ -243,6 +252,8 @@ def get_report(headers: dict, project_uuid: str) -> None:
     docs = report.get("analyzed_documents", [])
 
     ok(f"run_status={report.get('run_status')} analysis_mode={report.get('analysis_mode')}")
+    if elapsed_s is not None:
+        ok(f"benchmark_elapsed_s={elapsed_s}")
     ok(f"errors={summary.get('errors')} warnings={summary.get('warnings')} ok={summary.get('ok')}")
     ok(f"clashes={len(clashes)} docs={len(docs)}")
 

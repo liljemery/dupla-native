@@ -1,0 +1,65 @@
+# (d) Motor de derivacion - ARQUITECTURA.
+#
+# El quantifier base mide wall_net_area, floor_area, ceiling_area pero NO deriva
+# el trabajo de acabado real. Estas reglas lo agregan. El motor solo crea un tipo
+# derivado si el elemento no lo tiene ya medido (anti doble-conteo), y consume
+# project_parameters.desperdicios para el factor de desperdicio.
+#
+# Campos por regla:
+#   id            identificador unico de la regla
+#   from          item_type base del que deriva
+#   to            item_type derivado (debe estar en budget_item_types de la disciplina)
+#   unit          unidad del derivado
+#   multiplier    factor de cantidad (p.ej. 2.0 = dos caras)
+#   waste         (opcional) llave en desperdicios -> se guarda en inputs
+#   inflate_with_waste (opcional) si true, cantidad *= (1+desperdicio)
+#   when_context_any   (opcional) solo aplica si el contexto del elemento contiene alguno
+#   summary       texto de la partida
+
+derivations:
+  - id: wall_plaster_2faces
+    from: wall_net_area
+    to: wall_finish_plaster
+    unit: m2
+    multiplier: 2.0
+    waste: mortero
+    summary: "Panete/repello en muros (2 caras)"
+
+  - id: wall_paint_2faces
+    from: wall_net_area
+    to: wall_finish_paint
+    unit: m2
+    multiplier: 2.0
+    waste: pintura
+    summary: "Pintura en muros (2 caras)"
+
+  - id: wall_waterproofing_wet
+    from: wall_net_area
+    to: wall_waterproofing
+    unit: m2
+    multiplier: 1.0
+    when_context_any: [exterior, bano, bathroom, wet, humedo, lavanderia, cocina]
+    summary: "Impermeabilizacion en muros humedos/exteriores"
+
+  - id: floor_screed
+    from: floor_area
+    to: floor_screed
+    unit: m2
+    multiplier: 1.0
+    summary: "Contrapiso / mortero de nivelacion en pisos"
+
+  - id: ceiling_plaster
+    from: ceiling_area
+    to: ceiling_finish_plaster
+    unit: m2
+    multiplier: 1.0
+    waste: mortero
+    summary: "Panete/empaste en cielo raso"
+
+  - id: ceiling_paint
+    from: ceiling_area
+    to: ceiling_finish_paint
+    unit: m2
+    multiplier: 1.0
+    waste: pintura
+    summary: "Pintura en cielo raso"
