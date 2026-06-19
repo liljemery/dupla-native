@@ -220,7 +220,7 @@ export function TaskboardCardModal({ token, card, assignees, readOnly, onClose, 
               <div>
                 <div className="du-label">Descripción</div>
                 {card.description?.trim() ? (
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-ink">{card.description}</p>
+                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{card.description}</p>
                 ) : (
                   <p className="mt-1 text-sm text-muted">Sin descripción.</p>
                 )}
