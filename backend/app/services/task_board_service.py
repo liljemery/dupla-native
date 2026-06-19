@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.models.project import Project
 from app.models.task_board import TaskCard, TaskCardComment, TaskList
 from app.models.user import User, UserModule, UserRole
+from app.repositories.permission_repository import PermissionRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -32,6 +33,7 @@ class TaskBoardService:
         self._session = session
         self._workspace_id = workspace_id
         self._users = UserRepository(session)
+        self._perm_repo = PermissionRepository(session)
         self._projects = ProjectRepository(session)
         self._workspaces = WorkspaceRepository(session)
 
@@ -525,13 +527,13 @@ class TaskBoardService:
         mid = settings.architecture_module_id
         assignee: Optional[uuid.UUID] = None
         for role in preferred_roles:
-            uid = await self._users.first_team_member_with_role(project_id, role)
+            uid = await self._users.first_team_member_with_role(project_id, role.value, self._perm_repo)
             if uid is not None:
                 assignee = uid
                 break
         if assignee is None:
             for role in preferred_roles:
-                ids = await self._users.list_ids_by_module_and_roles(mid, [role])
+                ids = await self._users.list_ids_by_module_and_roles(mid, [role.value], self._perm_repo)
                 if ids:
                     assignee = ids[0]
                     break

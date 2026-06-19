@@ -1,5 +1,4 @@
 import { canViewBudget, isBudgetWorkflowPhase } from '../lib/accessPermissions'
-import type { UserRole } from './userRoles'
 
 export type PhaseHint = {
   title: string
@@ -61,8 +60,8 @@ export const PHASE_WORKSPACE_HINTS: Record<string, PhaseHint> = {
 
 export function phaseWorkspaceHintForRole(
   phase: string,
-  role: UserRole | null,
+  permissions: readonly string[] | null | undefined,
 ): PhaseHint | undefined {
-  if (!canViewBudget(role) && isBudgetWorkflowPhase(phase)) return undefined
+  if (!canViewBudget(permissions) && isBudgetWorkflowPhase(phase)) return undefined
   return PHASE_WORKSPACE_HINTS[phase]
 }

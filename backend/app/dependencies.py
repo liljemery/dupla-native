@@ -8,11 +8,12 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.domain.user_permissions import can_view_budget, has_elevated_access, is_gerencia
+from app.domain.user_permissions import has_workspace_access_all
 from app.domain.workspace_context import WorkspaceContext
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.services.auth_service import AuthService
+from app.services.permission_service import PermissionService
 
 WORKSPACE_HEADER = "x-workspace-uuid"
 
@@ -37,6 +38,14 @@ async def get_auth_service(session: Annotated[AsyncSession, Depends(get_db)]) ->
     return AuthService(session)
 
 
+async def get_permission_service(
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> PermissionService:
+    svc = PermissionService(session)
+    await svc.ensure_catalog()
+    return svc
+
+
 async def get_current_user(
     request: Request,
     token: Annotated[str, Depends(oauth2_scheme)],
@@ -52,17 +61,38 @@ async def get_current_user(
     return user
 
 
-async def require_elevated_access(current: Annotated[User, Depends(get_current_user)]) -> User:
-    if not has_elevated_access(current):
+def require_permission(permission_key: str):
+    async def _dep(
+        current: Annotated[User, Depends(get_current_user)],
+        perm_svc: Annotated[PermissionService, Depends(get_permission_service)],
+    ) -> User:
+        if not await perm_svc.has(current, permission_key):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado",
+            )
+        return current
+
+    return _dep
+
+
+async def require_elevated_access(
+    current: Annotated[User, Depends(get_current_user)],
+    perm_svc: Annotated[PermissionService, Depends(get_permission_service)],
+) -> User:
+    if not await perm_svc.has(current, "admin.access"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Se requiere rol Gerencia o Líder de equipo",
+            detail="Se requiere acceso elevado",
         )
     return current
 
 
-async def require_gerencia(current: Annotated[User, Depends(get_current_user)]) -> User:
-    if not is_gerencia(current):
+async def require_gerencia(
+    current: Annotated[User, Depends(get_current_user)],
+    perm_svc: Annotated[PermissionService, Depends(get_permission_service)],
+) -> User:
+    if not await perm_svc.has(current, "admin.permissions.manage"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Se requiere rol Gerencia",
@@ -70,40 +100,27 @@ async def require_gerencia(current: Annotated[User, Depends(get_current_user)]) 
     return current
 
 
-async def require_budget_access(current: Annotated[User, Depends(get_current_user)]) -> User:
-    if not can_view_budget(current):
+async def require_budget_access(
+    current: Annotated[User, Depends(get_current_user)],
+    perm_svc: Annotated[PermissionService, Depends(get_permission_service)],
+) -> User:
+    if not await perm_svc.has(current, "budget.view"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="El rol Arquitectura no tiene acceso a presupuesto",
+            detail="Sin acceso a presupuesto",
         )
     return current
 
 
-async def require_task_creator(current: Annotated[User, Depends(get_current_user)]) -> User:
-    if current.role not in (
-        UserRole.GERENCIA,
-        UserRole.CONTROL,
-        UserRole.PRESUPUESTO,
-        UserRole.ARQUITECTURA,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No autorizado",
-        )
+async def require_task_creator(
+    current: Annotated[User, Depends(get_current_user)],
+) -> User:
     return current
 
 
-async def require_task_operator(current: Annotated[User, Depends(get_current_user)]) -> User:
-    if current.role not in (
-        UserRole.GERENCIA,
-        UserRole.CONTROL,
-        UserRole.PRESUPUESTO,
-        UserRole.ARQUITECTURA,
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="No autorizado",
-        )
+async def require_task_operator(
+    current: Annotated[User, Depends(get_current_user)],
+) -> User:
     return current
 
 
@@ -111,18 +128,19 @@ async def get_workspace_context(
     request: Request,
     current: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
+    perm_svc: Annotated[PermissionService, Depends(get_permission_service)],
 ) -> WorkspaceContext:
     repo = WorkspaceRepository(session)
-    if is_gerencia(current):
+    if await has_workspace_access_all(current, perm_svc):
         header = request.headers.get(WORKSPACE_HEADER)
         if header and header.strip():
             try:
                 ws_uuid = UUID(header.strip())
-            except ValueError:
+            except ValueError as exc:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="X-Workspace-Uuid inválido",
-                )
+                ) from exc
             ws = await repo.get_by_uuid(ws_uuid)
             if ws is None:
                 raise HTTPException(

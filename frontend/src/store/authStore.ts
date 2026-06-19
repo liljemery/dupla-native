@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 
 import { apiFetch } from '../api/client'
 import type { UserRole } from '../constants/userRoles'
+import { hasPermission } from '../lib/accessPermissions'
 import { invalidateAdminUsersDirectoryCache } from '../lib/adminUsersDirectoryCache'
 import { AUTH_PERSIST_KEY } from './authConstants'
 
@@ -20,8 +21,11 @@ export type MeProfile = {
   first_name: string
   last_name: string
   role: Role
+  role_uuids?: string[]
+  role_slugs?: string[]
+  role_names?: string[]
+  permissions?: string[]
   must_change_password?: boolean
-  is_team_leader?: boolean
   active_workspace_uuid?: string | null
   active_workspace_name?: string | null
   available_workspaces?: WorkspaceOption[]
@@ -33,12 +37,15 @@ type AuthState = {
   firstName: string | null
   lastName: string | null
   role: Role | null
+  roleUuids: string[]
+  roleSlugs: string[]
+  permissions: string[]
   userUuid: string | null
   mustChangePassword: boolean
-  isTeamLeader: boolean
   activeWorkspaceUuid: string | null
   activeWorkspaceName: string | null
   availableWorkspaces: WorkspaceOption[]
+  hasPermission: (key: string) => boolean
   setSession: (
     token: string,
     email: string,
@@ -47,7 +54,7 @@ type AuthState = {
     firstName: string,
     lastName: string,
     mustChangePassword?: boolean,
-    isTeamLeader?: boolean,
+    permissions?: string[],
     workspace?: {
       activeWorkspaceUuid?: string | null
       activeWorkspaceName?: string | null
@@ -86,12 +93,15 @@ export const useAuthStore = create<AuthState>()(
       firstName: null,
       lastName: null,
       role: null,
+      roleUuids: [],
+      roleSlugs: [],
+      permissions: [],
       userUuid: null,
       mustChangePassword: false,
-      isTeamLeader: false,
       activeWorkspaceUuid: null,
       activeWorkspaceName: null,
       availableWorkspaces: [],
+      hasPermission: (key) => hasPermission(get().permissions, key),
       setSession: (
         token,
         email,
@@ -100,7 +110,7 @@ export const useAuthStore = create<AuthState>()(
         firstName,
         lastName,
         mustChangePassword = false,
-        isTeamLeader = false,
+        permissions = [],
         workspace,
       ) =>
         set({
@@ -111,7 +121,9 @@ export const useAuthStore = create<AuthState>()(
           firstName,
           lastName,
           mustChangePassword,
-          isTeamLeader,
+          permissions,
+          roleSlugs: [],
+          roleUuids: [],
           activeWorkspaceUuid: workspace?.activeWorkspaceUuid ?? null,
           activeWorkspaceName: workspace?.activeWorkspaceName ?? null,
           availableWorkspaces: workspace?.availableWorkspaces ?? [],
@@ -126,7 +138,9 @@ export const useAuthStore = create<AuthState>()(
           role: profile.role,
           userUuid: profile.uuid,
           mustChangePassword: profile.must_change_password ?? get().mustChangePassword,
-          isTeamLeader: profile.is_team_leader ?? false,
+          permissions: profile.permissions ?? [],
+          roleUuids: profile.role_uuids ?? [],
+          roleSlugs: profile.role_slugs ?? [],
           ...ws,
         })
       },
@@ -147,9 +161,11 @@ export const useAuthStore = create<AuthState>()(
           firstName: null,
           lastName: null,
           role: null,
+          roleUuids: [],
+          roleSlugs: [],
+          permissions: [],
           userUuid: null,
           mustChangePassword: false,
-          isTeamLeader: false,
           activeWorkspaceUuid: null,
           activeWorkspaceName: null,
           availableWorkspaces: [],
@@ -181,7 +197,9 @@ export const useAuthStore = create<AuthState>()(
           role: profile.role,
           userUuid: profile.uuid,
           mustChangePassword,
-          isTeamLeader: profile.is_team_leader ?? false,
+          permissions: profile.permissions ?? [],
+          roleUuids: profile.role_uuids ?? [],
+          roleSlugs: profile.role_slugs ?? [],
           ...ws,
         })
         return mustChangePassword

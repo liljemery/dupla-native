@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID
+
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
 from app.models.user import UserRole
@@ -10,7 +12,7 @@ class AdminCreateUserRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=120)
     last_name: str = Field(min_length=1, max_length=120)
     password: str = Field(min_length=8, max_length=128)
-    role: UserRole
+    role_uuids: list[UUID] = Field(min_length=1)
     module_ids: list[int] = Field(default_factory=lambda: [1])
 
     @field_validator("first_name", "last_name")
@@ -85,10 +87,9 @@ class AdminUpdateUserRequest(BaseModel):
     email: EmailStr
     first_name: str = Field(min_length=1, max_length=120)
     last_name: str = Field(min_length=1, max_length=120)
-    role: UserRole
+    role_uuids: list[UUID] = Field(min_length=1)
     module_ids: list[int] = Field(default_factory=lambda: [1])
     password: str | None = Field(None, min_length=8, max_length=128)
-    is_team_leader: bool | None = None
 
     @field_validator("first_name", "last_name")
     @classmethod

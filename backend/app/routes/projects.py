@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user, get_workspace_context, require_elevated_access
+from app.dependencies import get_current_user, get_workspace_context, require_permission
 from app.domain.workspace_context import WorkspaceContext
 from app.domain.project_kind import ProjectKind
 from app.models.user import User
@@ -99,7 +99,7 @@ async def list_projects(
     ),
 )
 async def create_project(
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("projects.create"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     name: str = Form(...),
@@ -212,7 +212,7 @@ async def list_project_members(
 async def put_project_members(
     project_uuid: UUID,
     body: ProjectMembersPutRequest,
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("projects.create"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:

@@ -37,7 +37,7 @@ export function ProjectConfigModal({
   onClose,
   projectUuid,
   token,
-  role,
+  role: _role,
   project,
   projectError,
   onProjectSaved,
@@ -51,8 +51,8 @@ export function ProjectConfigModal({
   setMembersMsg,
   setMemberRows,
 }: ProjectConfigModalProps) {
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role as import('../constants/userRoles').UserRole | null, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
   const [name, setName] = useState('')
   const [clientName, setClientName] = useState('')
   const [projectCode, setProjectCode] = useState('')

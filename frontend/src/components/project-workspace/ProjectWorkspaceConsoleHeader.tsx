@@ -55,15 +55,15 @@ export function ProjectWorkspaceConsoleHeader({
   tab,
   onSelectTab,
   onOpenConfig,
-  role,
+  role: _role,
   viewBudget,
   onGoPresupuesto,
   phaseLabel,
   clientName,
   deadline,
 }: ProjectWorkspaceConsoleHeaderProps) {
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role as import('../../constants/userRoles').UserRole | null, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
   const consoleTabs = CONSOLE_TABS.filter((t) => viewBudget || t.id !== 'presupuestoMaestro')
 
   const metadataParts = [

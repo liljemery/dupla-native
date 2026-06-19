@@ -1,14 +1,11 @@
 import { z } from 'zod'
 
-import { USER_ROLES } from '../constants/userRoles'
-
-const roleEnum = z.enum(USER_ROLES)
-
 const baseFields = {
   first_name: z.string().min(1, 'Requerido').max(120, 'Máximo 120 caracteres'),
   last_name: z.string().min(1, 'Requerido').max(120, 'Máximo 120 caracteres'),
   email: z.string().min(1, 'Requerido').email('Correo inválido'),
-  role: roleEnum,
+  primaryRoleUuid: z.string().uuid('Selecciona un rol'),
+  teamLeader: z.boolean().optional(),
   architectureAccess: z.boolean(),
 }
 
@@ -28,7 +25,6 @@ export const adminEditUserSchema = z
   .object({
     ...baseFields,
     password: z.string().max(128),
-    isTeamLeader: z.boolean().optional(),
   })
   .refine((d) => d.architectureAccess, {
     message: 'Debe concederse acceso a la plataforma (módulos asignados).',

@@ -23,9 +23,8 @@ import { useAuthStore } from '../store/authStore'
 
 export function FlowsHubPage() {
   const token = useAuthStore((s) => s.token)
-  const role = useAuthStore((s) => s.role)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
 
   const [q, setQ] = useState('')
   const [rows, setRows] = useState<WorkflowTemplateListItem[]>([])

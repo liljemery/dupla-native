@@ -76,8 +76,7 @@ function scrollToWrittenGuide(): void {
 
 export function TutorialesPage() {
   const navigate = useNavigate()
-  const role = useAuthStore((s) => s.role)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
   const [filter, setFilter] = useState<TutorialsGuidesFilter>('primeros')
 
   const recorridos = useMemo<Recorrido[]>(
@@ -91,7 +90,7 @@ export function TutorialesPage() {
         Icon: PanelLeft,
         durationLabel: '~3 min',
         isNew: true,
-        onStart: () => startSidebarTour(role, isTeamLeader),
+        onStart: () => startSidebarTour(permissions),
       },
       {
         id: 'chat',
@@ -112,7 +111,7 @@ export function TutorialesPage() {
         Icon: FolderKanban,
         durationLabel: '~5 min',
         isNew: true,
-        onStart: () => startProjectsTour(navigate, role, isTeamLeader),
+        onStart: () => startProjectsTour(navigate, permissions),
       },
       {
         id: 'workspace',
@@ -155,7 +154,7 @@ export function TutorialesPage() {
         onStart: () => startTasksTour(navigate),
       },
     ],
-    [navigate, role, isTeamLeader],
+    [navigate, permissions],
   )
 
   return (

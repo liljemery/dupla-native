@@ -23,7 +23,8 @@ from app.services.workspace_bootstrap_service import bootstrap_workspace_resourc
 from app.models.module import Module
 from app.models.project import Project, ProjectArchitectureData
 from app.models.task_board import TaskCard, TaskList
-from app.models.user import User, UserModule, UserRole
+from app.models.user import User, UserRole
+from app.repositories.permission_repository import PermissionRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.repositories.workflow_template_repository import WorkflowTemplateRepository
@@ -109,11 +110,14 @@ async def _ensure_user(
             first_name=first_name,
             last_name=last_name,
             password_hash=hash_password(password_plain),
-            role=role,
             must_change_password=False,
         )
     )
     session.add(UserModule(user_id=uid, module_id=1))
+    await session.flush()
+    perm_repo = PermissionRepository(session)
+    await perm_repo.ensure_catalog()
+    await perm_repo.assign_roles_by_slugs(uid, [role.value])
 
 
 def _seed_workflow_meta() -> dict[str, Any]:

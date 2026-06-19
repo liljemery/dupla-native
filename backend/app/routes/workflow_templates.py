@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import require_elevated_access, get_current_user, get_workspace_context
+from app.dependencies import require_permission, get_current_user, get_workspace_context
 from app.domain.workspace_context import WorkspaceContext
 from app.models.user import User
 from app.models.workflow_template import WorkflowTemplate
@@ -31,7 +31,7 @@ def _card_icon_for_template(t: WorkflowTemplate) -> str:
 
 @router.get("", response_model=list[WorkflowTemplateListItemResponse])
 async def list_workflow_templates(
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("workflow.templates.manage"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     q: Annotated[Optional[str], Query(description="Buscar por nombre de flujo o de proyecto")] = None,
@@ -77,7 +77,7 @@ async def list_active_templates_short(
 )
 async def delete_workflow_template(
     template_uuid: UUID,
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("workflow.templates.manage"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> None:
@@ -100,7 +100,7 @@ async def get_workflow_template(
 @router.post("", response_model=WorkflowTemplateDetailResponse, status_code=status.HTTP_201_CREATED)
 async def post_workflow_template(
     body: WorkflowTemplateCreateRequest,
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("workflow.templates.manage"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> WorkflowTemplateDetailResponse:
@@ -115,7 +115,7 @@ async def post_workflow_template(
 async def patch_workflow_template(
     template_uuid: UUID,
     body: WorkflowTemplatePatchRequest,
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("workflow.templates.manage"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> WorkflowTemplateDetailResponse:
@@ -136,7 +136,7 @@ async def patch_workflow_template(
 async def put_workflow_template_steps(
     template_uuid: UUID,
     body: WorkflowTemplateStepsPutRequest,
-    current: Annotated[User, Depends(require_elevated_access)],
+    current: Annotated[User, Depends(require_permission("workflow.templates.manage"))],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> WorkflowTemplateDetailResponse:

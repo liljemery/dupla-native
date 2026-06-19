@@ -9,17 +9,20 @@ export const BUDGET_WORKFLOW_PHASES = new Set([
   'BUDGET_APPROVED',
 ])
 
-export function canViewBudget(role: UserRole | null): boolean {
-  return role !== 'ARQUITECTURA'
+export function hasPermission(permissions: readonly string[] | null | undefined, key: string): boolean {
+  return (permissions ?? []).includes(key)
+}
+
+export function canViewBudget(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'budget.view')
 }
 
 export function isBudgetWorkspaceTab(tabId: string): boolean {
   return (BUDGET_WORKSPACE_TAB_IDS as readonly string[]).includes(tabId)
 }
 
-/** Etiqueta de fase sin exponer presupuesto a Arquitectura. */
-export function workflowPhaseLabelForRole(phase: string, role: UserRole | null): string {
-  if (canViewBudget(role) || !BUDGET_WORKFLOW_PHASES.has(phase)) {
+export function workflowPhaseLabelForRole(phase: string, permissions: readonly string[] | null | undefined): string {
+  if (canViewBudget(permissions) || !BUDGET_WORKFLOW_PHASES.has(phase)) {
     return WORKFLOW_PHASE_LABELS[phase as keyof typeof WORKFLOW_PHASE_LABELS] ?? phase
   }
   return 'Etapa operativa'
@@ -29,28 +32,32 @@ export function isBudgetWorkflowPhase(phase: string): boolean {
   return BUDGET_WORKFLOW_PHASES.has(phase)
 }
 
-export function workflowStepTitleForRole(title: string, role: UserRole | null): string {
-  if (canViewBudget(role)) return title
+export function workflowStepTitleForRole(title: string, permissions: readonly string[] | null | undefined): string {
+  if (canViewBudget(permissions)) return title
   if (/presupuesto/i.test(title)) return 'Etapa operativa'
   return title
 }
 
-export function hasElevatedAccess(role: UserRole | null, isTeamLeader: boolean): boolean {
-  return role === 'GERENCIA' || isTeamLeader
+export function hasElevatedAccess(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'admin.access')
 }
 
-export function canCreateUsers(role: UserRole | null): boolean {
-  return role === 'GERENCIA'
+export function canCreateUsers(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'admin.users.create')
 }
 
-export function canAssignTeamLeader(role: UserRole | null): boolean {
-  return role === 'GERENCIA'
+export function canManagePermissions(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'admin.permissions.manage')
 }
 
-export function canMarkControlReview(role: UserRole | null, isTeamLeader: boolean): boolean {
-  return role === 'CONTROL' || hasElevatedAccess(role, isTeamLeader)
+export function canMarkControlReview(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'lifecycle.control_review')
 }
 
-export function canApproveSpecifications(role: UserRole | null, isTeamLeader: boolean): boolean {
-  return role === 'ARQUITECTURA' || hasElevatedAccess(role, isTeamLeader)
+export function canApproveSpecifications(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'lifecycle.approve_specs')
+}
+
+export function isFieldRole(role: UserRole | null): boolean {
+  return role === 'PRESUPUESTO' || role === 'ARQUITECTURA'
 }

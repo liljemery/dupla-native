@@ -1,6 +1,5 @@
 import { WORKFLOW_PHASE_ORDER } from '../../constants/workflowPhases'
 import { workflowPhaseLabelForRole, workflowStepTitleForRole } from '../../lib/accessPermissions'
-import type { UserRole } from '../../constants/userRoles'
 
 export type TemplateStepProgress = {
   /** 1-based índice del paso actual en la plantilla */
@@ -30,7 +29,7 @@ type WorkflowPhaseStepperProps = {
   templateSteps?: { uuid: string; title: string }[] | null
   currentWorkflowStepUuid?: string | null
   viewBudget?: boolean
-  role?: UserRole | null
+  permissions?: readonly string[] | null
 }
 
 export function WorkflowPhaseStepper({
@@ -41,13 +40,13 @@ export function WorkflowPhaseStepper({
   templateSteps,
   currentWorkflowStepUuid,
   viewBudget = true,
-  role = null,
+  permissions = null,
 }: WorkflowPhaseStepperProps) {
   const totalLegacy = WORKFLOW_PHASE_ORDER.length
   const activeLegacyIdx = phaseStepIndex(workflowPhase)
-  const phaseFallbackLabel = workflowPhaseLabelForRole(workflowPhase, role)
+  const phaseFallbackLabel = workflowPhaseLabelForRole(workflowPhase, permissions)
   const titleLine = stepTitle?.trim()
-    ? workflowStepTitleForRole(stepTitle.trim(), role)
+    ? workflowStepTitleForRole(stepTitle.trim(), permissions)
     : phaseFallbackLabel
 
   if (compact) {
@@ -105,7 +104,7 @@ export function WorkflowPhaseStepper({
             {stepsForStrip.map((s, i) => {
               const isDone = i < activeIdx
               const isActive = i === activeIdx
-              const stepLabel = workflowStepTitleForRole(s.title.trim() || `Paso ${i + 1}`, role)
+              const stepLabel = workflowStepTitleForRole(s.title.trim() || `Paso ${i + 1}`, permissions)
               return (
                 <div key={s.uuid} className="flex items-start">
                   {i > 0 ? (
@@ -177,7 +176,7 @@ export function WorkflowPhaseStepper({
           {WORKFLOW_PHASE_ORDER.map((key, i) => {
             const isDone = i < activeLegacyIdx
             const isActive = i === activeLegacyIdx
-            const stepLabel = workflowPhaseLabelForRole(key, role)
+            const stepLabel = workflowPhaseLabelForRole(key, permissions)
             return (
               <div key={key} className="flex items-start">
                 {i > 0 ? (

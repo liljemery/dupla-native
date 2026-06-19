@@ -3,6 +3,7 @@ import socket
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 import pytest
 import pytest_asyncio
@@ -20,6 +21,7 @@ from app.models.module import Module
 from app.models.plan_delivery_request import PlanDeliveryRequest  # noqa: F401 — metadata for create_all
 from app.models.project_member import ProjectMember  # noqa: F401 — metadata for create_all
 from app.models.user import User, UserModule, UserRole
+from app.repositories.permission_repository import PermissionRepository
 from app.models.workspace import DEFAULT_WORKSPACE_UUID, Workspace, WorkspaceMember
 from app.security.password import hash_password
 from app.services.workspace_bootstrap_service import bootstrap_workspace_resources
@@ -45,10 +47,16 @@ def _postgres_reachable(host: str, port: int) -> bool:
         return False
 
 
+def _postgres_host_port(database_url: str) -> tuple[str, int]:
+    parsed = urlparse(database_url.replace("+asyncpg", ""))
+    return parsed.hostname or "127.0.0.1", parsed.port or 5432
+
+
 @pytest_asyncio.fixture(scope="session")
 async def engine(database_url: str):
-    if not _postgres_reachable("127.0.0.1", 5432):
-        pytest.skip("PostgreSQL not reachable on 127.0.0.1:5432 (start local Postgres)")
+    host, port = _postgres_host_port(database_url)
+    if not _postgres_reachable(host, port):
+        pytest.skip(f"PostgreSQL not reachable on {host}:{port} (start local Postgres)")
     eng = create_async_engine(database_url, echo=False)
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
@@ -64,7 +72,6 @@ def _add_user(
     first_name: str,
     last_name: str,
     password: str,
-    role: UserRole,
     workspace_id: uuid.UUID,
 ) -> uuid.UUID:
     user_id = uuid.uuid4()
@@ -75,7 +82,6 @@ def _add_user(
             first_name=first_name,
             last_name=last_name,
             password_hash=hash_password(password),
-            role=role,
             must_change_password=False,
             active_workspace_id=workspace_id,
         )
@@ -95,7 +101,8 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
                 "plan_delivery_requests, project_clash_items, project_clash_jobs, project_control_points, project_budget_jobs, project_files, project_events, project_members, "
                 "chat_messages, chat_conversation_members, chat_conversations, task_cards, task_lists, "
                 "workflow_template_steps, workflow_templates, project_architecture_data, projects, "
-                "workspace_members, workspaces, user_modules, users, modules "
+                "workspace_members, workspaces, user_permission_overrides, user_role_assignments, "
+                "role_permissions, roles, permissions, user_modules, users, modules "
                 "RESTART IDENTITY CASCADE"
             )
         )
@@ -112,33 +119,38 @@ async def session(engine) -> AsyncGenerator[AsyncSession, None]:
         )
         await s.flush()
 
-        _add_user(
+        await s.flush()
+
+        perm_repo = PermissionRepository(s)
+        await perm_repo.ensure_catalog()
+
+        master_id = _add_user(
             s,
             email="master@dupla.demo",
             first_name="María",
             last_name="López",
             password="master123",
-            role=UserRole.GERENCIA,
             workspace_id=DEFAULT_WORKSPACE_UUID,
         )
-        _add_user(
+        tester_id = _add_user(
             s,
             email="tester@dupla.demo",
             first_name="Carlos",
             last_name="Ruiz",
             password="testpass123",
-            role=UserRole.CONTROL,
             workspace_id=DEFAULT_WORKSPACE_UUID,
         )
-        _add_user(
+        worker_id = _add_user(
             s,
             email="worker@dupla.demo",
             first_name="Ana",
             last_name="Martín",
             password="workerpass123",
-            role=UserRole.PRESUPUESTO,
             workspace_id=DEFAULT_WORKSPACE_UUID,
         )
+        await perm_repo.assign_roles_by_slugs(master_id, [UserRole.GERENCIA.value])
+        await perm_repo.assign_roles_by_slugs(tester_id, [UserRole.CONTROL.value])
+        await perm_repo.assign_roles_by_slugs(worker_id, [UserRole.PRESUPUESTO.value])
 
         await bootstrap_workspace_resources(s, DEFAULT_WORKSPACE_UUID)
         await s.commit()

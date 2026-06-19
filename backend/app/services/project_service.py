@@ -10,7 +10,7 @@ from app.config import get_settings
 from app.domain.project_kind import ProjectKind
 from app.domain.workflow_template_phase import effective_workflow_phase_for_step
 from app.domain.project_updated import touch_project_updated_at
-from app.domain.user_permissions import has_elevated_access
+from app.services.permission_service import PermissionService
 from app.models.project import Project
 from app.models.user import User, UserRole
 from app.repositories.project_repository import ProjectRepository
@@ -23,10 +23,12 @@ settings = get_settings()
 
 class ProjectService:
     def __init__(self, session: AsyncSession, workspace_id: UUID) -> None:
+        self._session = session
         self._workspace_id = workspace_id
         self._projects = ProjectRepository(session)
         self._users = UserRepository(session)
         self._workflow_templates = WorkflowTemplateRepository(session)
+        self._perm_svc = PermissionService(session)
 
     async def ensure_architecture_access(self, user: User) -> None:
         ok = await self._users.has_module(user.id, settings.architecture_module_id)
@@ -38,7 +40,7 @@ class ProjectService:
 
     async def list_projects(self, user: User) -> list[Project]:
         await self.ensure_architecture_access(user)
-        is_master = has_elevated_access(user)
+        is_master = await self._perm_svc.has(user, "projects.view_all")
         return await self._projects.list_for_user(
             user.id,
             is_master=is_master,
@@ -50,7 +52,7 @@ class ProjectService:
         tpl = await self._workflow_templates.get_template_by_uuid(template_uuid, self._workspace_id)
         if tpl is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plantilla no encontrada")
-        is_master = has_elevated_access(user)
+        is_master = await self._perm_svc.has(user, "projects.view_all")
         return await self._projects.list_for_template(
             tpl.id,
             is_master=is_master,
@@ -78,7 +80,7 @@ class ProjectService:
         workflow_template_uuid: Optional[UUID] = None,
     ) -> Project:
         await self.ensure_architecture_access(user)
-        if not has_elevated_access(user):
+        if not await self._perm_svc.has(user, "projects.create"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo Gerencia o Líder de equipo puede crear proyectos",
@@ -187,7 +189,9 @@ class ProjectService:
         project = await self._projects.get_by_uuid(project_uuid)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
-        if not await self._projects.user_has_access_to_project(user, project, self._workspace_id):
+        if not await self._projects.user_has_access_to_project(
+            user, project, self._workspace_id, view_all=await self._perm_svc.has(user, "projects.view_all")
+        ):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
         return project
 
@@ -196,7 +200,7 @@ class ProjectService:
         return await self._projects.list_project_member_profiles(project.id)
 
     async def set_project_members(self, master: User, project_uuid: UUID, member_user_uuids: list[UUID]) -> None:
-        if not has_elevated_access(master):
+        if not await self._perm_svc.has(master, "projects.view_all"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo Gerencia o Líder de equipo puede configurar quién ve el proyecto",

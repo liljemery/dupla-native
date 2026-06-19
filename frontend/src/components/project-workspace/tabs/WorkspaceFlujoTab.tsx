@@ -121,8 +121,8 @@ export function WorkspaceFlujoTab({
       { replace: true },
     )
   }, [searchParams, setSearchParams])
-  const roleTyped = role as import('../../../constants/userRoles').UserRole | null
-  const viewBudget = canViewBudget(roleTyped)
+  const permissions = useAuthStore((s) => s.permissions)
+  const viewBudget = canViewBudget(permissions)
   const docHintRaw = project ? WORKFLOW_DOC_PHASE_HINTS[project.workflow_phase] : undefined
   const docHint =
     viewBudget && docHintRaw && !isBudgetWorkflowPhase(project?.workflow_phase ?? '') ? docHintRaw : null
@@ -130,9 +130,8 @@ export function WorkspaceFlujoTab({
     viewBudget &&
     !!project &&
     ['BUDGETING_PIPELINE', 'MANAGEMENT_APPROVAL', 'BUDGET_APPROVED', 'COMPLETE'].includes(project.workflow_phase)
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role as import('../../../constants/userRoles').UserRole | null, isTeamLeader)
-  const canMarkControl = canMarkControlReview(role as import('../../../constants/userRoles').UserRole | null, isTeamLeader)
+  const elevated = hasElevatedAccess(permissions)
+  const canMarkControl = canMarkControlReview(permissions)
   const awaitingBudgetApproval = project?.workflow_phase === 'MANAGEMENT_APPROVAL'
   const missingControlGate = awaitingBudgetApproval && !bpDraft.control_review_done
   const missingClientVersion = awaitingBudgetApproval && !clientVersion.trim()
@@ -180,7 +179,7 @@ export function WorkspaceFlujoTab({
             templateSteps={orderedTemplateSteps}
             currentWorkflowStepUuid={project.current_workflow_step_uuid}
             viewBudget={viewBudget}
-            role={roleTyped}
+            permissions={permissions}
           />
           {docHint ? (
             <p className="rounded-md border border-black/10 bg-black/2 px-3 py-2 text-xs text-muted">{docHint}</p>
@@ -270,7 +269,7 @@ export function WorkspaceFlujoTab({
               successLabel="Fase actualizada"
               runningLabel="Procesando…"
             >
-              Avanzar a: {workflowPhaseLabelForRole(nextPhase, roleTyped)}
+              Avanzar a: {workflowPhaseLabelForRole(nextPhase, permissions)}
             </WorkspaceActionButton>
           ) : (
             <p className="text-sm text-muted">El proyecto completó el flujo definido.</p>

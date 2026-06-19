@@ -28,13 +28,13 @@ export function ProjectWorkspaceFlowAside({
   templateStepProgress,
   nextPhase,
   flowMsg,
-  role,
+  role: _role,
   viewBudget,
   onAdvancePhase,
   onOpenChat,
 }: ProjectWorkspaceFlowAsideProps) {
-  const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
-  const elevated = hasElevatedAccess(role as import('../../constants/userRoles').UserRole | null, isTeamLeader)
+  const permissions = useAuthStore((s) => s.permissions)
+  const elevated = hasElevatedAccess(permissions)
   return (
     <aside className="flex w-full shrink-0 flex-col gap-2 md:w-52 lg:w-56 xl:w-64">
       <Card className="p-3 md:p-4">
@@ -47,7 +47,7 @@ export function ProjectWorkspaceFlowAside({
               templateStepProgress={templateStepProgress}
               stepTitle={phaseLabel}
               viewBudget={viewBudget}
-              role={role as import('../../constants/userRoles').UserRole | null}
+              permissions={permissions}
             />
           </div>
         ) : (
