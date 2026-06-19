@@ -906,8 +906,8 @@ class ClashWorkflowService:
         alt = f"{clash_code}.svg" if annotated else f"{clash_code}_annotated.svg"
         return self._tile_file(job, alt)
 
-    def resolve_aps_cache_root(self, job: ProjectClashJob) -> str | None:
-        """APS viewer/raw cache directory for GA-FO-08 plan backgrounds."""
+    def resolve_coord_cache_root(self, job: ProjectClashJob) -> str | None:
+        """Local CAD JSON cache directory for GA-FO-08 plan backgrounds."""
         override = (os.getenv("COORDINATION_CACHE_ROOT") or "").strip()
         if override:
             cache = Path(override)
@@ -915,13 +915,16 @@ class ClashWorkflowService:
                 return str(cache)
         if job.output_dir:
             out = Path(job.output_dir)
-            for candidate in (out.parent / "aps_cache", out / "aps_cache"):
+            for candidate in (out.parent / "cad_cache", out / "cad_cache", out.parent / "aps_cache", out / "aps_cache"):
                 if candidate.is_dir():
                     return str(candidate)
         for base in (Path.cwd(), Path(__file__).resolve().parents[3]):
-            cache = base / "var" / "coord_outputs" / "aps_cache"
+            cache = base / "var" / "coord_outputs" / "cad_cache"
             if cache.is_dir():
                 return str(cache)
+            legacy = base / "var" / "coord_outputs" / "aps_cache"
+            if legacy.is_dir():
+                return str(legacy)
         return None
 
     def resolve_checklist_logo_path(self) -> str | None:

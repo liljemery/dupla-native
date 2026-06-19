@@ -7,6 +7,9 @@ export type ProjectFileRow = {
   description: string | null
   discipline: string | null
   discipline_classifying?: boolean
+  cad_conversion_status?: string | null
+  cad_conversion_error_code?: string | null
+  cad_companion_dxf?: string | null
   ingest_status: string
   counts_for_budget: boolean
   created_at: string

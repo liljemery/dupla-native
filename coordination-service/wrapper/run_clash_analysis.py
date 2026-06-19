@@ -20,23 +20,19 @@ logger = logging.getLogger(__name__)
 
 _MAC_ODA_CONVERTER = Path("/Applications/ODAFileConverter.app/Contents/MacOS/ODAFileConverter")
 
-FAST_COMPARE_APS_PROFILE = "fast_compare_aps"
 FAST_COMPARE_PROFILE = "fast_compare"
+FAST_COMPARE_LOCAL_PROFILE = "fast_compare_local"
 
 load_project_env()
 
 
 def _shared_cache_root() -> Path:
-    """Persistent APS/accore cache shared across clash jobs."""
+    """Persistent CAD extraction cache shared across clash jobs."""
     return coordination_cache_root()
 
 
 def _max_workers() -> int:
     return max(1, int(os.getenv("COORDINATION_MAX_WORKERS", "6")))
-
-
-def _aps_configured() -> bool:
-    return bool((os.getenv("CLIENT_ID") or "").strip() and (os.getenv("CLIENT_SECRET") or "").strip())
 
 
 def _accore_available() -> bool:
@@ -52,7 +48,8 @@ def _accore_available() -> bool:
     )
     dll = (
         _dupla_root()
-        / "aps_integration"
+        / "coordination"
+        / "tools"
         / "DuplaExtractor"
         / "bin"
         / "Release"
@@ -67,13 +64,9 @@ def _resolve_analysis_profile() -> str:
     override = (os.getenv("COORDINATION_ANALYSIS_PROFILE") or "").strip()
     if override:
         return override
-    # Preferred: scheduling + parallel APS on every OS when credentials exist.
-    if _aps_configured():
-        return FAST_COMPARE_APS_PROFILE
-    # Windows without APS: local accore (still parallel via fast_compare).
     if _accore_available():
         return FAST_COMPARE_PROFILE
-    return FAST_COMPARE_APS_PROFILE
+    return FAST_COMPARE_LOCAL_PROFILE
 
 
 def _extract_filename_from_source_ref(ref: str) -> str:
@@ -276,9 +269,9 @@ def _invoke_runner(
 
     analysis_profile = _resolve_analysis_profile()
     logger.info(
-        "Clash analysis profile=%s aps=%s accore=%s workers=%d",
+        "Clash analysis profile=%s local_cad=%s accore=%s workers=%d",
         analysis_profile,
-        _aps_configured(),
+        True,
         _accore_available(),
         _max_workers(),
     )
@@ -298,9 +291,6 @@ def _invoke_runner(
         "--stage",
         "full",
     ]
-
-    if analysis_profile == FAST_COMPARE_APS_PROFILE:
-        cmd.append("--dwg-via-aps")
 
     cache_root = _shared_cache_root()
     cmd.extend(["--cache-root", str(cache_root), "--max-workers", str(_max_workers())])
@@ -357,42 +347,34 @@ def _convert_dwg_inputs_to_dxf(inputs_dir: Path, output_dir: Path) -> Path | Non
     dwg_files = sorted(Path(inputs_dir).rglob("*.dwg"))
     if not dwg_files:
         return None
-    converter = _oda_converter_path()
-    if converter is None:
-        logger.info("Hybrid geometry DWG→DXF skipped: ODAFileConverter not available")
+
+    dupla_root = _dupla_root()
+    if str(dupla_root) not in sys.path:
+        sys.path.insert(0, str(dupla_root))
+
+    try:
+        from coordination.extraction.cad_cache import file_cache_key
+        from coordination.extraction.libredwg_convert import convert_dwg_to_dxf, dwg2dxf_available, is_binary_dwg
+    except Exception as exc:
+        logger.info("Hybrid geometry DWG→DXF skipped: %s", exc)
+        return None
+
+    if not dwg2dxf_available():
+        logger.info("Hybrid geometry DWG→DXF skipped: dwg2dxf not available")
         return None
 
     dxf_dir = Path(output_dir) / "hybrid_geometry" / "dxf_inputs"
     dxf_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [
-        str(converter),
-        str(inputs_dir),
-        str(dxf_dir),
-        os.getenv("ODA_DXF_VERSION", "ACAD2018"),
-        "DXF",
-        "0",
-        "1",
-    ]
-    logger.info("Converting DWG inputs to DXF for hybrid geometry: %s", " ".join(cmd))
-    try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=_env_int("COORDINATION_DWG_TO_DXF_TIMEOUT_SECONDS", 900),
-        )
-    except Exception as exc:
-        logger.warning("Hybrid geometry DWG→DXF conversion failed: %s", exc, exc_info=True)
-        return None
-    if proc.returncode != 0:
-        logger.warning(
-            "Hybrid geometry DWG→DXF conversion exited %s: %s",
-            proc.returncode,
-            (proc.stderr or proc.stdout or "")[-1200:],
-        )
-        return None
-    if not list(dxf_dir.rglob("*.dxf")):
-        logger.warning("Hybrid geometry DWG→DXF conversion produced no DXF files in %s", dxf_dir)
+    converted = 0
+    for dwg_path in dwg_files:
+        if not is_binary_dwg(dwg_path):
+            continue
+        try:
+            convert_dwg_to_dxf(dwg_path, output_dir=dxf_dir / file_cache_key(dwg_path))
+            converted += 1
+        except Exception as exc:
+            logger.warning("LibreDWG convert failed for %s: %s", dwg_path.name, exc)
+    if converted == 0:
         return None
     return dxf_dir
 
@@ -426,7 +408,12 @@ def _build_hybrid_geometry_artifacts(
         sys.path.insert(0, root_text)
 
     try:
-        from coordination.extraction.hybrid_orchestrator import build_hybrid_artifacts, discover_hybrid_sources
+        from coordination.extraction.hybrid_orchestrator import (
+            build_dxf_only_audit_artifacts,
+            build_hybrid_artifacts,
+            discover_dxf_only_sources,
+            discover_hybrid_sources,
+        )
     except Exception as exc:
         logger.warning("Hybrid geometry modules unavailable: %s", exc)
         return None
@@ -446,10 +433,15 @@ def _build_hybrid_geometry_artifacts(
     sources = discover_hybrid_sources(inputs_dir=inputs_dir, cache_dir=cache_dir, discipline_for_path=discipline_for_path)
     if not sources:
         converted_dir = _convert_dwg_inputs_to_dxf(inputs_dir, output_dir)
+        search_dir = converted_dir if converted_dir is not None else inputs_dir
+        dxf_only = discover_dxf_only_sources(inputs_dir=search_dir, discipline_for_path=discipline_for_path)
+        if dxf_only:
+            logger.info("Hybrid geometry: DXF-only audit for %d source(s)", len(dxf_only))
+            return build_dxf_only_audit_artifacts(dxf_only, output_dir / "hybrid_geometry")
         if converted_dir is not None:
             sources = discover_hybrid_sources(inputs_dir=converted_dir, cache_dir=cache_dir, discipline_for_path=discipline_for_path)
     if not sources:
-        logger.info("Hybrid geometry skipped: no DXF + APS viewer.json source pairs discovered")
+        logger.info("Hybrid geometry skipped: no DXF sources discovered")
         return None
 
     try:
@@ -503,22 +495,6 @@ def _hybrid_geometry_audit_gate(summary: dict[str, Any] | None) -> dict[str, Any
     return result
 
 
-def _aps_diag_by_file() -> dict[str, dict[str, Any]]:
-    """Map file name -> APS diagnostics (result/aps_error) from the shared cache."""
-    out: dict[str, dict[str, Any]] = {}
-    try:
-        cache_root = _shared_cache_root()
-    except Exception:
-        return out
-    if not cache_root.is_dir():
-        return out
-    for diag_path in cache_root.glob("*.diagnostics.json"):
-        diag = load_json_if_exists(diag_path)
-        if isinstance(diag, dict) and diag.get("path"):
-            out[str(diag["path"])] = diag
-    return out
-
-
 def _enrich_analyzed_documents(
     analyzed_documents: list[dict[str, Any]],
     *,
@@ -544,8 +520,6 @@ def _enrich_analyzed_documents(
             for source in group.get("source_files") or []:
                 element_counts[Path(str(source)).name] = count
 
-    aps_diags = _aps_diag_by_file()
-
     enriched: list[dict[str, Any]] = []
     for doc in analyzed_documents:
         if not isinstance(doc, dict):
@@ -556,40 +530,9 @@ def _enrich_analyzed_documents(
         if element_count <= 0 and status == "ok":
             status = "warning"
 
-        extra: dict[str, Any] = {}
-        diag = aps_diags.get(file_name)
-        if isinstance(diag, dict):
-            aps_result = str(diag.get("result") or "")
-            extra["aps_result"] = aps_result
-            viewer_count = int(diag.get("viewer_elements") or 0)
-            if aps_result in {"viewer_geometry", "viewer_cache"}:
-                extra["geometry_quality"] = "exact"
-                extra["geometry_source"] = "dwg_aps_viewer_2d"
-            elif aps_result == "proxy":
-                extra["geometry_quality"] = "proxy"
-                extra["geometry_source"] = "dwg_aps_properties_proxy"
-            elif aps_result == "quota_exceeded":
-                extra["aps_note"] = (
-                    "APS Model Derivative sin cuota (plan Free agotado o requiere "
-                    "Flex tokens). Se usó geometría de PDF/local como respaldo."
-                )
-            elif aps_result in {"invalid_file", "invalid_file_cached"}:
-                extra["aps_note"] = (
-                    "Autodesk no pudo traducir el DWG (archivo rechazado por el "
-                    "extractor). Se usó geometría de PDF/local como respaldo."
-                )
-            elif aps_result == "viewer_empty" and viewer_count == 0:
-                extra["aps_note"] = (
-                    "Volcado Viewer presente pero sin elementos convertidos; "
-                    "revise caché o re-ejecute extracción."
-                )
-            if viewer_count > 0:
-                extra["viewer_elements"] = viewer_count
-
         enriched.append(
             {
                 **doc,
-                **extra,
                 "element_count": element_count,
                 "status": status,
                 "retryable": status in {"error", "warning"},

@@ -149,14 +149,30 @@ function useElapsedSeconds(startIso: string | undefined): number {
 }
 
 type ProcessedBudgetRow = BudgetRow & {
-  row_type?: string
   computed_amount?: number
   computed_unit_price?: number
   computed_quantity?: number | string | null
-  metadata?: {
-    source_row_indices?: number[]
-    subtotal_row_index?: number
+}
+
+function budgetLineProvenanceTooltip(row: ProcessedBudgetRow): string | undefined {
+  if (row.row_type !== 'line') return undefined
+  const meta = row.metadata
+  if (!meta) return undefined
+  const parts: string[] = []
+  const file = String(meta.source_file ?? '').trim()
+  if (file) parts.push(`Plano: ${file}`)
+  const level = String(meta.level_name ?? '').trim()
+  if (level) parts.push(`Nivel: ${level}`)
+  const layer = String(meta.source_layer ?? '').trim()
+  if (layer) parts.push(`Capa: ${layer}`)
+  const discipline = String(meta.source_discipline ?? '').trim()
+  if (discipline) parts.push(`Disciplina: ${discipline}`)
+  if (meta.requiere_revision) parts.push('Requiere revisión')
+  const conf = meta.confidence
+  if (typeof conf === 'number' && !Number.isNaN(conf)) {
+    parts.push(`Confianza: ${Math.round(conf * 100)}%`)
   }
+  return parts.length > 0 ? parts.join('\n') : undefined
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -464,10 +480,17 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
                   </td>
                 </tr>
               ) : (
-                processedRows.map((r, i) => (
+                processedRows.map((r, i) => {
+                  const provenanceTip = budgetLineProvenanceTooltip(r)
+                  return (
                   <tr key={`${r.code}-${i}`} className="border-b border-black/[0.06] hover:bg-black/[0.015]">
                     <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-muted">{r.code}</td>
-                    <td className="px-3 py-2.5 font-medium text-ink">{r.summary}</td>
+                    <td
+                      className="px-3 py-2.5 font-medium text-ink"
+                      title={provenanceTip}
+                    >
+                      {r.summary}
+                    </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-muted">
                       {fmtQty(r.row_type === 'chapter' || r.row_type === 'subtotal' ? r.computed_quantity : r.quantity)}{' '}
                       {r.unit ? <span className="text-ink">{r.unit}</span> : null}
@@ -482,7 +505,8 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
                       {fmtUsd(r.computed_amount)}
                     </td>
                   </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>

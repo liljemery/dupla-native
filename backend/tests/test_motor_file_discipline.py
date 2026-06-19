@@ -29,7 +29,7 @@ async def test_infer_subprocess_parses_json(tmp_path: Path) -> None:
         "discipline": "electrica",
         "method": "pdf_text",
         "confidence": 0.9,
-        "snapshot": {"aps_cache_key": "abc", "discipline_method": "pdf_text"},
+        "snapshot": {"cad_cache_key": "abc", "discipline_method": "pdf_text"},
         "aps": None,
     }
 
@@ -45,7 +45,7 @@ async def test_infer_subprocess_parses_json(tmp_path: Path) -> None:
 
     assert isinstance(result, MotorDisciplineInference)
     assert result.discipline == FileDiscipline.ELECTRICA
-    assert result.snapshot["aps_cache_key"] == "abc"
+    assert result.snapshot["cad_cache_key"] == "abc"
 
 
 def test_subprocess_stdout_last_line_json(tmp_path: Path) -> None:

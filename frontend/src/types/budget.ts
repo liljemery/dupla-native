@@ -13,7 +13,20 @@ export interface BudgetJob {
   updated_at: string
 }
 
+export interface BudgetRowProvenanceMetadata {
+  source_file?: string
+  level_name?: string
+  source_layer?: string
+  source_discipline?: string
+  provenance_suffix?: string
+  confidence?: number
+  requiere_revision?: boolean
+  source_row_indices?: number[]
+  subtotal_row_index?: number
+}
+
 export interface BudgetRow {
+  row_type?: 'chapter' | 'line' | 'subtotal'
   code: string
   nat: string
   unit: string
@@ -21,6 +34,7 @@ export interface BudgetRow {
   quantity: number | null
   unit_price: number
   amount: number
+  metadata?: BudgetRowProvenanceMetadata
 }
 
 export interface BudgetResult {

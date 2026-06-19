@@ -99,6 +99,30 @@ def _discipline_classifying(row: ProjectFile) -> bool:
     return True
 
 
+def _cad_conversion_status(row: ProjectFile) -> str | None:
+    snap = row.file_ingest_snapshot if isinstance(row.file_ingest_snapshot, dict) else None
+    if not snap:
+        return None
+    value = snap.get("cad_conversion_status")
+    return str(value) if value else None
+
+
+def _cad_conversion_error_code(row: ProjectFile) -> str | None:
+    snap = row.file_ingest_snapshot if isinstance(row.file_ingest_snapshot, dict) else None
+    if not snap:
+        return None
+    value = snap.get("cad_conversion_error_code")
+    return str(value) if value else None
+
+
+def _cad_companion_dxf(row: ProjectFile) -> str | None:
+    snap = row.file_ingest_snapshot if isinstance(row.file_ingest_snapshot, dict) else None
+    if not snap:
+        return None
+    value = snap.get("cad_companion_dxf")
+    return str(value) if value else None
+
+
 class ProjectFileResponse(BaseModel):
     uuid: UUID
     original_name: str
@@ -108,6 +132,9 @@ class ProjectFileResponse(BaseModel):
     description: Optional[str]
     discipline: Optional[str]
     discipline_classifying: bool = False
+    cad_conversion_status: Optional[str] = None
+    cad_conversion_error_code: Optional[str] = None
+    cad_companion_dxf: Optional[str] = None
     ingest_status: str
     counts_for_budget: bool
     created_by_uuid: Optional[UUID]
@@ -124,6 +151,9 @@ class ProjectFileResponse(BaseModel):
             description=row.description,
             discipline=row.discipline,
             discipline_classifying=_discipline_classifying(row),
+            cad_conversion_status=_cad_conversion_status(row),
+            cad_conversion_error_code=_cad_conversion_error_code(row),
+            cad_companion_dxf=_cad_companion_dxf(row),
             ingest_status=row.ingest_status,
             counts_for_budget=row.counts_for_budget,
             created_by_uuid=row.created_by,

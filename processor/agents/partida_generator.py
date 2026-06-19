@@ -19,6 +19,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 
+from budget.provenance import format_provenance_suffix, source_file_from_takeoff
 from core.api_key_manager import APIKeyManager
 from core.schemas import QuantityTakeoff, QuantityTrace
 from knowledge.training_data import TrainingPair
@@ -205,7 +206,7 @@ _MODEL = os.getenv("DUPLA_PARTIDA_MODEL", "gpt-4o")
 _TEMPERATURE = 0.2
 
 # Bump when system prompt or batch format changes; invalidates cache.
-PARTIDA_PROMPT_VERSION = "v3-strip-cad-slugs"
+PARTIDA_PROMPT_VERSION = "v4-provenance"
 
 _SYSTEM_PROMPT = """\
 Eres un presupuestista dominicano senior especializado en proyectos residenciales
@@ -217,17 +218,18 @@ genera una partida presupuestaria específica y detallada para CADA medición.
 REGLAS ABSOLUTAS:
 1. Describe el trabajo REAL del proyecto, no categorías genéricas.
    MAL: "Hormigon armado"
-   BIEN: "Hormigon armado f'c=280kg/cm2 en vigas V1 (0.25x0.45m) nivel 2"
+   BIEN: "Hormigón f'c=280 en viga V1 0.25×0.45 m · N2 · ES 01 General Details.dwg"
 2. La descripcion debe incluir especificaciones técnicas cuando el takeoff las
    proporciona (dimensiones, resistencia del concreto, tipo de bloque, acabado, etc.).
-3. La unidad DEBE coincidir exactamente con la unidad del takeoff de entrada.
-4. El chapter_code y chapter_name deben tomarse del capitulo asignado al lote.
-5. El partida_code se forma como: {chapter_code}.{orden_dentro_capitulo:03d}
-   Ejemplo: primer item del cap 06 = "06.001", segundo = "06.002"
-6. Devuelve SOLO un JSON object con la forma {"items":[...]}, sin texto
-   adicional, sin bloques de codigo.
-7. El campo source_takeoff_key debe ser el item_key exacto del takeoff de entrada.
-8. Genera EXACTAMENTE una partida por takeoff recibido, usando el mismo orden.\
+3. Mantén la descripción concisa (≤ 90 caracteres de trabajo) e incluye origen al final
+   con separador " · ": nivel (si aplica) y nombre del plano (source_file / provenance_hint).
+4. La unidad DEBE coincidir exactamente con la unidad del takeoff de entrada.
+5. El chapter_code y chapter_name deben tomarse del capitulo asignado al lote.
+6. El partida_code se forma como: {chapter_code}.{orden_dentro_capitulo:03d}
+7. Devuelve SOLO un JSON object con la forma {"items":[...]}, sin texto adicional.
+8. El campo source_takeoff_key debe ser el item_key exacto del takeoff de entrada.
+9. Genera EXACTAMENTE una partida por takeoff recibido, usando el mismo orden.
+10. NUNCA uses slugs CAD internos (json-wall-*, capas crudas como a-wall) en la descripción.\
 """
 
 _PARTIDA_RESPONSE_FORMAT: dict[str, Any] = {
@@ -673,6 +675,21 @@ class PartidaGenerator:
             level = str(t.level_id or "").strip()
             if level:
                 item["level"] = level
+            level_name = str(t.inputs.get("level_name") or "").strip()
+            if level_name:
+                item["level_name"] = level_name
+            source_file = source_file_from_takeoff(t)
+            if source_file:
+                item["source_file"] = source_file
+            layer = str(t.inputs.get("source_layer") or "").strip()
+            if layer:
+                item["layer"] = layer
+            tags = t.inputs.get("context_tags")
+            if isinstance(tags, list) and tags:
+                item["tags"] = tags[:8]
+            provenance_hint = format_provenance_suffix(t)
+            if provenance_hint:
+                item["provenance_hint"] = provenance_hint
             takeoff_payload.append(item)
 
         cache_key = compose_key(

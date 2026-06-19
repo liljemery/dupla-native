@@ -188,17 +188,14 @@ function RelationshipBanner({ rel }: { rel: StructuralClashRelationship }) {
 }
 
 function geometryBadge(doc: StructuralAnalyzedDocument): { text: string; className: string } | null {
-  if (doc.geometry_quality === 'exact') {
-    return { text: 'Geometría exacta (SVF1)', className: 'bg-emerald-600/12 text-emerald-800' }
+  if (doc.geometry_quality === 'exact' || doc.geometry_source?.includes('local_ezdxf') || doc.geometry_source?.includes('dxf_ezdxf')) {
+    return { text: 'Geometría exacta (CAD)', className: 'bg-emerald-600/12 text-emerald-800' }
   }
-  if (doc.geometry_quality === 'proxy' || doc.aps_result === 'proxy') {
-    return { text: 'Proxy APS', className: 'bg-amber-500/15 text-amber-900' }
+  if (doc.geometry_quality === 'proxy') {
+    return { text: 'Geometría proxy', className: 'bg-amber-500/15 text-amber-900' }
   }
   if (doc.geometry_source?.includes('pdf_companion')) {
     return { text: 'PDF compañero', className: 'bg-slate-500/12 text-slate-700' }
-  }
-  if (doc.aps_result === 'quota_exceeded') {
-    return { text: 'APS sin cuota', className: 'bg-primary/12 text-primary' }
   }
   return null
 }
@@ -227,9 +224,6 @@ function DocumentRow({
         <p className="text-xs text-muted">
           {doc.discipline_label}
           {typeof doc.element_count === 'number' ? ` · ${doc.element_count} elementos` : ''}
-          {typeof doc.viewer_elements === 'number' && doc.viewer_elements > 0
-            ? ` · ${doc.viewer_elements} exactos`
-            : ''}
           {warning ? ' · sin geometría extraíble' : ''}
         </p>
         {badge ? (
@@ -237,7 +231,6 @@ function DocumentRow({
             {badge.text}
           </span>
         ) : null}
-        {doc.aps_note ? <p className="mt-1 text-xs text-muted">{doc.aps_note}</p> : null}
         {!ok && doc.retryable ? (
           <button
             type="button"

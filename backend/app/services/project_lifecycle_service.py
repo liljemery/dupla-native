@@ -20,6 +20,7 @@ from app.domain.file_discipline import FileIngestStatus, parse_discipline
 from app.domain.project_kind import ProjectKind
 from app.domain.project_updated import touch_project_updated_at
 from app.domain.project_uploads import sanitize_project_original_filename, validate_project_file_extension
+from app.domain.cad_upload_gate import validate_cad_upload
 from app.domain.workflow_automation_tasks import (
     append_automation_card_uuid,
     automation_card_uuids,
@@ -1010,6 +1011,8 @@ class ProjectLifecycleService:
         storage_key = str(dest_dir / f"{fid}_{safe_name}")
         Path(storage_key).write_bytes(raw)
 
+        cad_gate = validate_cad_upload(Path(storage_key))
+
         resolved_folder_id: Optional[UUID] = None
         if folder_uuid is not None:
             resolved_folder_id = await self._require_folder_in_project(project.id, folder_uuid)
@@ -1026,6 +1029,17 @@ class ProjectLifecycleService:
             created_by=user.id,
             created_at=datetime.now(timezone.utc),
         )
+        if cad_gate.get("cad_conversion_status") or cad_gate.get("message"):
+            snap: dict[str, Any] = {}
+            if cad_gate.get("cad_conversion_status"):
+                snap["cad_conversion_status"] = cad_gate["cad_conversion_status"]
+            if cad_gate.get("message"):
+                snap["cad_conversion_note"] = cad_gate["message"]
+            if cad_gate.get("cad_conversion_error_code"):
+                snap["cad_conversion_error_code"] = cad_gate["cad_conversion_error_code"]
+            if cad_gate.get("cad_companion_dxf"):
+                snap["cad_companion_dxf"] = cad_gate["cad_companion_dxf"]
+            pf.file_ingest_snapshot = snap
         if wizard:
             ai = ProjectFileAIService()
             _disc, desc, _used = await ai.suggest(pf.original_name, pf.mime)

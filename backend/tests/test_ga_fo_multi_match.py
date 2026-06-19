@@ -96,7 +96,7 @@ async def test_run_ga_fo_autofill_applies_all_matches(tmp_path) -> None:
         new=AsyncMock(),
     ):
         gs.return_value.openai_api_key = "sk-test"
-        gs.return_value.aps_client_id = ""
+        gs.return_value.ga_fo_cad_context_max_chars = 32000
         await _run_ga_fo_autofill_from_upload(Session(), pf)
 
     ga = project.specifications_document["ga_fo_01_arquitectura"]

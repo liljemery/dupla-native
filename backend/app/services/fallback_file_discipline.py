@@ -78,5 +78,4 @@ def infer_discipline_fallback(
         method=method,
         confidence=confidence,
         snapshot=snapshot,
-        aps=None,
     )

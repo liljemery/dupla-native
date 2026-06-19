@@ -34,6 +34,29 @@ TOTAL_FONT = Font(bold=True, color="FFFFFF", size=12)
 
 DISCIPLINE_ORDER = ["arquitectura", "estructura", "electrico", "sanitario"]
 
+_INVALID_SHEET_CHARS = frozenset("\\/*?:[]")
+
+
+def _excel_sheet_title(name: str, *, max_len: int = 31) -> str:
+    """Excel sheet titles cannot contain \\ / * ? : [ ]."""
+    cleaned = "".join(" " if ch in _INVALID_SHEET_CHARS else ch for ch in name)
+    cleaned = " ".join(cleaned.split()).strip()
+    if not cleaned:
+        cleaned = "Sheet"
+    return cleaned[:max_len]
+
+
+def _unique_sheet_title(name: str, existing: set[str]) -> str:
+    base = _excel_sheet_title(name)
+    candidate = base
+    suffix_n = 2
+    while candidate in existing:
+        suffix = f" {suffix_n}"
+        candidate = _excel_sheet_title(name, max_len=31 - len(suffix)) + suffix
+        suffix_n += 1
+    existing.add(candidate)
+    return candidate
+
 
 def _coerce_row(row: BudgetRow | Mapping[str, object]) -> BudgetRow:
     if isinstance(row, BudgetRow):
@@ -268,12 +291,13 @@ def consolidate_budgets(
     ordered_ids.extend(d for d in sorted(discipline_budgets) if d not in ordered_ids)
 
     discipline_refs: list[tuple[str, str, int | None]] = []
+    used_sheet_titles: set[str] = {"RESUMEN GENERAL"}
 
     for disc_id in ordered_ids:
         budget = discipline_budgets[disc_id]
         rows = budget.get("rows", [])
         display_name = _DISPLAY_NAMES.get(disc_id, disc_id.upper())
-        sheet_name = display_name[:31]  # Excel 31-char limit
+        sheet_name = _unique_sheet_title(display_name, used_sheet_titles)
 
         subtotal_row = _write_discipline_sheet(
             workbook, sheet_name, display_name, project_name, rows,

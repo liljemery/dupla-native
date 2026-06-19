@@ -1,6 +1,6 @@
 """Revision: password reset tokens
 
-Revises: 032_clash_job_export_metadata
+Revises: 035_clash_job_export_revisions
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from alembic import op
 from sqlalchemy.dialects.postgresql import UUID
 
 revision = "033_password_reset_tokens"
-down_revision = "032_clash_job_export_metadata"
+down_revision = "035_clash_job_export_revisions"
 branch_labels = None
 depends_on = None
 

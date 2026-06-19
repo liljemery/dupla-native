@@ -9,11 +9,16 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
+
+from coordination.extraction.ezdxf_font_setup import ensure_ezdxf_fallback_fonts
+
+ensure_ezdxf_fallback_fonts()
 
 import ezdxf
 from ezdxf import bbox
@@ -185,6 +190,9 @@ class DxfGeometryExtraction:
     records: list[DxfGeometryRecord] = field(default_factory=list)
     stats: DxfGeometryStats = field(default_factory=DxfGeometryStats)
     timings: dict[str, float] = field(default_factory=dict)
+    geometry_source: str = DXF_EZDXF_GEOMETRY_SOURCE
+    recovered_partial: bool = False
+    recovered_salvaged: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -198,6 +206,9 @@ class DxfGeometryExtraction:
             "records": [record.to_dict() for record in self.records],
             "stats": self.stats.to_dict(),
             "timings": self.timings,
+            "geometry_source": self.geometry_source,
+            "recovered_partial": self.recovered_partial,
+            "recovered_salvaged": self.recovered_salvaged,
         }
 
 
@@ -506,16 +517,106 @@ def classify_model_geometry_quality(bounds: BoundsXY, reference_bounds: BoundsXY
     return "coarse"
 
 
-def _read_dxf(path: Path) -> ezdxf.document.Drawing:
+_PARSE_ERROR_LINE_RE = re.compile(r"at line (\d+)", re.I)
+
+
+def _parse_error_line(exc: BaseException) -> int | None:
+    match = _PARSE_ERROR_LINE_RE.search(str(exc))
+    if not match:
+        return None
     try:
-        return ezdxf.readfile(str(path))
-    except Exception:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _salvage_dxf_at_line(path: Path, error_line: int) -> Path | None:
+    """Truncate DXF before a corrupt line and append EOF. ponytail: drops tail entities."""
+    if error_line <= 2:
+        return None
+    salvaged = path.with_name(f"{path.stem}.salvaged{path.suffix}")
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as src, salvaged.open(
+            "w",
+            encoding="utf-8",
+        ) as dst:
+            for lineno, line in enumerate(src, start=1):
+                if lineno >= error_line:
+                    break
+                dst.write(line)
+            dst.write("0\nEOF\n")
+    except OSError:
+        return None
+    return salvaged if salvaged.is_file() else None
+
+
+def _read_dxf(path: Path, *, allow_salvage: bool = True) -> tuple[ezdxf.document.Drawing, bool, bool]:
+    """Return (document, recovered_partial, salvaged)."""
+    try:
+        return ezdxf.readfile(str(path)), False, False
+    except Exception as primary_exc:
         from ezdxf import recover
 
-        doc, auditor = recover.readfile(str(path))
-        if auditor.has_errors:
-            logger.warning("DXF %s recovered with auditor errors", path.name)
-        return doc
+        try:
+            doc, auditor = recover.readfile(str(path))
+            if auditor.has_errors:
+                logger.warning("DXF %s recovered with auditor errors", path.name)
+            return doc, auditor.has_errors, False
+        except Exception:
+            pass
+
+        try:
+            doc, auditor = recover.readfile(str(path), errors="ignore")
+            entity_count = len(list(doc.modelspace()))
+            if entity_count > 0:
+                logger.info(
+                    "DXF %s partial recover: %d entities (primary: %s)",
+                    path.name,
+                    entity_count,
+                    primary_exc,
+                )
+                return doc, True, False
+        except Exception:
+            pass
+
+        if allow_salvage:
+            error_line = _parse_error_line(primary_exc)
+            if error_line is not None:
+                salvaged = _salvage_dxf_at_line(path, error_line)
+                if salvaged is not None:
+                    try:
+                        doc, auditor = recover.readfile(str(salvaged), errors="ignore")
+                        entity_count = len(list(doc.modelspace()))
+                        if entity_count > 0:
+                            logger.info(
+                                "DXF %s salvaged at line %d: %d entities",
+                                path.name,
+                                error_line,
+                                entity_count,
+                            )
+                            return doc, True, True
+                    except Exception:
+                        pass
+                    finally:
+                        if salvaged.is_file():
+                            try:
+                                salvaged.unlink()
+                            except OSError:
+                                pass
+
+        raise primary_exc
+
+
+def probe_dxf_readable(path: Path) -> bool:
+    """True when ezdxf can open the DXF and modelspace has entities."""
+    path = Path(path)
+    if not path.is_file():
+        return False
+    try:
+        doc, _recovered, _salvaged = _read_dxf(path, allow_salvage=True)
+        return len(list(doc.modelspace())) > 0
+    except Exception:
+        return False
 
 
 def _discipline_value(discipline: Discipline | str) -> str:
@@ -542,7 +643,9 @@ def extract_dxf_geometry(
         return result
 
     t0 = time.perf_counter()
-    doc = _read_dxf(path)
+    doc, recovered_partial, recovered_salvaged = _read_dxf(path)
+    result.recovered_partial = recovered_partial
+    result.recovered_salvaged = recovered_salvaged
     t1 = time.perf_counter()
 
     try:

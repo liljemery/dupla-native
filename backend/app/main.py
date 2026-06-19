@@ -8,12 +8,10 @@ from app.config import get_settings
 from app.routes import (
     admin,
     ai_assistant,
-    aps_viewer,
     auth,
     budget,
     chat,
     clash,
-    clash_viewer,
     clash_workflow,
     dashboard,
     health,
@@ -65,8 +63,6 @@ def create_app() -> FastAPI:
     app.include_router(budget.router)
     app.include_router(clash.router)
     app.include_router(clash_workflow.router)
-    app.include_router(clash_viewer.router)
-    app.include_router(aps_viewer.router)
     app.include_router(workflow_templates.router)
     app.include_router(project_lifecycle.router)
     app.include_router(admin.router)
