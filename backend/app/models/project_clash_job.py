@@ -50,5 +50,10 @@ class ProjectClashJob(Base):
 
     project: Mapped["Project"] = relationship(back_populates="clash_jobs")
     clash_items: Mapped[list["ProjectClashItem"]] = relationship(
-        back_populates="job", cascade="all, delete-orphan"
+        back_populates="job",
+        cascade="all, delete-orphan",
+        foreign_keys="ProjectClashItem.job_id",
+    )
+    reanalysis_item: Mapped[Optional["ProjectClashItem"]] = relationship(
+        foreign_keys=[reanalysis_item_uuid],
     )

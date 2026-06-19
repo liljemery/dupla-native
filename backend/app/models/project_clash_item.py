@@ -61,7 +61,10 @@ class ProjectClashItem(Base):
         DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    job: Mapped["ProjectClashJob"] = relationship(back_populates="clash_items")
+    job: Mapped["ProjectClashJob"] = relationship(
+        back_populates="clash_items",
+        foreign_keys=[job_id],
+    )
     events: Mapped[list["ProjectClashEvent"]] = relationship(
         back_populates="clash_item", cascade="all, delete-orphan"
     )
