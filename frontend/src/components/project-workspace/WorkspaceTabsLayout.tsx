@@ -58,13 +58,13 @@ export function WorkspaceTabsLayout({
       {!isHub && active ? (
         <div
           data-tour="workspace-tab-nav"
-          className="flex shrink-0 flex-wrap items-center gap-3 border-b border-black/10 bg-white px-3 py-2.5 sm:px-4"
+          className="flex shrink-0 flex-wrap items-center gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3 shadow-[var(--shadow-card)]"
           role="region"
           aria-label="Volver al inicio y título de sección"
         >
           <button
             type="button"
-            className="inline-flex items-center gap-2 rounded-md border border-black/12 bg-white px-3 py-2 text-sm font-semibold text-primary shadow-sm outline-none transition hover:bg-primary/[0.06] focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2"
+            className="inline-flex items-center gap-2 rounded-xl border border-black/12 bg-white px-3 py-2 text-sm font-semibold text-primary shadow-sm outline-none transition hover:bg-primary/[0.06] focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2"
             id={labelledBy ? `${labelledBy}-back` : undefined}
             aria-label="Volver al inicio del proyecto"
             onClick={() => onSelect('hub')}
@@ -85,9 +85,15 @@ export function WorkspaceTabsLayout({
         data-tour="workspace-tab-panel"
         role="tabpanel"
         aria-labelledby={!isHub && active ? `tab-heading-${active.id}` : labelledBy}
-        className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${isHub ? 'px-0 py-0 sm:px-0 sm:py-0' : 'px-3 py-4 sm:px-5 sm:py-5'}`}
+        className={`flex min-h-0 flex-1 flex-col overflow-y-auto ${isHub ? 'px-0 py-0' : 'px-0 py-4 sm:py-5'}`}
       >
-        {children}
+        {!isHub ? (
+          <div className="rounded-2xl border border-black/10 bg-white p-4 shadow-[var(--shadow-card)] sm:p-5">
+            {children}
+          </div>
+        ) : (
+          children
+        )}
       </div>
     </div>
   )

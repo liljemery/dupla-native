@@ -14,21 +14,19 @@ import { Link } from 'react-router-dom'
 import { hasElevatedAccess } from '../../lib/accessPermissions'
 import { useAuthStore } from '../../store/authStore'
 import { apiFetch } from '../../api/client'
-import { getProjectFilesCount } from '../../api/structuralAnalysis'
 import { WORKFLOW_PHASE_ORDER } from '../../constants/workflowPhases'
 import { phaseWorkspaceHintForRole } from '../../constants/projectWorkspaceHints'
 import type { DirectoryUserRow } from '../../lib/directoryUsers'
 import { formatPersonFullName } from '../../lib/personDisplay'
 import { userDisplayInitials } from '../../lib/taskboard'
 import { workflowPhaseLabelForRole, workflowStepTitleForRole } from '../../lib/accessPermissions'
-import { workflowPhaseProgressPct } from '../../lib/projectDashboardBuckets'
 import { bootstrapRequiredPercent, isBootstrapComplete } from '../../lib/bootstrapCriteria'
 import type { TechnicalFindingRow } from '../../types/projectWorkspace'
 import type { BootstrapCriterion, Project } from '../../types/project'
-import type { TaskBoardDto } from '../../types/taskBoard'
 import { PrimaryButton } from '../PrimaryButton'
 import { WorkspaceActionButton } from './WorkspaceActionButton'
 import { Card } from '../Card'
+import { MetricCard } from '../ui/MetricCard'
 import type { TemplateStepProgress } from './WorkflowPhaseStepper'
 
 type ProjectEventRow = {
@@ -87,22 +85,12 @@ function formatBudgetPipelineSummary(bp: Record<string, unknown>): string {
   return `${done}/${keys.length}`
 }
 
-function daysUntilDeadline(deadline: string | null | undefined): number | null {
-  if (!deadline?.trim()) return null
-  const d = new Date(`${deadline.trim()}T12:00:00`)
-  if (Number.isNaN(d.getTime())) return null
-  const now = new Date()
-  const diff = d.getTime() - now.getTime()
-  return Math.ceil(diff / (24 * 60 * 60 * 1000))
-}
-
 export function ProjectWorkspaceDashboard({
   project,
   projectUuid,
   token,
   phaseLabel,
   bpDraft,
-  templateStepProgress,
   orderedTemplateSteps,
   flowMsg,
   nextPhase,
@@ -122,8 +110,6 @@ export function ProjectWorkspaceDashboard({
 }: ProjectWorkspaceDashboardProps) {
   const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
   const elevated = hasElevatedAccess(role as import('../../constants/userRoles').UserRole | null, isTeamLeader)
-  const [fileTotal, setFileTotal] = useState<number | null>(null)
-  const [taskCount, setTaskCount] = useState<number | null>(null)
   const [recentEvents, setRecentEvents] = useState<ProjectEventRow[]>([])
   const [projectNotifs, setProjectNotifs] = useState<UserNotificationRow[]>([])
   const [findings, setFindings] = useState<TechnicalFindingRow[]>([])
@@ -145,15 +131,6 @@ export function ProjectWorkspaceDashboard({
     !pliegoApproved &&
     !pliegoReadyForApproval
 
-  const avancePct = useMemo(() => {
-    if (templateStepProgress && templateStepProgress.total > 0) {
-      const p = ((templateStepProgress.current - 0.5) / templateStepProgress.total) * 100
-      return Math.min(100, Math.max(0, Math.round(p * 10) / 10))
-    }
-    return workflowPhaseProgressPct(project.workflow_phase)
-  }, [project.workflow_phase, templateStepProgress])
-
-  const remainingDays = daysUntilDeadline(project.deadline)
   const criticalFindings = useMemo(
     () => findings.filter((f) => f.severity === 'crítico' || f.severity === 'alto'),
     [findings],
@@ -163,23 +140,12 @@ export function ProjectWorkspaceDashboard({
     if (!token || !projectUuid) return
     let cancelled = false
     void (async () => {
-      const [fr, ft, fe, fn, ff] = await Promise.all([
-        getProjectFilesCount(projectUuid, token),
-        apiFetch(`/api/tasks/board?mine=true&project_uuid=${encodeURIComponent(projectUuid)}`, { token }),
+      const [fe, fn, ff] = await Promise.all([
         apiFetch(`/api/projects/${projectUuid}/events?limit=5&offset=0`, { token }),
         apiFetch('/api/me/notifications?unread_only=false', { token }),
         apiFetch(`/api/projects/${projectUuid}/technical-findings`, { token }),
       ])
       if (cancelled) return
-      if (typeof fr === 'number') setFileTotal(fr)
-      if (ft.ok) {
-        const board = (await ft.json()) as TaskBoardDto
-        let n = board.archived_cards?.length ?? 0
-        for (const list of board.lists ?? []) {
-          n += list.cards?.length ?? 0
-        }
-        setTaskCount(n)
-      }
       if (fe.ok) {
         const j = (await fe.json()) as { items?: ProjectEventRow[] }
         setRecentEvents(Array.isArray(j.items) ? j.items : [])
@@ -274,102 +240,12 @@ export function ProjectWorkspaceDashboard({
     return out.slice(0, 6)
   }, [projectNotifs, criticalFindings, recentEvents])
 
-  const quickLinks = (
-    <div className="flex flex-wrap gap-2">
-      {showBootstrapBanner ? (
-        <button
-          type="button"
-          className="rounded-full border border-primary/35 bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:opacity-95"
-          onClick={onOpenBootstrapChecklist}
-        >
-          Checklist de arranque
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-        onClick={() => onOpenTab('detalles')}
-      >
-        Detalles
-      </button>
-      <button
-        type="button"
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-        onClick={() => onOpenTab('archivos')}
-      >
-        Archivos
-      </button>
-      {viewBudget ? (
-        <button
-          type="button"
-          className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-          onClick={() => onOpenTab('basePrecios')}
-        >
-          Base de precios
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-        onClick={() => onOpenTab('flujo')}
-      >
-        Flujo
-      </button>
-      <button
-        type="button"
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-        onClick={() => onOpenTab('revisiones')}
-      >
-        Revisiones
-      </button>
-      <button
-        type="button"
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-        onClick={() => onOpenTab('entregaPlanos')}
-      >
-        Control de entregas
-      </button>
-      {viewBudget ? (
-        <button
-          type="button"
-          className="rounded-full border border-primary/25 bg-primary/6 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm hover:border-primary/40"
-          onClick={() => onOpenTab('presupuestoMaestro')}
-        >
-          Presupuesto maestro
-        </button>
-      ) : null}
-      <button
-        type="button"
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-        onClick={() => onOpenTab('hallazgos')}
-      >
-        Hallazgos
-      </button>
-      <Link
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink no-underline shadow-sm hover:border-primary/25"
-        to={`/app/tasks?mine=true&project_uuid=${encodeURIComponent(projectUuid)}`}
-      >
-        Tareas
-      </Link>
-      <button
-        type="button"
-        className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-        onClick={onOpenChat}
-      >
-        Chat
-      </button>
-    </div>
-  )
-
-  const kpiClass =
-    'rounded-xl border border-black/10 bg-white px-3 py-3 shadow-(--shadow-card) sm:px-4'
-
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="flex flex-col gap-5 pb-4">
       {showBootstrapBanner ? (
-        <Card className="border-primary/30 bg-primary/6 p-4 shadow-(--shadow-card) ring-1 ring-primary/15 sm:p-5">
+        <Card rounded2xl elevated className="border-primary/30 bg-primary/6 p-4 ring-1 ring-primary/15 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-start gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-white">
@@ -395,57 +271,102 @@ export function ProjectWorkspaceDashboard({
           </div>
         </Card>
       ) : null}
-      <div className="flex flex-col gap-3">
-        {quickLinks}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
-          <div className={kpiClass}>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Avance %</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-primary">{avancePct}%</p>
-          </div>
-          {viewBudget ? (
-            <div className={kpiClass}>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Presupuesto</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">{formatBudgetPipelineSummary(bpDraft)}</p>
-              <p className="text-[10px] text-muted">Hitos</p>
-            </div>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-wrap gap-2">
+          {showBootstrapBanner ? (
+            <button
+              type="button"
+              className="rounded-full border border-primary/35 bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:opacity-95"
+              onClick={onOpenBootstrapChecklist}
+            >
+              Checklist de arranque
+            </button>
           ) : null}
+          <button
+            type="button"
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+            onClick={() => onOpenTab('detalles')}
+          >
+            Detalles
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+            onClick={() => onOpenTab('archivos')}
+          >
+            Archivos
+          </button>
           {viewBudget ? (
-            <div className={kpiClass}>
-              <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Cotizaciones</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-ink">{quotesCount}</p>
-            </div>
+            <button
+              type="button"
+              className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+              onClick={() => onOpenTab('basePrecios')}
+            >
+              Base de precios
+            </button>
           ) : null}
-          <div className={kpiClass}>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Plazo</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
-              {remainingDays === null ? '—' : `${remainingDays} d`}
-            </p>
-          </div>
-          <div className={kpiClass}>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Documentos</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
-              {fileTotal === null ? '…' : fileTotal}
-            </p>
-          </div>
-          <div className={kpiClass}>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Hallazgos</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-primary">{criticalFindings.length}</p>
-          </div>
-          <div className={kpiClass}>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Tareas</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-ink">
-              {taskCount === null ? '…' : taskCount}
-            </p>
-          </div>
-          <div className={kpiClass}>
-            <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Alertas</p>
-            <p className="mt-1 text-lg font-semibold tabular-nums text-primary">{unreadProjectNotifs}</p>
-          </div>
+          <button
+            type="button"
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+            onClick={() => onOpenTab('flujo')}
+          >
+            Flujo
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+            onClick={() => onOpenTab('revisiones')}
+          >
+            Revisiones
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+            onClick={() => onOpenTab('entregaPlanos')}
+          >
+            Control de entregas
+          </button>
+          {viewBudget ? (
+            <button
+              type="button"
+              className="rounded-full border border-primary/25 bg-primary/6 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm hover:border-primary/40"
+              onClick={() => onOpenTab('presupuestoMaestro')}
+            >
+              Presupuesto maestro
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+            onClick={() => onOpenTab('hallazgos')}
+          >
+            Hallazgos
+          </button>
+          <Link
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink no-underline shadow-sm hover:border-primary/25"
+            to={`/app/tasks?mine=true&project_uuid=${encodeURIComponent(projectUuid)}`}
+          >
+            Tareas
+          </Link>
+          <button
+            type="button"
+            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+            onClick={onOpenChat}
+          >
+            Chat
+          </button>
         </div>
+        {viewBudget ? (
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricCard label="Presupuesto" value={formatBudgetPipelineSummary(bpDraft)} footer={<span className="text-xs text-muted">Hitos completados</span>} />
+            <MetricCard label="Cotizaciones" value={quotesCount} />
+            <MetricCard label="Hallazgos críticos" value={criticalFindings.length} />
+          </div>
+        ) : null}
       </div>
 
       <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-5">
-        <Card className="border-black/10 p-5 shadow-(--shadow-card) lg:col-span-3">
+        <Card rounded2xl elevated className="border-black/10 p-5 lg:col-span-3">
           <h3 data-tour="workspace-tab-nav" className="text-sm font-semibold uppercase tracking-wide text-muted">
             Fases del proyecto
           </h3>
@@ -551,7 +472,7 @@ export function ProjectWorkspaceDashboard({
         </Card>
 
         <div className="flex flex-col gap-4 lg:col-span-2">
-          <Card className="border-black/10 p-5 shadow-(--shadow-card)">
+          <Card rounded2xl elevated className="border-black/10 p-5">
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Alertas</h3>
               {unreadProjectNotifs > 0 ? (
@@ -593,7 +514,7 @@ export function ProjectWorkspaceDashboard({
             </ul>
           </Card>
 
-          <Card className="border-black/10 p-5 shadow-(--shadow-card)">
+          <Card rounded2xl elevated className="border-black/10 p-5">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Equipo del proyecto</h3>
             <ul className="mt-3 divide-y divide-black/8">
               {memberRows.length === 0 ? (
@@ -651,7 +572,7 @@ export function ProjectWorkspaceDashboard({
         </div>
       </div>
 
-      <div className="shrink-0 flex flex-col gap-3 border-t border-black/10 bg-surface py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="shrink-0 flex flex-col gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3 shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="text-[10px] font-bold uppercase tracking-wide text-muted">Fase actual</span>
           <span className="truncate font-semibold text-ink">{phaseLabel}</span>

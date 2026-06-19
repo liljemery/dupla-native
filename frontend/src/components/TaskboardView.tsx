@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { MoreHorizontal } from 'lucide-react'
 
 import { apiFetch } from '../api/client'
-import { boardQueryParams, cardMatchesSearch, CARD_MIME, labelForCreatedPhase } from '../lib/taskboard'
+import { boardQueryParams, cardMatchesSearch, CARD_MIME, userDisplayInitials } from '../lib/taskboard'
 import {
   columnAccentForListTitle,
-  computeTaskboardKpis,
   flattenBoardLists,
   type TaskViewMode,
 } from '../lib/taskboardViews'
@@ -16,6 +16,35 @@ import { TaskboardListTable } from './TaskboardListTable'
 import { TaskboardToolbar } from './TaskboardToolbar'
 import { useAuthStore } from '../store/authStore'
 import type { TaskAssigneeOption, TaskBoardDto, TaskCardDto, TaskListDto } from '../types/taskBoard'
+
+const TASK_CARD_PALETTES = [
+  { bg: 'bg-[#f4d9ec]', seg: 'bg-[#262626]', track: 'bg-black/10', avatar: 'bg-white text-[#b1568f]' },
+  { bg: 'bg-[#e4dcf7]', seg: 'bg-[#262626]', track: 'bg-black/10', avatar: 'bg-white text-[#6a58b0]' },
+  { bg: 'bg-[#f3e24f]', seg: 'bg-[#262626]', track: 'bg-black/15', avatar: 'bg-white text-[#8a7a10]' },
+  { bg: 'bg-white', seg: 'bg-[#262626]', track: 'bg-black/10', avatar: 'bg-[#f0f0f3] text-[#1f1f1f]' },
+] as const
+
+function taskCardPalette(uuid: string) {
+  let h = 0
+  for (let i = 0; i < uuid.length; i += 1) h = (h * 31 + uuid.charCodeAt(i)) >>> 0
+  return TASK_CARD_PALETTES[h % TASK_CARD_PALETTES.length]
+}
+
+function cardProgressSegments(accent: ReturnType<typeof columnAccentForListTitle>): number {
+  if (accent === 'green') return 6
+  if (accent === 'amber') return 3
+  if (accent === 'red') return 2
+  return 1
+}
+
+function formatCardDate(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yy = String(d.getFullYear()).slice(-2)
+  return `${dd}.${mm}.${yy}`
+}
 
 export type TaskboardViewProps = {
   /** Filtro fijo por proyecto; vacío = tablero global */
@@ -201,8 +230,6 @@ export function TaskboardView({
     )
   }
 
-  const kpis = useMemo(() => computeTaskboardKpis(lists), [lists])
-
   const listRows = useMemo(() => flattenBoardLists(displayLists), [displayLists])
 
   const boardViewportMaxWidth = useMemo(() => {
@@ -256,7 +283,7 @@ export function TaskboardView({
             </div>
 
             <div
-              className="flex shrink-0 rounded-lg border border-black/10 bg-[#f8f9fb] p-1 shadow-sm"
+              className="flex shrink-0 rounded-lg border border-black/10 bg-white/40 p-1 backdrop-blur-md"
               role="tablist"
               aria-label="Vista de tareas"
             >
@@ -297,44 +324,6 @@ export function TaskboardView({
             </div>
           </div>
 
-          {board && !loading ? (
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-              <div className="rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Asignadas</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-ink">{kpis.assigned}</p>
-              </div>
-              <div className="rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted">En proceso</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-ink">{kpis.inProgress}</p>
-              </div>
-              <div
-                className={`rounded-xl border px-4 py-3 shadow-sm ${
-                  kpis.atRisk > 0
-                    ? 'border-primary/35 bg-primary text-white'
-                    : 'border-black/10 bg-white'
-                }`}
-              >
-                <p
-                  className={`text-[10px] font-bold uppercase tracking-wide ${kpis.atRisk > 0 ? 'text-white/90' : 'text-muted'}`}
-                >
-                  Bloqueadas
-                </p>
-                <p
-                  className={`mt-1 text-2xl font-bold tabular-nums ${kpis.atRisk > 0 ? 'text-white' : 'text-ink'}`}
-                >
-                  {String(kpis.atRisk).padStart(2, '0')}
-                </p>
-              </div>
-              <div className="rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Completadas</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-ink">{kpis.completed}</p>
-              </div>
-              <div className="rounded-xl border border-black/10 bg-white px-4 py-3 shadow-sm sm:col-span-2 lg:col-span-1">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-muted">Cumplimiento</p>
-                <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600">{kpis.compliancePct}%</p>
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : hideEmbeddedHeader ? null : (
         <h2 className="shrink-0 text-sm font-semibold text-ink">Tareas del proyecto</h2>
@@ -361,7 +350,7 @@ export function TaskboardView({
           ) : null}
 
           <div
-            className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-black/10 bg-black/2 shadow-[var(--shadow-card)] ${embedded ? 'min-h-0' : ''} ${viewMode === 'list' && !embedded ? 'hidden' : ''}`}
+            className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-black/10 ${embedded ? 'min-h-0' : ''} ${viewMode === 'list' && !embedded ? 'hidden' : ''}`}
           >
             <div
               className={
@@ -391,14 +380,14 @@ export function TaskboardView({
                     key={list.uuid}
                     className={
                       embedded
-                        ? 'flex h-full min-h-0 w-52 shrink-0 flex-col rounded-lg border border-black/10 bg-black/2 sm:w-56'
-                        : 'flex h-full min-h-0 w-[min(100%,17.5rem)] shrink-0 flex-col rounded-lg border border-black/10 bg-black/2 sm:w-72 md:min-w-0 md:max-w-none md:w-auto md:min-w-[17.5rem]'
+                        ? 'flex h-full min-h-0 w-52 shrink-0 flex-col overflow-hidden rounded-xl border border-black/10 bg-white/35 backdrop-blur-md sm:w-56'
+                        : 'flex h-full min-h-0 w-[min(100%,17.5rem)] shrink-0 flex-col overflow-hidden rounded-xl border border-black/10 bg-white/35 backdrop-blur-md sm:w-72 md:min-w-0 md:max-w-none md:w-auto md:min-w-[17.5rem]'
                     }
                     onDragOver={onDragOver}
                     onDrop={(e) => onDropOnColumn(e, list)}
                   >
                     <div
-                      className={`shrink-0 border-b border-black/10 bg-white font-semibold text-ink ${
+                      className={`shrink-0 border-b border-black/10 bg-white/70 font-semibold text-ink ${
                         embedded ? 'px-2 py-1.5 text-xs' : 'px-2.5 py-2 text-sm'
                       }`}
                     >
@@ -417,136 +406,110 @@ export function TaskboardView({
                       }`}
                     >
                       {sortedCards(list).map((card, index) => {
-                        const createdPhaseLabel = labelForCreatedPhase(card.created_in_phase)
+                        const palette = taskCardPalette(card.uuid)
+                        const filled = cardProgressSegments(columnAccentForListTitle(list.title))
+                        const assigneeName = card.assignee_email
+                          ? formatPersonFullName(
+                              card.assignee_first_name,
+                              card.assignee_last_name,
+                              card.assignee_email,
+                            )
+                          : 'Sin asignar'
+                        const initials = card.assignee_email
+                          ? userDisplayInitials(
+                              card.assignee_first_name,
+                              card.assignee_last_name,
+                              card.assignee_email,
+                            )
+                          : '—'
+                        const dateLabel = formatCardDate(card.created_at)
                         return (
                           <div
                             key={card.uuid}
+                            role="button"
+                            tabIndex={0}
                             draggable
                             onDragStart={(e) => onDragStartCard(e, card.uuid)}
                             onDragEnd={onDragEnd}
                             onDragOver={onDragOver}
                             onDrop={(e) => onDropOnCard(e, list, index)}
-                            className={`flex min-w-0 rounded-md border border-black/10 bg-white text-left shadow-card transition hover:border-primary/30 ${
-                              embedded
-                                ? 'gap-1.5 px-1.5 py-1.5 text-xs'
-                                : 'gap-2 px-2 py-2 text-sm'
+                            onClick={() => openCard(card)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                openCard(card)
+                              }
+                            }}
+                            className={`group relative flex min-w-0 flex-col justify-between rounded-2xl text-left shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/40 ${palette.bg} ${
+                              embedded ? 'min-h-28 cursor-pointer p-2.5' : 'min-h-40 cursor-pointer p-3.5'
                             }`}
                           >
-                            <div
-                              className={`shrink-0 cursor-grab text-black/35 active:cursor-grabbing ${
-                                embedded ? 'mt-0 h-3.5 w-3' : 'mt-0.5'
-                              }`}
-                              aria-hidden
-                              title="Arrastrar para mover"
-                            >
-                              <svg
-                                width="16"
-                                height="20"
-                                viewBox="0 0 16 20"
-                                className={embedded ? 'block h-full w-full' : 'block'}
-                              >
-                                <circle cx="5" cy="5" r="1.5" fill="currentColor" />
-                                <circle cx="11" cy="5" r="1.5" fill="currentColor" />
-                                <circle cx="5" cy="10" r="1.5" fill="currentColor" />
-                                <circle cx="11" cy="10" r="1.5" fill="currentColor" />
-                                <circle cx="5" cy="15" r="1.5" fill="currentColor" />
-                                <circle cx="11" cy="15" r="1.5" fill="currentColor" />
-                              </svg>
-                            </div>
                             <button
                               type="button"
-                              className="min-w-0 flex-1 cursor-pointer text-left"
-                              onClick={() => openCard(card)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                  e.preventDefault()
-                                  openCard(card)
-                                }
-                              }}
-                            >
-                              <div className={`font-medium text-ink ${embedded ? 'text-xs' : ''}`}>
-                                {card.title}
-                              </div>
-                              {card.description ? (
-                                <p
-                                  className={`mt-1 line-clamp-2 text-muted ${
-                                    embedded ? 'text-[10px] leading-snug' : 'text-xs'
-                                  }`}
-                                >
-                                  {card.description}
-                                </p>
-                              ) : null}
-                              <div
-                                className={`border-t border-black/8 text-[11px] ${
-                                  embedded ? 'mt-1.5 space-y-1 pt-1.5' : 'mt-2 space-y-2 pt-2'
-                                }`}
-                              >
-                                {card.project_uuid &&
-                                (card.project_name?.trim() || card.project_code?.trim()) ? (
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="font-semibold uppercase tracking-wide text-muted">
-                                      Proyecto
-                                    </span>
-                                    <span className="min-w-0 break-words font-medium text-ink">
-                                      {card.project_name?.trim() || 'Obra'}
-                                      {card.project_code?.trim() ? (
-                                        <span className="ml-1 font-mono text-muted">
-                                          ({card.project_code.trim()})
-                                        </span>
-                                      ) : null}
-                                    </span>
-                                  </div>
-                                ) : null}
-                                {createdPhaseLabel ? (
-                                  <div className="flex flex-col gap-0.5">
-                                    <span className="font-semibold uppercase tracking-wide text-muted">
-                                      Creada en fase
-                                    </span>
-                                    <span className="min-w-0 break-words text-ink">{createdPhaseLabel}</span>
-                                  </div>
-                                ) : null}
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="font-semibold uppercase tracking-wide text-muted">
-                                    Asignado
-                                  </span>
-                                  <span className="min-w-0 break-words text-ink">
-                                    {card.assignee_email
-                                      ? formatPersonFullName(
-                                          card.assignee_first_name,
-                                          card.assignee_last_name,
-                                          card.assignee_email,
-                                        )
-                                      : '—'}
-                                  </span>
-                                </div>
-                                <div className="flex flex-col gap-0.5">
-                                  <span className="font-semibold uppercase tracking-wide text-muted">Por</span>
-                                  <span className="min-w-0 break-words text-ink">
-                                    {card.creator_email
-                                      ? formatPersonFullName(
-                                          card.creator_first_name,
-                                          card.creator_last_name,
-                                          card.creator_email,
-                                        )
-                                      : '—'}
-                                  </span>
-                                </div>
-                              </div>
-                            </button>
-                            <button
-                              type="button"
-                              className={`shrink-0 self-start rounded-md border border-primary/50 bg-primary/[0.06] font-semibold uppercase tracking-wide text-primary hover:bg-primary/[0.12] ${
-                                embedded
-                                  ? 'px-1.5 py-0.5 text-[10px]'
-                                  : 'px-2.5 py-1 text-xs'
-                              }`}
+                              aria-label="Abrir tarea"
+                              className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-full text-black/40 transition hover:bg-black/5 hover:text-black/70"
                               onClick={(e) => {
                                 e.stopPropagation()
                                 openCard(card)
                               }}
                             >
-                              View
+                              <MoreHorizontal className="size-4" aria-hidden />
                             </button>
+
+                            <div className="flex items-center gap-2 pr-7">
+                              <span
+                                className={`flex shrink-0 items-center justify-center rounded-full font-bold ${palette.avatar} ${
+                                  embedded ? 'size-7 text-[10px]' : 'size-8 text-[11px]'
+                                }`}
+                              >
+                                {initials}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p
+                                  className={`truncate font-semibold text-[#1f1f1f] ${
+                                    embedded ? 'text-xs' : 'text-sm'
+                                  }`}
+                                >
+                                  {assigneeName}
+                                </p>
+                                {dateLabel ? (
+                                  <p className="truncate text-[11px] text-black/45">{dateLabel}</p>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className={`min-w-0 ${embedded ? 'mt-2' : 'mt-3'}`}>
+                              <h4
+                                className={`line-clamp-2 break-words font-bold leading-snug text-[#1f1f1f] ${
+                                  embedded ? 'text-xs' : 'text-sm'
+                                }`}
+                              >
+                                {card.title}
+                              </h4>
+                              {!embedded && card.project_name?.trim() ? (
+                                <p className="mt-0.5 truncate text-[11px] font-medium text-black/40">
+                                  {card.project_name.trim()}
+                                </p>
+                              ) : null}
+                              {card.description?.trim() ? (
+                                <p
+                                  className={`mt-1 break-words text-black/55 ${
+                                    embedded ? 'line-clamp-3 text-[10px] leading-snug' : 'line-clamp-4 text-xs leading-snug'
+                                  }`}
+                                >
+                                  {card.description}
+                                </p>
+                              ) : null}
+                            </div>
+
+                            <div className={`flex items-center gap-1 ${embedded ? 'mt-2' : 'mt-3'}`} aria-hidden>
+                              {Array.from({ length: 6 }).map((_, i) => (
+                                <span
+                                  key={i}
+                                  className={`h-1.5 flex-1 rounded-full ${i < filled ? palette.seg : palette.track}`}
+                                />
+                              ))}
+                            </div>
                           </div>
                         )
                       })}
