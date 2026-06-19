@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dupla APS Fragment Extractor</title>
+  <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css" />
+  <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+  <style>
+    html, body, #viewer { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+  <script>
+    window.DuplaFragmentExtractor = {
+      async loadModel({ urn, accessToken, viewableGuid }) {
+        console.log(`[COORD] Initializing APS Viewer for ${urn.slice(0, 12)}...`);
+        const viewer = await initializeViewer(accessToken);
+        const doc = await loadDocument(urn);
+        const target = selectViewable(doc, viewableGuid);
+        if (!target) throw new Error("No 2D viewable found for fragment extraction");
+        console.log(`[COORD] Loading viewable guid=${target.data && target.data.guid} name=${target.data && target.data.name}`);
+        const model = await viewer.loadDocumentNode(doc, target);
+        await waitForGeometry(viewer);
+        await waitForObjectTree(model);
+        viewer.fitToView();
+        console.log("[COORD] Viewer geometry ready");
+        return { viewer, doc, model, viewable: target };
+      },
+
+      async extract({ urn, accessToken, viewableGuid, allViewables }) {
+        const { viewer, doc, model, viewable } = await this.loadModel({ urn, accessToken, viewableGuid });
+        if (!allViewables || viewableGuid) {
+          const result = await extractFragments(viewer, model, viewable, urn);
+          try {
+            viewer.finish();
+          } catch (error) {
+            console.warn("[COORD] viewer.finish failed", error);
+          }
+          return result;
+        }
+        const viewables = doc.getRoot().search({ type: "geometry" }).filter(is2DViewable);
+        const views = [];
+        let activeModel = model;
+        console.log(`[COORD] Extracting all 2D viewables count=${viewables.length}`);
+        for (const target of viewables) {
+          if (target !== viewable) {
+            if (activeModel) viewer.unloadModel(activeModel);
+            console.log(`[COORD] Loading next viewable guid=${target.data && target.data.guid} name=${target.data && target.data.name}`);
+            activeModel = await viewer.loadDocumentNode(doc, target);
+            await waitForGeometry(viewer);
+            await waitForObjectTree(activeModel);
+            viewer.fitToView();
+          }
+          const partial = await extractFragments(viewer, activeModel, target, urn);
+          views.push(...partial.views);
+        }
+        const result = {
+          schema_version: 1,
+          source: "dupla_headless_aps_fragment_extractor",
+          urn,
+          coordinate_unit: "sheet_paper_units",
+          views,
+        };
+        try {
+          viewer.finish();
+        } catch (error) {
+          console.warn("[COORD] viewer.finish failed", error);
+        }
+        return result;
+      },
+    };
+
+    function initializeViewer(accessToken) {
+      return new Promise((resolve, reject) => {
+        Autodesk.Viewing.Initializer({
+          env: "AutodeskProduction",
+          api: "derivativeV2",
+          getAccessToken: (onTokenReady) => onTokenReady(accessToken, 1800),
+        }, () => {
+          try {
+            const viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById("viewer"));
+            const started = viewer.start();
+            if (started > 0) reject(new Error(`viewer.start failed: ${started}`));
+            else resolve(viewer);
+          } catch (error) {
+            reject(error);
+          }
+        });
+      });
+    }
+
+    function loadDocument(urn) {
+      return new Promise((resolve, reject) => {
+        Autodesk.Viewing.Document.load(
+          urn.startsWith("urn:") ? urn : `urn:${urn}`,
+          resolve,
+          (code, message) => reject(new Error(`Document.load failed ${code}: ${message}`))
+        );
+      });
+    }
+
+    function is2DViewable(item) {
+      const data = item && item.data ? item.data : {};
+      const role = String(data.role || "").toLowerCase();
+      const name = String(data.name || "").toLowerCase();
+      return role === "2d" || role === "sheet" || name.includes("sheet") || name.includes("layout");
+    }
+
+    function selectViewable(doc, viewableGuid) {
+      const viewables = doc.getRoot().search({ type: "geometry" });
+      if (viewableGuid) {
+        const configured = viewables.find((item) => item.data && item.data.guid === viewableGuid);
+        if (configured) return configured;
+      }
+      return viewables.find(is2DViewable) || viewables[0] || null;
+    }
+
+    function waitForGeometry(viewer) {
+      if (viewer.model && viewer.model.isLoadDone && viewer.model.isLoadDone()) return Promise.resolve();
+      return new Promise((resolve) => {
+        const done = () => {
+          viewer.removeEventListener(Autodesk.Viewing.GEOMETRY_LOADED_EVENT, done);
+          resolve();
+        };
+        viewer.addEventListener(Autodesk.Viewing.GEOMETRY_LOADED_EVENT, done);
+      });
+    }
+
+    function waitForObjectTree(model) {
+      return new Promise((resolve, reject) => {
+        model.getObjectTree(resolve, reject);
+      });
+    }
+
+    function getExternalIdMapping(model) {
+      return new Promise((resolve, reject) => {
+        model.getExternalIdMapping(resolve, reject);
+      });
+    }
+
+    function getProperties(model, dbId) {
+      return new Promise((resolve) => {
+        model.getProperties(dbId, resolve, () => resolve(null));
+      });
+    }
+
+    async function extractFragments(viewer, model, viewable, urn) {
+      const tree = await waitForObjectTree(model);
+      const externalToDb = await getExternalIdMapping(model);
+      const dbToHandle = {};
+      for (const [externalId, dbId] of Object.entries(externalToDb || {})) {
+        dbToHandle[String(dbId)] = String(externalId);
+      }
+      const fragList = model.getFragmentList();
+      const dbIdSet = new Set();
+      for (const dbId of Object.values(externalToDb || {})) {
+        if (Number.isFinite(Number(dbId))) dbIdSet.add(Number(dbId));
+      }
+      tree.enumNodeChildren(tree.getRootId(), (dbId) => dbIdSet.add(Number(dbId)), true);
+      const dbIds = Array.from(dbIdSet).sort((a, b) => a - b);
+      console.log(`[COORD] Fragment walk dbIds=${dbIds.length} externalIds=${Object.keys(externalToDb || {}).length}`);
+
+      const objects = [];
+      const allBounds = [];
+      for (const dbId of dbIds) {
+        const fragments = [];
+        tree.enumNodeFragments(dbId, (fragId) => {
+          const bounds = new THREE.Box3();
+          fragList.getWorldBounds(fragId, bounds);
+          if (!isFiniteBounds(bounds)) return;
+          const matrix = new THREE.Matrix4();
+          fragList.getWorldMatrix(fragId, matrix);
+          const item = {
+            fragId,
+            world_bounds: boxToArray(bounds),
+            world_matrix: matrix.elements.slice(),
+          };
+          fragments.push(item);
+          allBounds.push(item.world_bounds);
+        }, true);
+        if (!fragments.length) continue;
+        const aggregate = unionBounds(fragments.map((item) => item.world_bounds));
+        const center = centerOfBounds(aggregate);
+        objects.push({
+          handle: dbToHandle[String(dbId)] || "",
+          dbId,
+          layer: "",
+          fragment_count: fragments.length,
+          world_bounds: aggregate,
+          aggregate_world_bounds: aggregate,
+          fragments: fragments.map((item) => ({
+            fragId: item.fragId,
+            world_bounds: item.world_bounds,
+            world_matrix: item.world_matrix,
+          })),
+          per_fragment_bounds: fragments.map((item) => item.world_bounds),
+          center,
+        });
+      }
+      await fillLayers(model, objects);
+
+      const sheetBounds = unionBounds(allBounds);
+      console.log(`[COORD] Extracted fragment objects=${objects.length}`);
+      return {
+        schema_version: 1,
+        source: "dupla_headless_aps_fragment_extractor",
+        urn,
+        coordinate_unit: "sheet_paper_units",
+        views: [{
+          name: String((viewable.data && viewable.data.name) || "2D View"),
+          guid: String((viewable.data && viewable.data.guid) || ""),
+          role: String((viewable.data && viewable.data.role) || ""),
+          coordinate_unit: "sheet_paper_units",
+          sheet_bounds: sheetBounds,
+          objects,
+        }],
+      };
+    }
+
+    function propertyValue(props, name) {
+      if (!props || !Array.isArray(props.properties)) return "";
+      const target = name.toLowerCase();
+      const found = props.properties.find((prop) => String(prop.displayName || prop.attributeName || "").toLowerCase() === target);
+      return found && found.displayValue != null ? String(found.displayValue) : "";
+    }
+
+    async function fillLayers(model, objects) {
+      const concurrency = 25;
+      let cursor = 0;
+      async function worker() {
+        while (cursor < objects.length) {
+          const index = cursor;
+          cursor += 1;
+          const object = objects[index];
+          const props = await getProperties(model, object.dbId);
+          object.layer = propertyValue(props, "Layer") || propertyValue(props, "Layer Name") || "";
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(concurrency, objects.length) }, worker));
+    }
+
+    function isFiniteBounds(box) {
+      return Number.isFinite(box.min.x) && Number.isFinite(box.min.y) && Number.isFinite(box.max.x) && Number.isFinite(box.max.y)
+        && box.max.x > box.min.x && box.max.y > box.min.y;
+    }
+
+    function boxToArray(box) {
+      return [box.min.x, box.min.y, box.max.x, box.max.y];
+    }
+
+    function unionBounds(boundsList) {
+      if (!boundsList.length) return null;
+      return [
+        Math.min(...boundsList.map((b) => b[0])),
+        Math.min(...boundsList.map((b) => b[1])),
+        Math.max(...boundsList.map((b) => b[2])),
+        Math.max(...boundsList.map((b) => b[3])),
+      ];
+    }
+
+    function centerOfBounds(bounds) {
+      return bounds ? [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2] : null;
+    }
+  </script>
+</body>
+</html>

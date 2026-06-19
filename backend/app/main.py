@@ -16,6 +16,7 @@ from app.routes import (
     clash_viewer,
     clash_workflow,
     dashboard,
+    health,
     modules,
     project_lifecycle,
     projects,
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(chat.router)
     app.include_router(tasks.router)
+    app.include_router(health.router)
     app.mount("/static", StaticFiles(directory="app/static"), name="static")
     return app
 

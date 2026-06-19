@@ -280,6 +280,27 @@ def get_manifest(token: str | dict[str, object], urn: str) -> dict | None:
     return response.json()
 
 
+def delete_manifest(token: str | dict[str, object], urn: str) -> bool:
+    """
+    Delete the existing manifest for a URN so a fresh translation can be submitted.
+    Returns True if deleted (or already gone), False on unexpected error.
+    """
+    url = f"{MD_URL}/{urn}/manifest"
+    print(f"[MODEL DERIVATIVE] Deleting manifest | URN={_short_urn(urn)}")
+    response = _request_with_token_refresh("delete", url, token)
+    if response.status_code in {200, 204}:
+        print(f"[OK] Manifest deleted | URN={_short_urn(urn)}")
+        return True
+    if response.status_code == 404:
+        print(f"[OK] Manifest already absent | URN={_short_urn(urn)}")
+        return True
+    print(
+        f"[WARN] Manifest deletion returned {response.status_code} | "
+        f"URN={_short_urn(urn)}: {response.text[:200]}"
+    )
+    return False
+
+
 def urn_from_object_id(bucket_key: str, object_name: str) -> str:
     """
     Generate the base64 URN from bucket + object name.
@@ -410,23 +431,31 @@ def wait_for_translation(
     poll_interval_seconds: int = DEFAULT_POLL_INTERVAL_SECONDS,
     failed_manifest_grace_polls: int = 0,
     failed_manifest_grace_sleep_seconds: int = DEFAULT_FAILED_MANIFEST_GRACE_SLEEP_SECONDS,
+    stuck_at_99_threshold_s: int = 120,
 ) -> str:
     """
     Poll the manifest until translation succeeds, fails, or times out.
 
     Returns:
-        'success', 'failed', or 'timeout'
+        'success', 'failed', 'timeout', or 'stuck_99'
+
+    'stuck_99' is returned when progress has been stuck at "99% complete" for
+    longer than ``stuck_at_99_threshold_s`` seconds — a known APS bug where
+    the derivative never transitions from inprogress to success. The caller
+    should delete the manifest and resubmit the translation.
     """
     print(
         f"[MODEL DERIVATIVE] Waiting for translation | "
         f"URN={_short_urn(urn)} | timeout={timeout}s | poll={poll_interval_seconds}s | "
-        f"failed_manifest_grace_polls={failed_manifest_grace_polls}"
+        f"failed_manifest_grace_polls={failed_manifest_grace_polls} | "
+        f"stuck_at_99_threshold_s={stuck_at_99_threshold_s}"
     )
     token_state = _coerce_token_state(token)
     start = time.monotonic()
     sleep_seconds = max(int(poll_interval_seconds), 1)
     grace_polls_remaining = max(int(failed_manifest_grace_polls), 0)
     grace_sleep_seconds = max(int(failed_manifest_grace_sleep_seconds), 1)
+    first_99_at: float | None = None
 
     while True:
         elapsed = int(time.monotonic() - start)
@@ -455,6 +484,26 @@ def wait_for_translation(
                 continue
             print(f"[ERROR] Translation failed for URN={_short_urn(urn)}: {manifest}")
             return "failed"
+
+        # Detect APS stuck-at-99% bug: progress stays at "99% complete" while
+        # status remains "inprogress" — the derivative never completes.
+        if status == "inprogress" and "99" in progress:
+            if first_99_at is None:
+                first_99_at = time.monotonic()
+                print(
+                    f"[WARN] Progress at 99% | URN={_short_urn(urn)} | "
+                    f"will retry translation if still stuck after {stuck_at_99_threshold_s}s"
+                )
+            elif (time.monotonic() - first_99_at) >= stuck_at_99_threshold_s:
+                stuck_secs = int(time.monotonic() - first_99_at)
+                print(
+                    f"[WARN] APS stuck at 99% for {stuck_secs}s | URN={_short_urn(urn)} | "
+                    "signalling stuck_99 for manifest delete + resubmit"
+                )
+                return "stuck_99"
+        else:
+            first_99_at = None
+
         if elapsed >= timeout:
             print(
                 f"[ERROR] Translation timeout reached for URN={_short_urn(urn)} "
@@ -1011,6 +1060,27 @@ def extract_dwg_data(
             ),
             failed_manifest_grace_sleep_seconds=failed_manifest_grace_sleep_seconds,
         )
+
+        # APS stuck-at-99% retry: delete the hung manifest and resubmit once.
+        if status == "stuck_99":
+            print(
+                f"[MODEL DERIVATIVE] Retrying after stuck_99 | URN={_short_urn(urn)} | "
+                "deleting manifest and resubmitting translation"
+            )
+            delete_manifest(token_state, urn)
+            time.sleep(5)  # brief pause before resubmit
+            translate_to_svf2(token_state, urn, views=normalized_views)
+            translation_submitted = True
+            manifest_strategy = "resubmitted_after_stuck_99"
+            status = wait_for_translation(
+                token_state,
+                urn,
+                timeout=translation_timeout_seconds,
+                poll_interval_seconds=poll_interval_seconds,
+                # No further stuck_99 retry to avoid infinite loop
+                stuck_at_99_threshold_s=translation_timeout_seconds + 1,
+            )
+
         if status == "timeout":
             raise TimeoutError(
                 f"Translation did not finish within {translation_timeout_seconds}s for URN={urn}. "

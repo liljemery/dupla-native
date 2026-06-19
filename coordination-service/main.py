@@ -36,6 +36,8 @@ async def enqueue_clash_analysis(
     profile_slug: Optional[str] = Form(None),
     project_name: Optional[str] = Form("Proyecto"),
     file_metadata: Optional[str] = Form(None),
+    control_points_json: Optional[str] = Form(None),
+    reanalysis_clash_code: Optional[str] = Form(None),
     x_correlation_id: Optional[str] = Header(None),
 ):
     try:
@@ -87,12 +89,23 @@ async def enqueue_clash_analysis(
 
         from tasks.run_clash import run_clash_job
 
+        control_points: list[dict] = []
+        if control_points_json:
+            try:
+                parsed_cp = json.loads(control_points_json)
+                if isinstance(parsed_cp, list):
+                    control_points = parsed_cp
+            except json.JSONDecodeError:
+                pass
+
         job = q.enqueue(
             run_clash_job,
             file_entries,
             slug,
             project_name or "Proyecto",
             correlation_id,
+            control_points,
+            reanalysis_clash_code,
             job_timeout=int(os.getenv("COORDINATION_JOB_TIMEOUT_SECONDS", "3600")),
             meta={"correlation_id": correlation_id},
         )

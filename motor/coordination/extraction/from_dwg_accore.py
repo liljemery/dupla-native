@@ -23,6 +23,7 @@ from shapely.geometry import LineString, Polygon
 from coordination.extraction.from_dwg_com import NON_GEOMETRIC_LAYER_TOKENS
 from coordination.core.models_25d import Discipline, Element25D, ZInterval
 from coordination.core.nasas_paths import translate_footprint
+from coordination.core.units import infer_units_from_geometry
 
 logger = logging.getLogger("dupla.coordination.dwg_accore")
 
@@ -212,14 +213,96 @@ def load_accore_payload_via_accore(
         return AccorePayloadResult(payload=None, cache_hit=False)
 
 
+def _resolve_payload_units_to_mm(payload: dict[str, Any]) -> dict[str, Any]:
+    declared_factor_mm = float(payload.get("UnitsToMmFactor") or 1.0)
+    geometry_rows = _geometry_rows_from_payload(payload)
+    if not geometry_rows:
+        return {
+            "factor_mm": declared_factor_mm,
+            "source": "declared_units_no_geometry_outline",
+            "declared_factor_mm": declared_factor_mm,
+            "inferred_factor_mm": None,
+            "warning": None,
+        }
+    inferred = infer_units_from_geometry(geometry_rows)
+    inferred_factor_mm = inferred.factor_to_meters * 1000.0
+    denom = max(abs(declared_factor_mm), abs(inferred_factor_mm), 1e-12)
+    disagrees = abs(declared_factor_mm - inferred_factor_mm) / denom > 0.05
+    if not disagrees:
+        return {
+            "factor_mm": declared_factor_mm,
+            "source": "declared_units_agree_with_geometry",
+            "declared_factor_mm": declared_factor_mm,
+            "inferred_factor_mm": inferred_factor_mm,
+            "inferred_unit": inferred.unit_label,
+            "outline_before": inferred.outline_before,
+            "outline_after_m": inferred.outline_after,
+            "warning": None,
+        }
+    warning = {
+        "declared_factor_mm": declared_factor_mm,
+        "inferred_factor_mm": inferred_factor_mm,
+        "inferred_unit": inferred.unit_label,
+        "outline_before": inferred.outline_before,
+        "outline_after_m": inferred.outline_after,
+        "decision": "trusted_geometry_over_declared_units",
+    }
+    logger.warning(
+        "ACCORE unit mismatch: declared %.6g mm/unit, geometry inferred %.6g mm/unit (%s). Using geometry.",
+        declared_factor_mm,
+        inferred_factor_mm,
+        inferred.unit_label,
+    )
+    return {
+        "factor_mm": inferred_factor_mm,
+        "source": "geometry_over_declared_units",
+        "declared_factor_mm": declared_factor_mm,
+        "inferred_factor_mm": inferred_factor_mm,
+        "inferred_unit": inferred.unit_label,
+        "outline_before": inferred.outline_before,
+        "outline_after_m": inferred.outline_after,
+        "warning": warning,
+    }
+
+
+def _geometry_rows_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for entity in payload.get("Entities") or []:
+        if not isinstance(entity, dict):
+            continue
+        bounds = entity.get("Bounds")
+        if not isinstance(bounds, dict):
+            continue
+        min_pt = bounds.get("Min") or {}
+        max_pt = bounds.get("Max") or {}
+        try:
+            x0 = float(min_pt.get("X") or 0.0)
+            y0 = float(min_pt.get("Y") or 0.0)
+            x1 = float(max_pt.get("X") or 0.0)
+            y1 = float(max_pt.get("Y") or 0.0)
+        except Exception:
+            continue
+        if x1 <= x0 or y1 <= y0:
+            continue
+        rows.append(
+            {
+                "model_bounds": [x0, y0, x1, y1],
+                "model_center": [(x0 + x1) / 2.0, (y0 + y1) / 2.0],
+            }
+        )
+    return rows
+
+
 def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    factor_mm = float(payload.get("UnitsToMmFactor") or 1.0)
+    unit_resolution = _resolve_payload_units_to_mm(payload)
+    factor_mm = unit_resolution["factor_mm"]
     entities = payload.get("Entities") or []
     raw_entity_count = 0
     raw_annotation_count = 0
     raw_primary_candidate_count = 0
     raw_bbox_only_count = 0
     type_counts: dict[str, int] = {}
+    layer_counts: dict[str, int] = {}
     min_x = min_y = min_z = float("inf")
     max_x = max_y = max_z = float("-inf")
     have_bounds = False
@@ -234,6 +317,7 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
         entity_type = str(entity.get("Type") or "")
         layer = str(entity.get("Layer") or "0")
         type_counts[entity_type] = type_counts.get(entity_type, 0) + 1
+        layer_counts[layer] = layer_counts.get(layer, 0) + 1
         if entity_type in ANNOTATION_TYPES or any(token in layer.lower() for token in NON_GEOMETRIC_LAYER_TOKENS):
             raw_annotation_count += 1
         if entity_type in {"Polyline", "Polyline2d", "Polyline3d", "Circle", "Arc", "Line"}:
@@ -298,6 +382,9 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
         entity_type
         for entity_type, _count in sorted(type_counts.items(), key=lambda item: (-item[1], item[0]))[:5]
     ]
+    raw_layers_detected = [
+        layer for layer, _ in sorted(layer_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:50]
+    ]
     dominant_cluster_key = None
     dominant_cluster_bounds = None
     dominant_cluster_centroid = None
@@ -317,6 +404,7 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         "units_to_mm_factor": factor_mm,
+        "unit_resolution": unit_resolution,
         "raw_entity_count": raw_entity_count,
         "raw_annotation_count": raw_annotation_count,
         "raw_primary_candidate_count": raw_primary_candidate_count,
@@ -328,6 +416,7 @@ def profile_accore_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "dominant_cluster_bounds_mm": dominant_cluster_bounds,
         "dominant_cluster_centroid_mm": dominant_cluster_centroid,
         "dominant_entity_types": dominant_entity_types,
+        "raw_layers_detected": raw_layers_detected,
     }
 
 
@@ -355,7 +444,8 @@ def extract_elements_from_accore_payload(
     z_thickness_mm: float,
     z_ref_mm: float | None,
 ) -> list[Element25D]:
-    factor_mm = float(payload.get("UnitsToMmFactor") or 1.0)
+    unit_resolution = _resolve_payload_units_to_mm(payload)
+    factor_mm = unit_resolution["factor_mm"]
     z0 = 0.0 if z_ref_mm is None else float(z_ref_mm)
     entities = payload.get("Entities") or []
     candidates: list[tuple[float, Element25D]] = []
@@ -423,6 +513,7 @@ def extract_elements_from_accore_payload(
                         "block_name": block_name,
                         "area_mm2": area,
                         "source": "cad_accore",
+                        "unit_resolution": unit_resolution,
                         "geometry_source": geometry_source,
                         "geometry_quality": geometry_quality,
                         "geometry_confidence": _geometry_confidence_label(geometry_quality),

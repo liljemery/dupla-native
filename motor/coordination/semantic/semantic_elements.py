@@ -371,9 +371,9 @@ def _centroid_from_element(element: Element25D) -> tuple[float, float] | None:
 
 def _confidence_from_quality(value: Any) -> str:
     quality = str(value or "medium").lower()
-    if quality in {"high", "exact"}:
+    if quality in {"good", "high", "exact"}:
         return "high"
-    if quality in {"medium", "proxy"}:
+    if quality in {"coarse", "medium", "proxy"}:
         return "medium"
     return "low"
 

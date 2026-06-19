@@ -64,8 +64,22 @@ def _parse_json_field(raw: Any) -> dict[str, Any]:
     return {}
 
 
+_SEVERITY_ES_TO_ENUM: dict[str, str] = {
+    "crítica": Severity.CRITICAL.value,
+    "critica": Severity.CRITICAL.value,
+    "alta": Severity.HIGH.value,
+    "media": Severity.MEDIUM.value,
+    "baja": Severity.LOW.value,
+}
+
+
 def _safe_enum(value: str, allowed: set[str], default: str) -> str:
     return value if value in allowed else default
+
+
+def _severity_es_to_enum(value: str) -> str:
+    """Map compute_severity() Spanish output to Severity enum value."""
+    return _SEVERITY_ES_TO_ENUM.get(str(value).strip().lower(), Severity.LOW.value)
 
 
 def _priority_from_severity(severity: str) -> str:
@@ -86,7 +100,7 @@ def _incident_to_fields(incident: dict[str, Any]) -> dict[str, Any]:
     area = float(rep.get("plan_intersection_area_mm2") or 0.0)
     z_depth = rep.get("overlap_depth_z_mm")
     z_val = float(z_depth) if z_depth is not None else None
-    severity = compute_severity(area_mm2=area, z_depth_mm=z_val)
+    severity = _severity_es_to_enum(compute_severity(area_mm2=area, z_depth_mm=z_val))
     layers = rep.get("raw_layers") or []
     layer_a = str(layers[0]) if len(layers) > 0 and layers[0] else None
     layer_b = str(layers[1]) if len(layers) > 1 and layers[1] else None
@@ -101,7 +115,7 @@ def _incident_to_fields(incident: dict[str, Any]) -> dict[str, Any]:
     return {
         "clash_code": str(incident.get("incident_id") or "unknown"),
         "priority": _priority_from_severity(severity),
-        "severity": _safe_enum(severity, {s.value for s in Severity}, Severity.LOW.value),
+        "severity": severity,
         "report_confidence": _safe_enum(
             str(incident.get("confidence") or rep.get("confidence") or "low").lower(),
             {c.value for c in ReportConfidence},
@@ -769,15 +783,16 @@ class ClashWorkflowService:
         user: User,
         project_uuid: UUID,
         item_id: UUID,
-        *,
-        outcome: str | None = None,
     ) -> dict[str, Any]:
-        """Re-ingest the corrected pair and record whether the clash persists.
+        """Enqueue a real partial clash re-analysis for the corrected document pair.
 
-        The corrected DWG re-enters the flow as a partial re-analysis of the
-        pair. ``outcome`` records the result: ``resolved`` when the clash is no
-        longer present (default) or ``still_present`` when it persists.
+        Transitions the item to ``pending_reanalysis`` immediately. The motor is
+        re-run against the two DWG files; once the job completes,
+        ``sync_job_status()`` auto-transitions to ``resolved`` or
+        ``still_present``.
         """
+        from app.models.project_file import ProjectFile
+
         job = await self._latest_completed_job(user, project_uuid)
         result = await self._session.execute(
             select(ProjectClashItem)
@@ -794,20 +809,62 @@ class ClashWorkflowService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Sube una corrección antes de reanalizar.",
             )
-        try:
-            result_enum = CorrectionResult(outcome) if outcome else CorrectionResult.RESOLVED
-        except ValueError as exc:
+
+        latest = corrections[-1]
+        corrected_path = Path(latest.stored_path) if latest.stored_path else None
+        if corrected_path is None or not corrected_path.is_file():
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reanalysis outcome"
-            ) from exc
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Archivo de corrección no encontrado en disco.",
+            )
 
-        reanalysis_run_id = f"reanalysis-{uuid.uuid4().hex[:12]}"
+        try:
+            correction_target = CorrectionTarget(latest.target)
+        except ValueError:
+            correction_target = CorrectionTarget.DWG_A
 
-        # Move correction_uploaded -> pending_reanalysis if needed.
+        if correction_target == CorrectionTarget.DWG_A:
+            corrected_name = item.dwg_a
+            corrected_discipline = item.discipline_a
+            ref_name = item.dwg_b
+            ref_discipline = item.discipline_b
+        else:
+            corrected_name = item.dwg_b
+            corrected_discipline = item.discipline_b
+            ref_name = item.dwg_a
+            ref_discipline = item.discipline_a
+
+        ref_file_path: Path | None = None
+        if ref_name:
+            ref_res = await self._session.execute(
+                select(ProjectFile)
+                .where(
+                    ProjectFile.project_id == job.project_id,
+                    ProjectFile.original_name == ref_name,
+                )
+                .limit(1)
+            )
+            ref_pf = ref_res.scalar_one_or_none()
+            if ref_pf and ref_pf.storage_key and Path(ref_pf.storage_key).is_file():
+                ref_file_path = Path(ref_pf.storage_key)
+
+        new_job_id = await self._clash_svc.enqueue_pair_reanalysis(
+            job=job,
+            item=item,
+            corrected_path=corrected_path,
+            corrected_original_name=corrected_name or "correction.dwg",
+            corrected_discipline=corrected_discipline,
+            ref_path=ref_file_path,
+            ref_original_name=ref_name,
+            ref_discipline=ref_discipline,
+            user=user,
+        )
+
         try:
             current = ClashStatus(item.status)
         except ValueError:
             current = ClashStatus.DETECTED
+
         if current != ClashStatus.PENDING_REANALYSIS and can_transition(
             current, ClashStatus.PENDING_REANALYSIS
         ):
@@ -819,39 +876,11 @@ class ClashWorkflowService:
                 actor="system",
                 previous_status=previous,
                 new_status=item.status,
-                comment=f"Reanálisis parcial del par ({reanalysis_run_id})",
-                related_run_id=reanalysis_run_id,
+                comment=f"Reanálisis encolado en motor: job {new_job_id}",
+                related_run_id=new_job_id,
             )
-            current = ClashStatus.PENDING_REANALYSIS
 
-        target = (
-            ClashStatus.RESOLVED
-            if result_enum == CorrectionResult.RESOLVED
-            else ClashStatus.STILL_PRESENT
-        )
-        if not can_transition(current, target):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"No se puede registrar el reanálisis desde {current.value}",
-            )
-        previous = item.status
-        item.status = target.value
-        item.updated_at = _now()
-
-        latest = corrections[-1]
-        latest.result = result_enum.value
-        latest.reanalysis_run_id = reanalysis_run_id
-
-        await self._add_event(
-            item,
-            event_type=EventType.REANALYSIS.value,
-            actor=user.email,
-            previous_status=previous,
-            new_status=target.value,
-            comment=f"Resultado del reanálisis: {CORRECTION_RESULT_LABELS_ES[result_enum]}",
-            correction_id=latest.id,
-            related_run_id=reanalysis_run_id,
-        )
+        latest.reanalysis_run_id = new_job_id
         return await self.get_clash_detail(user, project_uuid, item_id)
 
     def resolve_tile(self, job: ProjectClashJob, filename: str) -> Path | None:

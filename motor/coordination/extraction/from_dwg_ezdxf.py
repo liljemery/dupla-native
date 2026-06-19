@@ -13,6 +13,7 @@ from shapely.geometry import Polygon
 
 from coordination.core.models_25d import Discipline, Element25D, ZInterval
 from coordination.core.nasas_paths import translate_footprint
+from coordination.core.units import insunits_to_mm_factor
 
 logger = logging.getLogger("dupla.coordination.dwg")
 
@@ -27,6 +28,13 @@ def _looks_like_binary_dwg(path: Path) -> bool:
 
 
 def _insunits_to_mm_factor(doc: Any) -> float:
+    try:
+        header = getattr(doc, "header", {})
+        insunits = int(header.get("$INSUNITS", 0))
+        measurement = int(header.get("$MEASUREMENT", 1))
+        return insunits_to_mm_factor(insunits, measurement=measurement)
+    except Exception:
+        pass
     try:
         return float(units.conversion_factor(doc.units, units.MM))
     except Exception:

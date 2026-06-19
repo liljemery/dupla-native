@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """
 Smoke-test del pipeline completo de clash identification con planos reales de SERENA 18.
+Usa smoke mode (sin motor Dupla) para validar la integración end-to-end.
 
 Uso:
     python scripts/test_clash_serena18.py
+    SERENA18_ROOT="/path/to/PLANOS RECIBIDOS" python scripts/test_clash_serena18.py
 
 Requiere backend en :8000 y coordination-service en :8002 corriendo localmente.
 """
@@ -21,33 +23,38 @@ BASE_URL = "http://127.0.0.1:8000"
 EMAIL = "master@dupla.demo"
 PASSWORD = "master123"
 
-DOWNLOADS = Path(os.environ.get("SERENA18_DOWNLOADS", "/Users/thewizard/Downloads"))
+SERENA_ROOT = Path(
+    os.environ.get(
+        "SERENA18_ROOT",
+        "/Users/samuelfernandez/Downloads/SERENA 18/PLANOS RECIBIDOS",
+    )
+)
 
 TEST_FILES = [
     {
-        "path": DOWNLOADS / "2208-Serena18-ID-Base-UpperFloor.dwg",
+        "path": SERENA_ROOT / "ARQUITECTONICOS/06. JUNIO 2024/2208-Serena18-ID-Base.dwg",
         "discipline": "arquitectura",
-        "label": "ARQ — Upper Floor ID",
+        "label": "ARQ — Planta base",
     },
     {
-        "path": DOWNLOADS / "EST. SERENA 18 - E05 - PLANTA EST. CIMIENTOS Y DETALLES  SOTANO.dwg",
+        "path": SERENA_ROOT / "TECNICOS/ESTRUCTURAL/01. ENERO 2023/EST. SERENA 18 - E09 - PLANTA EST. LOSAS DE PISO SOBRE TERRENO  Y DETALLES  CASA.dwg",
         "discipline": "estructura",
-        "label": "EST — Cimientos / sótano",
+        "label": "EST — Losas de piso",
     },
     {
-        "path": DOWNLOADS / "20.01.2025 SERENA 18 PLANOS ELECTRICOS FINALES (MAVA).dwg",
+        "path": SERENA_ROOT / "TECNICOS/ELECTRICOS/11. NOVIEMBRE 2024/20.01.2025 SERENA 18 PLANOS ELECTRICOS FINALES (MAVA).dwg",
         "discipline": "electrica",
         "label": "ELC — Planos eléctricos finales",
     },
     {
-        "path": DOWNLOADS / "S-100, S-101 PLANTAS SUMINISTRO DE AGUA.dwg",
-        "discipline": "plomeria",
-        "label": "PLO — Suministro de agua",
+        "path": SERENA_ROOT / "TECNICOS/MECANICOS/09. SEPTIEMBRE 2024/27.09.2024 SE 18 PLANTA MECANICA FINALES.dwg",
+        "discipline": "mecanica",
+        "label": "MEC — Planta mecánica final",
     },
 ]
 
-POLL_INTERVAL = 15
-POLL_TIMEOUT = 2400
+POLL_INTERVAL = 15   # segundos entre polls
+POLL_TIMEOUT  = 2400  # 40 min — APS puede tardar hasta 5 min por DWG
 
 
 def ok(msg: str) -> None:
@@ -133,10 +140,15 @@ def create_folder(headers: dict, project_uuid: str) -> str:
     return uuid
 
 
-def upload_and_tag_files(headers: dict, project_uuid: str, folder_uuid: str) -> None:
+def upload_and_tag_files(headers: dict, project_uuid: str, folder_uuid: str) -> list[str]:
     step("4. Subir DWGs y asignar disciplinas")
+    file_uuids = []
+
     for entry in TEST_FILES:
         path = entry["path"]
+        if not path.is_file():
+            fail(f"Archivo no encontrado: {path}")
+
         with open(path, "rb") as fh:
             r = requests.post(
                 f"{BASE_URL}/api/projects/{project_uuid}/files",
@@ -155,7 +167,10 @@ def upload_and_tag_files(headers: dict, project_uuid: str, folder_uuid: str) -> 
         )
         if r2.status_code not in (200, 201):
             fail(f"Patch disciplina falló ({path.name}) {r2.status_code}: {r2.text[:300]}")
-        ok(f"{entry['label']}  →  discipline={entry['discipline']}")
+        ok(f"{entry['label']}  →  discipline={entry['discipline']}  uuid={file_uuid}")
+        file_uuids.append(file_uuid)
+
+    return file_uuids
 
 
 def verify_inventory(headers: dict, project_uuid: str, folder_uuid: str) -> None:
@@ -174,7 +189,7 @@ def verify_inventory(headers: dict, project_uuid: str, folder_uuid: str) -> None
             print(f"     blocker: {blocker}")
 
 
-def enqueue_job(headers: dict, project_uuid: str, folder_uuid: str) -> None:
+def enqueue_job(headers: dict, project_uuid: str, folder_uuid: str) -> str:
     step("6. Encolar clash job")
     r = requests.post(
         f"{BASE_URL}/api/projects/{project_uuid}/clash/jobs",
@@ -184,7 +199,8 @@ def enqueue_job(headers: dict, project_uuid: str, folder_uuid: str) -> None:
     if r.status_code not in (200, 201, 202):
         fail(f"Enqueue falló {r.status_code}: {r.text}")
     data = r.json()
-    ok(f"Job encolado: id={data['id']} status={data['status']}")
+    ok(f"Job encolado: id={data['id']}  job_id={data.get('job_id')}  status={data['status']}")
+    return data["id"]
 
 
 def poll_job(headers: dict, project_uuid: str) -> float:

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/style.min.css" type="text/css">
+  <script src="https://developer.api.autodesk.com/modelderivative/v2/viewers/7.*/viewer3D.min.js"></script>
+  <script src="./projection.js"></script>
+  <style>
+    body { margin: 0; background: #fff; }
+    #v { position: absolute; width: 100%; height: 100%; background: #fff; }
+  </style>
+</head>
+<body>
+  <div id="v"></div>
+  <script>
+    function qs(name) { return new URLSearchParams(location.search).get(name); }
+    const URN = qs('urn');
+    const TOKEN = qs('token');
+    const SHOT_W = parseInt(qs('w') || '3000', 10);
+    const SHOT_H = parseInt(qs('h') || '2200', 10);
+    const VIEW_PREF = (qs('view') || '').toLowerCase();
+    const SHEET_PREF = (qs('sheet') || '').toLowerCase();
+    const GUID_PREF = qs('viewable-guid') || '';
+
+    function log(m) { try { console.log('[poc] ' + m); } catch (e) {} }
+
+    function getUnitFactorMm(clashes) {
+      for (const c of clashes || []) {
+        const raw = c.units_to_mm_factor || c.unit_factor_mm || c.factor_mm;
+        const value = Number(raw);
+        if (Number.isFinite(value) && value > 0) return value;
+      }
+      return 1.0;
+    }
+
+    function getPlacementTransform(model) {
+      if (!model) return null;
+      try {
+        if (typeof model.getModelToViewerTransform === 'function') {
+          const tx = model.getModelToViewerTransform();
+          if (tx) return tx;
+        }
+      } catch (e) {}
+      try {
+        if (typeof model.getPlacementTransform === 'function') {
+          const tx = model.getPlacementTransform();
+          if (tx) return tx;
+        }
+      } catch (e) {}
+      try {
+        const data = typeof model.getData === 'function' ? model.getData() : null;
+        if (data && data.placementWithOffset) return data.placementWithOffset;
+      } catch (e) {}
+      return null;
+    }
+
+    function pickViewable(root, pref) {
+      if (GUID_PREF) {
+        const all = root.search({ type: 'geometry' });
+        const exact = all.find(v => v.data && v.data.guid === GUID_PREF);
+        if (exact) { log('picked by guid: ' + (exact.data.name || '') + ' guid=' + exact.data.guid); return exact; }
+        log('guid pref not found, falling back: ' + GUID_PREF);
+      }
+      const all3d = root.search({ type: 'geometry', role: '3d' });
+      log('3D viewables: ' + all3d.length);
+      all3d.forEach((v, i) => log('  [3d ' + i + '] name="' + (v.data.name || '') + '" guid=' + v.data.guid));
+      if (all3d.length) {
+        const pref3d = pref || VIEW_PREF;
+        if (pref3d) {
+          const match3d = all3d.find(v => (v.data.name || '').toLowerCase().includes(pref3d));
+          if (match3d) { log('picked 3D (pref match): ' + match3d.data.name); return match3d; }
+        }
+        log('picked 3D (first): ' + all3d[0].data.name);
+        return all3d[0];
+      }
+
+      const all2d = root.search({ type: 'geometry', role: '2d' });
+      log('2D viewables: ' + all2d.length);
+      all2d.forEach((v, i) => log('  [' + i + '] name="' + (v.data.name || '') + '" guid=' + v.data.guid));
+      if (!all2d.length) return root.getDefaultGeometry();
+
+      const isLeaf = (v) => {
+        const kids = (v.data.children || []).filter(c => c.type === 'geometry' && c.role === '2d');
+        return kids.length === 0;
+      };
+      const leaves = all2d.filter(isLeaf);
+      const pool = leaves.length ? leaves : all2d;
+      const pref1 = SHEET_PREF || VIEW_PREF;
+      if (pref1) {
+        const match = pool.find(v => (v.data.name || '').toLowerCase().includes(pref1));
+        if (match) { log('picked (pref match): ' + match.data.name); return match; }
+      }
+      log('picked (first leaf): ' + pool[0].data.name);
+      return pool[0];
+    }
+
+    Autodesk.Viewing.Initializer(
+      { env: 'AutodeskProduction', api: 'derivativeV2', getAccessToken: (cb) => cb(TOKEN, 3600) },
+      () => {
+        const viewer = new Autodesk.Viewing.GuiViewer3D(document.getElementById('v'), { extensions: [] });
+        viewer.start();
+        viewer.setBackgroundColor(255, 255, 255, 255, 255, 255);
+
+        Autodesk.Viewing.Document.load('urn:' + URN, (doc) => {
+          const target = pickViewable(doc.getRoot(), SHEET_PREF || VIEW_PREF);
+          if (!target) { window.__ERR__ = 'no viewable found'; return; }
+
+          viewer.loadDocumentNode(doc, target, { keepCurrentModels: false })
+            .then(() => {
+              viewer.addEventListener(Autodesk.Viewing.GEOMETRY_LOADED_EVENT, () => {
+                log('GEOMETRY_LOADED');
+                setTimeout(() => {
+                  try { viewer.fitToView([], viewer.model, true); } catch (e) {}
+                  setTimeout(() => {
+                    try {
+                      const THREE = window.THREE || (Autodesk.Viewing.Private && Autodesk.Viewing.Private.THREE);
+                      const bb = viewer.model.getBoundingBox();
+                      const sMin = viewer.worldToClient(new THREE.Vector3(bb.min.x, bb.min.y, bb.min.z || 0));
+                      const sMax = viewer.worldToClient(new THREE.Vector3(bb.max.x, bb.max.y, bb.max.z || 0));
+                      log('model bbox min=[' + bb.min.x.toFixed(4) + ',' + bb.min.y.toFixed(4) + '] max=[' + bb.max.x.toFixed(4) + ',' + bb.max.y.toFixed(4) + ']');
+
+                      const clashes = window.__CLASHES__ || [];
+                      const placement = getPlacementTransform(viewer.model);
+                      const boxes = window.DuplaProjection.projectClashesToBoxes(clashes, {
+                        THREE,
+                        unitFactorMm: getUnitFactorMm(clashes),
+                        placementTransform: placement,
+                        worldToClient: (point) => viewer.worldToClient(point),
+                        log,
+                      });
+                      window.__BOXES__ = boxes;
+                      window.__BBOX__ = { min: [bb.min.x, bb.min.y], max: [bb.max.x, bb.max.y] };
+                      window.__DIAG__ = {
+                        modelBBox: { min: { x: bb.min.x, y: bb.min.y, z: bb.min.z || 0 }, max: { x: bb.max.x, y: bb.max.y, z: bb.max.z || 0 } },
+                        screenBBox: {
+                          minX: Math.min(sMin.x, sMax.x),
+                          minY: Math.min(sMin.y, sMax.y),
+                          maxX: Math.max(sMin.x, sMax.x),
+                          maxY: Math.max(sMin.y, sMax.y),
+                        },
+                        viewportW: SHOT_W,
+                        viewportH: SHOT_H,
+                        unitFactorMm: getUnitFactorMm(clashes),
+                        hasPlacementTransform: !!placement,
+                      };
+                      log('projected boxes=' + boxes.length + ' modelSpace=true placement=' + !!placement);
+                    } catch (e) {
+                      log('project err: ' + e.message);
+                      window.__BOXES__ = [];
+                      window.__DIAG__ = { err: e.message, viewportW: SHOT_W, viewportH: SHOT_H };
+                    }
+
+                    viewer.getScreenShot(SHOT_W, SHOT_H, async (out) => {
+                      try {
+                        let dataUrl = out;
+                        if (typeof out === 'string' && out.startsWith('blob:')) {
+                          const resp = await fetch(out);
+                          const blob = await resp.blob();
+                          dataUrl = await new Promise(r => {
+                            const fr = new FileReader();
+                            fr.onload = () => r(fr.result);
+                            fr.readAsDataURL(blob);
+                          });
+                        }
+                        window.__SHOT__ = dataUrl;
+                        log('screenshot ready len=' + (dataUrl ? dataUrl.length : 0));
+                      } catch (e) { window.__ERR__ = 'screenshot: ' + e.message; }
+                    });
+                  }, 2000);
+                }, 500);
+              });
+            })
+            .catch(e => { window.__ERR__ = 'loadNode: ' + (e && e.message); });
+        }, (code, msg) => { window.__ERR__ = 'docLoad ' + code + ' ' + msg; });
+      }
+    );
+  </script>
+</body>
+</html>

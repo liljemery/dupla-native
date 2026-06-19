@@ -224,13 +224,18 @@ async def clash_workflow_upload_correction(
 async def clash_workflow_reanalysis(
     project_uuid: UUID,
     item_id: UUID,
-    body: ReanalysisBody,
     current: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
+    """Enqueue a real motor re-analysis for the corrected document pair.
+
+    The item transitions to ``pending_reanalysis`` immediately. Resolution
+    (``resolved`` / ``still_present``) is set automatically when the motor job
+    completes.
+    """
     svc = ClashWorkflowService(session, ws_ctx.workspace_id)
-    data = await svc.request_reanalysis(current, project_uuid, item_id, outcome=body.outcome)
+    data = await svc.request_reanalysis(current, project_uuid, item_id)
     await session.commit()
     return data
 

@@ -1,4 +1,3 @@
-import type { LucideIcon } from 'lucide-react'
 import { Building2, Factory, HardHat, MoreVertical } from 'lucide-react'
 
 import { projectKindLabel } from '../../constants/projectKind'
@@ -9,12 +8,6 @@ import {
 } from '../../lib/projectDashboardBuckets'
 import type { Project } from '../../types/project'
 
-function projectCardIcon(kind: string): LucideIcon {
-  if (kind === 'TENDER') return Factory
-  if (kind === 'DEVELOPMENT') return HardHat
-  return Building2
-}
-
 function gradientForKind(kind: string): string {
   if (kind === 'TENDER') {
     return 'from-violet-600 via-fuchsia-500 to-orange-300'
@@ -23,6 +16,16 @@ function gradientForKind(kind: string): string {
     return 'from-slate-600 via-slate-500 to-amber-200'
   }
   return 'from-primary via-red-500 to-amber-200'
+}
+
+function ProjectKindIcon({ kind }: { kind: string }) {
+  if (kind === 'TENDER') {
+    return <Factory className="size-3" strokeWidth={2} aria-hidden />
+  }
+  if (kind === 'DEVELOPMENT') {
+    return <HardHat className="size-3" strokeWidth={2} aria-hidden />
+  }
+  return <Building2 className="size-3" strokeWidth={2} aria-hidden />
 }
 
 type ProjectFolderCardProps = {
@@ -38,7 +41,6 @@ export function ProjectFolderCard({
   onOpen,
   onMenuToggle,
 }: ProjectFolderCardProps) {
-  const Icon = projectCardIcon(project.project_kind)
   const bucket = projectDashboardBucket(project.workflow_phase)
   const pct = workflowPhaseProgressPct(project.workflow_phase)
   const subtitle =
@@ -110,7 +112,7 @@ export function ProjectFolderCard({
             <h3 className="du-folder-card-title">{project.name}</h3>
             <p className="du-folder-card-subtitle">{subtitle}</p>
             <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/75">
-              <Icon className="size-3" strokeWidth={2} aria-hidden />
+              <ProjectKindIcon kind={project.project_kind} />
               {dashboardBucketLabel(bucket)}
             </span>
           </div>
