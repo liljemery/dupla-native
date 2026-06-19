@@ -64,10 +64,10 @@ export function Sidebar() {
   }, [token])
 
   const linkBase =
-    'flex items-center rounded-md text-base font-medium text-ink outline-none transition-colors duration-150 hover:bg-black/5 active:bg-black/10 focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-white'
+    'flex items-center rounded-xl text-base font-medium text-ink outline-none transition-colors duration-150 hover:bg-black/5 active:bg-black/10 focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-surface-elevated'
   const linkExpanded = 'justify-between gap-2 px-3.5 py-2.5'
   const linkCollapsed = 'justify-center px-2.5 py-3'
-  const activeClass = 'bg-primary/10 text-primary'
+  const activeClass = 'bg-primary/10 text-primary ring-1 ring-primary/20'
 
   const userTooltip = [email, role, unreadNotifs > 0 ? `${unreadNotifs} aviso(s)` : null]
     .filter(Boolean)
@@ -76,7 +76,7 @@ export function Sidebar() {
   return (
     <aside
       data-tour="sidebar-root"
-      className={`flex h-full min-h-0 max-h-full shrink-0 flex-col overflow-hidden border-r border-black/10 bg-white transition-[width] duration-200 ease-out ${
+      className={`flex h-full min-h-0 max-h-full shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-white transition-[width] duration-200 ease-out ${
         collapsed ? 'w-[4.5rem]' : 'w-56 md:w-60'
       }`}
     >

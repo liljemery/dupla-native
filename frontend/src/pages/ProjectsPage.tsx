@@ -1,21 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  ArrowRight,
-  ChevronRight,
   ClipboardList,
   Plus,
-  Search,
   Settings,
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { apiFetch } from '../api/client'
-import { Card } from '../components/Card'
 import { CreateProjectModal } from '../components/projects/CreateProjectModal'
 import { NotificationsBell } from '../components/NotificationsBell'
 import { WorkspaceContextSelect } from '../components/WorkspaceContextSelect'
 import { ProjectsBoardView } from '../components/projects/ProjectsBoardView'
 import { ProjectsDashboardOverview } from '../components/projects/ProjectsDashboardOverview'
+import { IconButton } from '../components/ui/IconButton'
+import { PageHeader, PageToolbarDivider, PageToolbarItem } from '../components/ui/PageHeader'
+import { ViewTabs } from '../components/ui/ViewTabs'
 import { PROJECT_CARD_MIME } from '../constants/projectsPage'
 import { isAdjacentWorkflowTransitionAllowed } from '../constants/workflowPhases'
 import type { Project } from '../types/project'
@@ -23,7 +22,6 @@ import type { WorkflowTemplateDetail } from '../types/workflowTemplate'
 
 const PROJECTS_VIEW_FLOW_STORAGE_KEY = 'dupla.projects.viewWorkflowTemplateUuid'
 import { projectDashboardBucket, type DashboardStatusFilter } from '../lib/projectDashboardBuckets'
-import { userDisplayInitials } from '../lib/taskboard'
 import { hasElevatedAccess } from '../lib/accessPermissions'
 import { useAuthStore } from '../store/authStore'
 import type { ProjectKindValue } from '../constants/projectKind'
@@ -48,9 +46,6 @@ export function ProjectsPage() {
   const isTeamLeader = useAuthStore((s) => s.isTeamLeader)
   const elevated = hasElevatedAccess(role, isTeamLeader)
   const userUuid = useAuthStore((s) => s.userUuid)
-  const email = useAuthStore((s) => s.email)
-  const firstName = useAuthStore((s) => s.firstName)
-  const lastName = useAuthStore((s) => s.lastName)
   const [projects, setProjects] = useState<Project[]>([])
   const [name, setName] = useState('Nuevo proyecto')
   const [client, setClient] = useState('')
@@ -394,8 +389,6 @@ export function ProjectsPage() {
     navigate(`/app/projects/${projectUuid}`)
   }
 
-  const initials = userDisplayInitials(firstName, lastName, email ?? '?')
-
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
       <div className="sr-only" aria-live="polite" aria-atomic="true">
@@ -417,109 +410,77 @@ export function ProjectsPage() {
         </div>
       ) : null}
 
-      <header className="flex shrink-0 flex-col gap-4" data-tour="projects-heading">
-        <nav className="flex flex-wrap items-center gap-1 text-xs text-muted sm:text-sm" aria-label="Ubicación">
-          <span>Mis proyectos</span>
-          <ChevronRight className="size-4 shrink-0 opacity-40" aria-hidden />
-          <span className="font-semibold text-ink">Panel</span>
-        </nav>
+      <div className="du-page-shell" data-tour="projects-heading">
+        <PageHeader
+          title="Proyectos"
+          subtitle="Gestiona obras, plazos y progreso del equipo."
+          toolbar={
+            <>
+              <PageToolbarItem>
+                <Link
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold text-ink no-underline transition hover:bg-slate-100"
+                  to="/app/tasks?mine=true"
+                  data-tour="projects-mi-trabajo"
+                >
+                  <ClipboardList className="size-4 text-primary" strokeWidth={2} aria-hidden />
+                  Mis tareas
+                </Link>
+              </PageToolbarItem>
+              <PageToolbarDivider />
+              <PageToolbarItem>
+                <WorkspaceContextSelect variant="toolbar" />
+              </PageToolbarItem>
+              <PageToolbarDivider />
+              <PageToolbarItem>
+                <NotificationsBell token={token} />
+              </PageToolbarItem>
+              <PageToolbarItem>
+                <IconButton
+                  label="Configuración de vista: flujo por defecto"
+                  variant="ghost"
+                  className="rounded-full"
+                  onClick={() => setProjectsSettingsOpen(true)}
+                >
+                  <Settings className="size-5 shrink-0" strokeWidth={2} aria-hidden />
+                </IconButton>
+              </PageToolbarItem>
+              {elevated ? (
+                <PageToolbarItem>
+                  <button
+                    type="button"
+                    data-tour="projects-new"
+                    className="du-cta-primary gap-1 px-2.5 py-1.5 text-xs uppercase"
+                    onClick={() => {
+                      setCreateError(null)
+                      setCreateModalOpen(true)
+                    }}
+                  >
+                    <Plus className="size-3.5 shrink-0" strokeWidth={2.5} aria-hidden />
+                    Nuevo proyecto
+                  </button>
+                </PageToolbarItem>
+              ) : null}
+            </>
+          }
+        />
         {projectsLoadError ? (
-          <p className="text-sm font-medium text-primary" role="alert">
+          <p className="mt-2 text-sm font-medium text-primary" role="alert">
             {projectsLoadError}
           </p>
         ) : null}
-
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:gap-6">
-          <div className="flex min-w-0 flex-1 justify-center lg:justify-center">
-            <label className="relative w-full max-w-xl" data-tour="projects-search">
-              <span className="sr-only">Buscar proyectos</span>
-              <Search
-                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted"
-                strokeWidth={2}
-                aria-hidden
-              />
-              <input
-                type="search"
-                className="du-input h-10 w-full rounded-lg border-black/12 py-0 pl-10 pr-3 text-sm placeholder:text-muted/90"
-                placeholder="Buscar proyectos…"
-                value={projectSearch}
-                onChange={(e) => setProjectSearch(e.target.value)}
-                autoComplete="off"
-                aria-label="Buscar proyectos"
-              />
-            </label>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <WorkspaceContextSelect />
-            {elevated ? (
-              <button
-                type="button"
-                data-tour="projects-new"
-                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2.5 text-xs font-bold uppercase tracking-wide text-white shadow-sm outline-none transition hover:opacity-[0.92] focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-2 sm:px-4"
-                onClick={() => {
-                  setCreateError(null)
-                  setCreateModalOpen(true)
-                }}
-              >
-                <Plus className="size-4 shrink-0" strokeWidth={2.5} aria-hidden />
-                <span className="sm:hidden">Nuevo</span>
-                <span className="hidden sm:inline">Nuevo proyecto</span>
-              </button>
-            ) : null}
-            <NotificationsBell token={token} />
-            <button
-              type="button"
-              className="rounded-lg border border-black/10 bg-white p-2 text-ink shadow-sm transition-colors hover:bg-black/[0.03]"
-              aria-label="Configuración de vista: flujo por defecto"
-              onClick={() => setProjectsSettingsOpen(true)}
-            >
-              <Settings className="size-5 shrink-0" strokeWidth={2} aria-hidden />
-            </button>
-            <div
-              className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold uppercase text-white shadow-sm ring-2 ring-white"
-              title={email ?? ''}
-            >
-              {initials}
-            </div>
-          </div>
-        </div>
-
-        <div
+        <ViewTabs
+          className="mt-4"
           data-tour="projects-view-toggle"
-          className="flex gap-8 border-b border-black/10"
-          role="tablist"
-          aria-label="Vista principal"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={viewMode === 'resumen'}
-            className={`relative -mb-px border-b-2 pb-3 text-sm font-semibold transition-colors ${
-              viewMode === 'resumen'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted hover:text-ink'
-            }`}
-            onClick={() => setViewMode('resumen')}
-          >
-            Resumen
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={viewMode === 'tablero'}
-            className={`relative -mb-px border-b-2 pb-3 text-sm font-semibold transition-colors ${
-              viewMode === 'tablero'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted hover:text-ink'
-            }`}
-            onClick={() => setViewMode('tablero')}
-          >
-            Tablero
-          </button>
-        </div>
-
+          ariaLabel="Vista principal"
+          tabs={[
+            { id: 'resumen', label: 'Resumen' },
+            { id: 'tablero', label: 'Tablero' },
+          ]}
+          activeId={viewMode}
+          onChange={(id) => setViewMode(id as 'resumen' | 'tablero')}
+        />
         {viewMode === 'tablero' ? (
-          <p className="text-sm leading-relaxed text-muted">
+          <p className="mt-3 text-sm leading-relaxed text-muted">
             {boardTemplate
               ? `Proyectos del flujo «${boardTemplate.name}». Arrastra una tarjeta al paso anterior o siguiente.`
               : elevated
@@ -527,39 +488,15 @@ export function ProjectsPage() {
                 : 'Vista en columnas por fase del proceso.'}
           </p>
         ) : null}
-      </header>
-
-      <Card
-        data-tour="projects-mi-trabajo"
-        className="flex flex-wrap items-start justify-between gap-3 border-primary/15 bg-primary/[0.04] p-4"
-      >
-        <div className="flex min-w-0 gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/12 text-primary [&>svg]:size-5">
-            <ClipboardList strokeWidth={2} aria-hidden />
-          </span>
-          <div className="min-w-0">
-            <p className="font-semibold text-ink">Mis tareas</p>
-            <p className="mt-0.5 text-sm text-muted">
-              Abre el tablero ya filtrado solo con tarjetas asignadas a ti.
-            </p>
-          </div>
-        </div>
-        <Link
-          className="du-pill-action inline-flex shrink-0 items-center gap-2 font-semibold no-underline"
-          to="/app/tasks?mine=true"
-        >
-          Ir al tablero
-          <ArrowRight className="size-4" strokeWidth={2.5} aria-hidden />
-        </Link>
-      </Card>
+      </div>
 
       {viewMode === 'resumen' ? (
         <ProjectsDashboardOverview
-          token={token}
           loadingList={loadingList}
           projects={projects}
           displayProjects={projectsForViews}
           projectSearch={projectSearch}
+          onProjectSearchChange={setProjectSearch}
           statusFilter={statusFilter}
           onStatusFilter={setStatusFilter}
           stats={stats}
@@ -571,6 +508,7 @@ export function ProjectsPage() {
           projects={projects}
           filteredProjects={projectsForViews}
           projectSearch={projectSearch}
+          onProjectSearchChange={setProjectSearch}
           boardMsg={boardMsg}
           onDropOnPhaseColumn={onDropOnPhaseColumn}
           onDragOverBoard={onDragOverBoard}

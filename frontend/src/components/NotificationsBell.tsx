@@ -16,9 +16,10 @@ export type UserNotificationRow = {
 
 type NotificationsBellProps = {
   token: string | null
+  className?: string
 }
 
-export function NotificationsBell({ token }: NotificationsBellProps) {
+export function NotificationsBell({ token, className }: NotificationsBellProps) {
   const [open, setOpen] = useState(false)
   const [notifs, setNotifs] = useState<UserNotificationRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -81,7 +82,7 @@ export function NotificationsBell({ token }: NotificationsBellProps) {
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        className="relative rounded-lg border border-black/10 bg-white p-2 text-muted shadow-sm transition hover:bg-black/[0.03] hover:text-ink"
+        className={`relative rounded-full p-2 text-muted transition hover:bg-slate-100 hover:text-ink ${className ?? ''}`}
         title={unreadCount > 0 ? `${unreadCount} avisos sin leer` : 'Sin avisos nuevos'}
         aria-label="Avisos"
         aria-expanded={open}

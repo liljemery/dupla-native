@@ -19,9 +19,10 @@ export function dashboardBucketLabel(bucket: Exclude<DashboardStatusFilter, 'tod
 
 /** Progreso aproximado del flujo ISO (0–100) para la barra del listado. */
 export function workflowPhaseProgressPct(phase: string): number {
+  if (phase === 'COMPLETE') return 100
   const order = WORKFLOW_PHASE_ORDER as readonly string[]
   const i = order.indexOf(phase)
   if (i < 0) return 8
-  const denom = Math.max(1, order.length - 1)
-  return Math.min(100, Math.round((i / denom) * 100))
+  // Punto medio del tramo de la fase, así la primera fase no queda en 0%.
+  return Math.min(100, Math.max(0, Math.round(((i + 0.5) / order.length) * 100)))
 }
