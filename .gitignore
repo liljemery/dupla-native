@@ -54,3 +54,15 @@ scripts/spike_f2d/dump_svf1_runtime.json
 scripts/spike_f2d/offline/
 
 .cursor/
+
+# APS Design Automation build artifacts
+processor/aps_integration/DuplaExtractor.bundle/
+processor/aps_integration/DuplaExtractor.zip
+processor/aps_integration/DuplaExtractor/obj/
+
+# Excel lock files
+~$*
+
+# BC3 embedding cache (regenerated locally)
+processor/knowledge/cache/*
+!processor/knowledge/cache/.gitkeep
