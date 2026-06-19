@@ -24,6 +24,14 @@ def test_budget_with_rows_qualifies_for_volumetry():
     assert budget_result_qualifies_for_volumetry(result) is True
 
 
+def test_empty_budget_with_disciplines_does_not_qualify():
+    result = {
+        "rows": [],
+        "output": {"disciplines": ["arquitectura"]},
+    }
+    assert budget_result_qualifies_for_volumetry(result) is False
+
+
 def test_base_extraction_with_rows_still_does_not_qualify():
     result = {
         "rows": [{"code": "01.01"}],

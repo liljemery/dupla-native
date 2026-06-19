@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 from aps_integration.aps_auth import get_aps_token
 from aps_integration.oss_manager import create_bucket, upload_file_to_bucket, APS_BUCKET_NAME
-from aps_integration.model_derivative import extract_dwg_data
+from aps_integration.model_derivative import ApsCapacityError, extract_dwg_data
 from agents.vision_agent import VISION_PROMPT_VERSION, run_full_vision_analysis, vision_model_id
 from processors.json_processor import process_autodesk_json
 from knowledge.bc3_embeddings import load_or_build_embeddings
@@ -22,6 +22,7 @@ from core.pipeline import build_budget_from_sources
 from core.schemas import ProjectContext
 from core import paths
 from disciplines import get_engine
+from pipeline_discipline import resolve_auto_continue_disciplines
 
 from pricing.excel_price_loader import load_or_cache_constructor_pricing
 from pricing.apu_matcher import APUMatcher
@@ -57,6 +58,50 @@ from core.stage_cache import (
 import logging
 
 logger = logging.getLogger(__name__)
+
+_APS_CAPACITY_EXHAUSTED = False
+
+
+def _aps_capacity_exhausted() -> bool:
+    return _APS_CAPACITY_EXHAUSTED
+
+
+def _mark_aps_capacity_exhausted() -> None:
+    global _APS_CAPACITY_EXHAUSTED
+    _APS_CAPACITY_EXHAUSTED = True
+
+
+def _skipped_aps_raw_data(*, reason: str) -> dict[str, Any]:
+    return {"views": [], "aps_error": reason, "manifest_status": "skipped"}
+
+
+def _extract_dwg_via_aps_or_skip(
+    *,
+    token: str,
+    bucket_name: str,
+    object_name: str,
+    translation_timeout_seconds: int,
+    poll_interval_seconds: int,
+    max_property_wait_seconds: int,
+) -> dict[str, Any]:
+    if _aps_capacity_exhausted():
+        return _skipped_aps_raw_data(reason="quota_exceeded")
+    try:
+        return extract_dwg_data(
+            token,
+            bucket_name,
+            object_name,
+            views=("2d",),
+            translation_timeout_seconds=translation_timeout_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+            max_property_wait_seconds=max_property_wait_seconds,
+            failed_manifest_grace_polls=3,
+            failed_manifest_grace_sleep_seconds=20,
+        )
+    except ApsCapacityError as exc:
+        _mark_aps_capacity_exhausted()
+        logger.warning("APS capacity/quota denied; skipping remaining DWG translations: %s", exc)
+        return _skipped_aps_raw_data(reason="quota_exceeded")
 
 
 _STANDARD_DISCIPLINES = ("arquitectura", "estructura", "sanitario", "electrico")
@@ -223,6 +268,26 @@ def _split_disciplines(raw: str) -> list[str]:
 def _normalize_discipline_token(value: str | None) -> str:
     text = (value or "").strip().lower()
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+
+
+def _set_pipeline_phase(phase: str, detail: str = "", **extra: Any) -> None:
+    """Publish live progress into the RQ job meta for status polling."""
+    try:
+        from rq.worker import Worker
+
+        worker = Worker.current()
+        if worker is None:
+            return
+        job = worker.get_currentJob()
+        if job is None:
+            return
+        job.meta["phase"] = phase
+        job.meta["phase_detail"] = detail
+        for key, value in extra.items():
+            job.meta[key] = value
+        job.save_meta()
+    except Exception:
+        logger.debug("Could not update pipeline phase meta", exc_info=True)
 
 
 def _resolve_target_disciplines(
@@ -511,6 +576,8 @@ def _build_extraction_artifacts(
     dwg_manifest: list[dict[str, Any]] = []
 
     async def _extract_all_dwg_raw_data() -> list[dict[str, Any]]:
+        global _APS_CAPACITY_EXHAUSTED
+        _APS_CAPACITY_EXHAUSTED = False
         semaphore = asyncio.Semaphore(30)
         work_items: list[dict[str, Any]] = []
 
@@ -574,16 +641,13 @@ def _build_extraction_artifacts(
                     len(dwg_files),
                     safe_name,
                 )
-                return extract_dwg_data(
-                    token,
-                    bucket_name,
-                    object_name,
-                    views=("2d",),
+                return _extract_dwg_via_aps_or_skip(
+                    token=token,
+                    bucket_name=bucket_name,
+                    object_name=object_name,
                     translation_timeout_seconds=_env_int("APS_TRANSLATION_TIMEOUT_SECONDS", 3600),
                     poll_interval_seconds=_env_int("APS_POLL_INTERVAL_SECONDS", 3),
                     max_property_wait_seconds=_env_int("APS_PROPERTY_WAIT_SECONDS", 3600),
-                    failed_manifest_grace_polls=3,
-                    failed_manifest_grace_sleep_seconds=20,
                 )
 
             t0 = asyncio.get_running_loop().time()
@@ -642,6 +706,11 @@ def _build_extraction_artifacts(
             all_raw_data.append({"dwg": safe_name, "sha256": dwg_hash, "data": raw_data})
             dwg_manifest.append({"filename": safe_name, "sha256": dwg_hash})
 
+            if raw_data.get("aps_error") == "quota_exceeded" or not raw_data.get("views"):
+                if raw_data.get("aps_error") == "quota_exceeded":
+                    logger.warning("APS skipped for %s (quota_exceeded)", safe_name)
+                continue
+
             temp_raw_json = outputs_dir / f"raw_{idx}.json"
             temp_raw_json.write_text(
                 json.dumps(raw_data, indent=2, ensure_ascii=False),
@@ -697,6 +766,7 @@ def _build_extraction_artifacts(
             "version": _EXTRACTION_ARTIFACT_VERSION,
             "extractor": "aps_model_derivative",
             "aps_views": ["2d"],
+            "aps_result": "quota_exceeded" if _aps_capacity_exhausted() else "ok",
             "pdf_dpi": pdf_dpi,
             "dwg_files": dwg_manifest,
             "pdf_files": [
@@ -1019,6 +1089,8 @@ def _run_dupla_pipeline_legacy(
 
         cad_facts: dict = {}
         all_raw_data: list[dict] = []
+        global _APS_CAPACITY_EXHAUSTED
+        _APS_CAPACITY_EXHAUSTED = False
         for idx, (filename, content) in enumerate(dwg_files):
             dwg_path = base_dir / (filename or f"upload_{idx}.dwg")
             dwg_path.write_bytes(content)
@@ -1033,18 +1105,20 @@ def _run_dupla_pipeline_legacy(
                 )
                 if not object_name:
                     raise RuntimeError(f"DWG upload to Autodesk failed: {_path.name}")
-                return extract_dwg_data(
-                    tok, bucket_name, object_name,
-                    views=("2d",),
+                return _extract_dwg_via_aps_or_skip(
+                    token=tok,
+                    bucket_name=bucket_name,
+                    object_name=object_name,
                     translation_timeout_seconds=3600,
                     poll_interval_seconds=10,
                     max_property_wait_seconds=3600,
-                    failed_manifest_grace_polls=3,
-                    failed_manifest_grace_sleep_seconds=20,
                 )
 
             raw_data = cached_stage("aps_extract", cache_key, _extract_via_aps)
             all_raw_data.append({"dwg": dwg_path.name, "data": raw_data})
+
+            if raw_data.get("aps_error") == "quota_exceeded" or not raw_data.get("views"):
+                continue
 
             temp_raw_json = outputs_dir / f"raw_{idx}.json"
             temp_raw_json.write_text(json.dumps(raw_data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1406,6 +1480,7 @@ def run_dupla_pipeline(
     )
 
     pdf_dpi = _env_int("DUPLA_PDF_DPI", 200, minimum=72)
+    _set_pipeline_phase("extraction", "Extrayendo planos y volumetría…")
     artifacts = _load_or_build_extraction_artifacts(
         dwg_files,
         pdf_files,
@@ -1426,13 +1501,28 @@ def run_dupla_pipeline(
     _maybe_apply_scale_calibration(normalized)
 
     if not target_disciplines:
-        result = _base_extraction_result(
-            artifacts=artifacts,
-            project_name=resolved_project_name,
+        auto_continue = resolve_auto_continue_disciplines(
+            discipline_id=discipline_id,
             suggested_discipline=suggested_discipline,
         )
-        log_stats_summary()
-        return result
+        if auto_continue is None:
+            result = _base_extraction_result(
+                artifacts=artifacts,
+                project_name=resolved_project_name,
+                suggested_discipline=suggested_discipline,
+            )
+            log_stats_summary()
+            return result
+        target_disciplines, discipline_mode = auto_continue
+        logger.info(
+            "Base extraction complete; auto-continuing budget for %s (mode=%s)",
+            target_disciplines,
+            discipline_mode,
+        )
+        _set_pipeline_phase(
+            "budget",
+            f"Generando presupuesto ({', '.join(target_disciplines)})…",
+        )
 
     # Legend (cuadro) reading is done by the Vision pass — it already reads the
     # rendered page image, legend included — so there is no separate OCR step.
@@ -1680,6 +1770,7 @@ def run_dupla_pipeline(
     shared_discipline_id = (
         target_disciplines[0] if len(target_disciplines) == 1 else "__shared__"
     )
+    _set_pipeline_phase("vision", "Analizando planos con IA…")
     shared_vision_results = _load_or_build_vision_results(
         artifacts=artifacts,
         normalized=normalized,
@@ -1707,6 +1798,7 @@ def run_dupla_pipeline(
 
     async def _process_discipline(disc_id: str) -> dict[str, Any]:
         logger.info("--- Processing Discipline: %s ---", disc_id)
+        _set_pipeline_phase("budget", f"Calculando partida: {disc_id}…")
         vision_results = shared_vision_results
 
         domain_rules = load_domain_rules_for_discipline(disc_id)

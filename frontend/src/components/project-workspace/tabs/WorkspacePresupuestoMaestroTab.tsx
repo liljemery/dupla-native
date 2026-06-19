@@ -7,7 +7,17 @@ import type { Project } from '../../../types/project'
 import { PrimaryButton } from '../../PrimaryButton'
 import { WorkspaceActionButton } from '../WorkspaceActionButton'
 
-// ─── formatters ───────────────────────────────────────────────────────────────
+const BUDGET_PHASE_LABELS: Record<string, string> = {
+  extraction: 'Extrayendo planos y volumetría…',
+  vision: 'Analizando planos con IA…',
+  budget: 'Generando presupuesto…',
+}
+
+function budgetPhaseMessage(job: { phase?: string | null; phase_detail?: string | null }): string {
+  if (job.phase_detail?.trim()) return job.phase_detail.trim()
+  if (job.phase && BUDGET_PHASE_LABELS[job.phase]) return BUDGET_PHASE_LABELS[job.phase]
+  return 'Analizando planos DWG, extrayendo volumetrías y generando presupuesto.'
+}
 function fmtDop(n: unknown): string {
   const num = Number(n) || 0
   return new Intl.NumberFormat('es-DO', {
@@ -261,7 +271,7 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
         <div className="space-y-2">
           <h2 className="text-xl font-bold text-ink">Procesando con IA…</h2>
           <p className="text-sm text-muted">
-            Analizando planos DWG, extrayendo volumetrías y generando presupuesto.
+            {job ? budgetPhaseMessage(job) : 'Analizando planos DWG, extrayendo volumetrías y generando presupuesto.'}
           </p>
           <p className="font-mono text-xs text-muted">
             {elapsed > 0 ? `${elapsed}s transcurridos` : 'Iniciando…'}
@@ -269,7 +279,15 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
         </div>
         <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-4 py-1.5 text-xs font-semibold text-primary">
           <span className="size-2 animate-pulse rounded-full bg-primary" />
-          {isPolling ? 'Actualizando cada 5 s' : 'En cola'}
+          {job?.phase === 'extraction'
+            ? 'Fase 1: extracción'
+            : job?.phase === 'vision'
+              ? 'Fase 2: visión IA'
+              : job?.phase === 'budget'
+                ? 'Fase 3: presupuesto'
+                : isPolling
+                  ? 'Actualizando cada 5 s'
+                  : 'En cola'}
         </span>
         <button
           type="button"
@@ -297,10 +315,12 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
           <Cpu className="size-10 text-primary" strokeWidth={1.5} />
         </div>
         <div className="max-w-md space-y-2">
-          <h2 className="text-xl font-bold text-ink">Extracción base completada</h2>
+          <h2 className="text-xl font-bold text-ink">Presupuesto sin partidas</h2>
           <p className="text-sm leading-relaxed text-muted">
-            Esta corrida solo generó artefactos de extracción y no contiene partidas de presupuesto.
-            Re-procesa seleccionando una disciplina o todas las disciplinas.
+            {job?.discipline
+              ? `La corrida (${job.discipline}) terminó sin generar líneas de presupuesto.`
+              : 'El procesamiento terminó sin generar líneas de presupuesto.'}{' '}
+            Re-procesa con otra disciplina o verifica que los planos tengan capas y nomenclatura identificables.
           </p>
         </div>
         <PrimaryButton

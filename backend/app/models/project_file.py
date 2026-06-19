@@ -48,6 +48,7 @@ class ProjectFile(Base):
     aps_viewable_guid: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     aps_last_translated_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     aps_manifest_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    file_ingest_snapshot: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     created_by: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),

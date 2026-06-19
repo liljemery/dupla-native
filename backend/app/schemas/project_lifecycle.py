@@ -86,6 +86,19 @@ class ProjectEventsPageResponse(BaseModel):
     offset: int
 
 
+def _discipline_classifying(row: ProjectFile) -> bool:
+    if row.ingest_status != "PUBLISHED":
+        return False
+    if row.discipline and str(row.discipline).strip():
+        return False
+    snap = row.file_ingest_snapshot if isinstance(row.file_ingest_snapshot, dict) else None
+    if snap and snap.get("classified_at"):
+        method = str(snap.get("discipline_method") or "")
+        if method and method != "inconclusive":
+            return False
+    return True
+
+
 class ProjectFileResponse(BaseModel):
     uuid: UUID
     original_name: str
@@ -94,6 +107,7 @@ class ProjectFileResponse(BaseModel):
     folder_uuid: Optional[UUID]
     description: Optional[str]
     discipline: Optional[str]
+    discipline_classifying: bool = False
     ingest_status: str
     counts_for_budget: bool
     created_by_uuid: Optional[UUID]
@@ -109,6 +123,7 @@ class ProjectFileResponse(BaseModel):
             folder_uuid=row.folder_id,
             description=row.description,
             discipline=row.discipline,
+            discipline_classifying=_discipline_classifying(row),
             ingest_status=row.ingest_status,
             counts_for_budget=row.counts_for_budget,
             created_by_uuid=row.created_by,
@@ -123,6 +138,10 @@ class ProjectFilesListResponse(BaseModel):
     offset: int
 
 
+class ReconcileIngestResponse(BaseModel):
+    queued: int
+
+
 class ProjectFileSearchResponse(BaseModel):
     """Archivo con ruta legible desde la raíz del proyecto (para resultados de búsqueda)."""
 
@@ -133,6 +152,7 @@ class ProjectFileSearchResponse(BaseModel):
     folder_uuid: Optional[UUID]
     description: Optional[str]
     discipline: Optional[str]
+    discipline_classifying: bool = False
     ingest_status: str
     created_by_uuid: Optional[UUID]
     created_at: datetime

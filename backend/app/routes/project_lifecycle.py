@@ -31,6 +31,7 @@ from app.schemas.project_lifecycle import (
     ProjectPatchRequest,
     ProjectTransitionRequest,
     PliegoGenerateRequest,
+    ReconcileIngestResponse,
     SpecificationsReplaceRequest,
     SubcontractLineCreateRequest,
     SubcontractQuoteCreateRequest,
@@ -42,7 +43,10 @@ from app.schemas.project_lifecycle import (
 from app.services.chat_service import ChatService
 from app.services.price_database_classification_task import run_price_database_classification_task
 from app.services.price_database_service import PriceDatabaseService
-from app.services.project_file_classification_service import run_file_classification_task
+from app.services.project_file_classification_service import (
+    requeue_files_needing_review,
+    run_file_classification_task,
+)
 from app.services.project_lifecycle_service import ProjectLifecycleService
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -387,6 +391,23 @@ async def get_project_files(
     )
 
 
+@router.post(
+    "/{project_uuid}/files/reconcile-ingest",
+    response_model=ReconcileIngestResponse,
+    summary="Revisar archivos sin clasificar o sin vínculo en pliego GA-FO",
+)
+async def reconcile_project_files_ingest(
+    project_uuid: UUID,
+    current: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> ReconcileIngestResponse:
+    svc = ProjectLifecycleService(session, ws_ctx.workspace_id)
+    await svc.count_all_project_files(current, project_uuid)
+    queued = await requeue_files_needing_review(project_id=project_uuid)
+    return ReconcileIngestResponse(queued=queued)
+
+
 @router.get(
     "/{project_uuid}/files/search",
     response_model=list[ProjectFileSearchResponse],
@@ -427,7 +448,8 @@ async def patch_project_file(
     await session.refresh(row)
     ing = patch.get("ingest_status")
     if ing is not None and str(ing).strip().upper() == FileIngestStatus.PUBLISHED.value:
-        background_tasks.add_task(run_file_classification_task, row.id)
+        skip_folder = "folder_uuid" in patch
+        background_tasks.add_task(run_file_classification_task, row.id, skip_folder_assign=skip_folder)
     return ProjectFileResponse.from_row(row)
 
 

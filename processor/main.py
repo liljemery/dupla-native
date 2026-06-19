@@ -83,8 +83,9 @@ async def process_project(
     unified cad_facts; the first .pdf file found is used for vision analysis.
 
     Optional ``discipline`` form field (arquitectura | estructura | electrico |
-    sanitario | todas) controls calculation. When omitted the worker performs
-    base extraction only and returns reusable artifacts without budget rows.
+    sanitario | todas) controls calculation. When omitted the worker extracts
+    planos first and then auto-continues into budget (unless
+    DUPLA_EXTRACTION_ONLY=1).
     """
     try:
         correlation_id = x_correlation_id or "unknown"
@@ -154,7 +155,13 @@ def get_job_status(job_id: str, x_correlation_id: Optional[str] = Header(None)):
     elif job.is_failed:
         return {"job_id": job_id, "status": "failed", "error": str(job.exc_info)}
     else:
-        return {"job_id": job_id, "status": job.get_status()}
+        payload: dict[str, object] = {"job_id": job_id, "status": job.get_status()}
+        meta = job.meta or {}
+        if meta.get("phase"):
+            payload["phase"] = meta["phase"]
+        if meta.get("phase_detail"):
+            payload["phase_detail"] = meta["phase_detail"]
+        return payload
 
 
 @app.get("/jobs/{job_id}/download")

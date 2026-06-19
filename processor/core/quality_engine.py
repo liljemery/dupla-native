@@ -12,9 +12,6 @@ from core.quality_models import QualityIssue, QualityReport
 from core.semantic_models import SemanticBuilding, SemanticElement
 
 
-_SPACE_OPTIONAL_DISCIPLINES = frozenset({"electrico", "sanitario"})
-
-
 def _evaluate_element(element: SemanticElement, *, discipline: str) -> QualityIssue:
     confidence = float(element.confidence_score or 0.0)
     if not element.level_id:
@@ -30,24 +27,11 @@ def _evaluate_element(element: SemanticElement, *, discipline: str) -> QualityIs
             suggested_action="Definir nivel/capa de origen para este elemento.",
         )
     if not element.space_id:
-        if discipline in _SPACE_OPTIONAL_DISCIPLINES:
-            return QualityIssue(
-                status="WARNING",
-                code="missing_space_optional",
-                message="Elemento sin espacio asignado (no bloqueante para esta disciplina).",
-                discipline=discipline,
-                element_id=element.element_id,
-                level_id=element.level_id,
-                unit_id=element.unit_id,
-                confidence_score=confidence,
-                evidence_refs=list(element.evidence_refs),
-                raw_entity_ids=list(element.raw_entity_ids),
-                suggested_action="Agregar etiquetas espaciales si se requiere mayor granularidad.",
-            )
+        # ponytail: cuantificar a nivel de planta sin space_id; solo bloquear sin level_id
         return QualityIssue(
-            status="BLOCKED",
+            status="WARNING",
             code="missing_space",
-            message="Elemento sin espacio/unidad asignable con evidencia suficiente.",
+            message="Elemento sin espacio asignado; se cuantifica a nivel de planta.",
             discipline=discipline,
             element_id=element.element_id,
             level_id=element.level_id,
@@ -55,7 +39,7 @@ def _evaluate_element(element: SemanticElement, *, discipline: str) -> QualityIs
             confidence_score=confidence,
             evidence_refs=list(element.evidence_refs),
             raw_entity_ids=list(element.raw_entity_ids),
-            suggested_action="Agregar etiquetas/refs espaciales en planos o capas.",
+            suggested_action="Agregar etiquetas espaciales en planos para mayor granularidad.",
         )
     if confidence < 0.75:
         return QualityIssue(

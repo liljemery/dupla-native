@@ -116,9 +116,7 @@ def _normalize_budget_discipline(raw: str | None, files: list[ProjectFile]) -> s
     omitted/empty means "todas" to preserve the existing user workflow.
     """
     value = _fold_text(raw)
-    if not value or value in _BUDGET_ALL_DISCIPLINE_ALIASES:
-        return "todas"
-    if value in _BUDGET_AUTO_DISCIPLINE_ALIASES:
+    if not value or value in _BUDGET_ALL_DISCIPLINE_ALIASES or value in _BUDGET_AUTO_DISCIPLINE_ALIASES:
         return _infer_budget_discipline_from_files(files)
 
     normalized = _BUDGET_DISCIPLINE_ALIASES.get(value)
@@ -279,15 +277,27 @@ class BudgetService:
         remote_status = data.get("status", "")
 
         if remote_status in ("completed", "completed_partial"):
-            job.status = remote_status
-            job.result = data.get("result")
-            if remote_status == "completed":
+            result = data.get("result")
+            job.result = result
+            qualifies = budget_result_qualifies_for_volumetry(result if isinstance(result, dict) else None)
+            if remote_status == "completed" and not qualifies:
+                job.status = "completed_partial"
+            else:
+                job.status = remote_status
+            if job.status == "completed":
                 await sync_volumetry_from_completed_job(self._session, job)
         elif remote_status == "failed":
             job.status = "failed"
             job.error = str(data.get("error") or "Unknown error")
         elif remote_status in ("queued", "started", "deferred", "scheduled"):
             job.status = "processing" if remote_status == "started" else "queued"
+
+        phase = data.get("phase")
+        if isinstance(phase, str) and phase.strip():
+            job.phase = phase.strip()  # type: ignore[attr-defined]
+        phase_detail = data.get("phase_detail")
+        if isinstance(phase_detail, str) and phase_detail.strip():
+            job.phase_detail = phase_detail.strip()  # type: ignore[attr-defined]
 
         return job
 

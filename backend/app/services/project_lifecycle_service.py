@@ -66,6 +66,7 @@ from app.schemas.chat import ChatPostRequest
 from app.services.chat_service import ChatService
 from app.services.pliego_business_service import PliegoBusinessService
 from app.services.project_file_ai_service import ProjectFileAIService
+from app.services.folder_path_parts import folder_path_parts
 from app.services.project_service import ProjectService
 from app.services.task_board_service import TaskBoardService
 
@@ -1027,8 +1028,8 @@ class ProjectLifecycleService:
         )
         if wizard:
             ai = ProjectFileAIService()
-            disc, desc, _used = await ai.suggest(pf.original_name, pf.mime)
-            pf.discipline = disc.value if disc else None
+            _disc, desc, _used = await ai.suggest(pf.original_name, pf.mime)
+            pf.discipline = None
             pf.description = desc if desc else None
             pf.ingest_status = FileIngestStatus.DRAFT.value
         else:
@@ -1081,20 +1082,7 @@ class ProjectLifecycleService:
         return rows, total
 
     async def _folder_path_parts(self, project_id: UUID, folder_id: Optional[UUID]) -> list[str]:
-        if folder_id is None:
-            return []
-        parts: list[str] = []
-        cur: Optional[UUID] = folder_id
-        for _ in range(128):
-            if cur is None:
-                break
-            row = await self._session.get(ProjectFileFolder, cur)
-            if row is None or row.project_id != project_id:
-                break
-            parts.append(row.name)
-            cur = row.parent_id
-        parts.reverse()
-        return parts
+        return await folder_path_parts(self._session, project_id, folder_id)
 
     async def search_project_files(
         self,
