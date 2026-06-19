@@ -56,4 +56,5 @@ class ProjectClashJob(Base):
     )
     reanalysis_item: Mapped[Optional["ProjectClashItem"]] = relationship(
         foreign_keys=[reanalysis_item_uuid],
+        post_update=True,
     )
