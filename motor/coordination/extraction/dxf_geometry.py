@@ -613,7 +613,10 @@ def probe_dxf_readable(path: Path) -> bool:
     if not path.is_file():
         return False
     try:
-        doc, _recovered, _salvaged = _read_dxf(path, allow_salvage=True)
+        from ezdxf import recover
+
+        # ponytail: errors=ignore skips auditor stdout spam; probe only, not full extraction
+        doc, _auditor = recover.readfile(str(path), errors="ignore")
         return len(list(doc.modelspace())) > 0
     except Exception:
         return False

@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY backend/ .
 COPY motor/ /motor/
 
-RUN mkdir -p var/uploads var/coord_output/cad_cache
+RUN mkdir -p var/uploads var/coord_output/cad_cache app/static
 
 ENV PYTHONUNBUFFERED=1
 ENV DUPLA_ROOT=/motor

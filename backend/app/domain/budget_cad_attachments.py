@@ -12,6 +12,8 @@ _MOTOR_CANDIDATES = (
     Path(__file__).resolve().parents[3] / "motor",
 )
 
+ReadableCache = dict[str, bool]
+
 
 def _ensure_motor_path() -> bool:
     for candidate in _MOTOR_CANDIDATES:
@@ -29,15 +31,38 @@ def ingest_snapshot(row: ProjectFile) -> dict:
     return snap if isinstance(snap, dict) else {}
 
 
-def auxiliary_dxf_candidates(dwg_path: Path, upload_root: Path) -> list[Path]:
+def _trust_gate_cache(path: Path) -> bool:
+    """Gate cache DXFs were validated on upload; skip re-probing ezdxf."""
+    return path.is_file() and ".dxf_cache" in path.parts and path.stat().st_size > 0
+
+
+def _cached_readable(path: Path, cache: ReadableCache | None) -> bool:
+    if _trust_gate_cache(path):
+        return True
+    key = str(path.resolve())
+    if cache is not None and key in cache:
+        return cache[key]
+    if not _ensure_motor_path():
+        ok = False
+    else:
+        from coordination.extraction.companion_dxf import is_readable_dxf
+
+        ok = is_readable_dxf(path)
+    if cache is not None:
+        cache[key] = ok
+    return ok
+
+
+def auxiliary_dxf_candidates(
+    dwg_path: Path,
+    upload_root: Path,
+    *,
+    readable_cache: ReadableCache | None = None,
+) -> list[Path]:
     """Companion or gate-cached DXF for a DWG on disk."""
     if not _ensure_motor_path():
         return []
-    from coordination.extraction.companion_dxf import (
-        is_readable_dxf,
-        resolve_companion_dxf,
-        resolve_gate_dxf_cache,
-    )
+    from coordination.extraction.companion_dxf import resolve_companion_dxf, resolve_gate_dxf_cache
 
     dwg_path = Path(dwg_path)
     roots = [dwg_path.parent, upload_root]
@@ -53,21 +78,32 @@ def auxiliary_dxf_candidates(dwg_path: Path, upload_root: Path) -> list[Path]:
         if key in seen:
             continue
         seen.add(key)
-        if candidate.is_file() and is_readable_dxf(candidate):
+        if candidate.is_file() and _cached_readable(candidate, readable_cache):
             out.append(candidate)
     return out
 
 
-def dwg_has_usable_dxf(dwg_path: Path, upload_root: Path, budget_files: list[ProjectFile]) -> bool:
+def dwg_has_usable_dxf(
+    dwg_path: Path,
+    upload_root: Path,
+    budget_files: list[ProjectFile],
+    *,
+    readable_cache: ReadableCache | None = None,
+) -> bool:
     stem = Path(dwg_path.name).stem.lower()
     for pf in budget_files:
         name = (pf.original_name or "").lower()
         if name.endswith(".dxf") and Path(pf.original_name).stem.lower() == stem:
             return True
-    return bool(auxiliary_dxf_candidates(dwg_path, upload_root))
+    return bool(auxiliary_dxf_candidates(dwg_path, upload_root, readable_cache=readable_cache))
 
 
-def unusable_dwg_names(budget_files: list[ProjectFile], upload_root: Path) -> list[str]:
+def unusable_dwg_names(
+    budget_files: list[ProjectFile],
+    upload_root: Path,
+    *,
+    readable_cache: ReadableCache | None = None,
+) -> list[str]:
     """DWGs that failed conversion and have no DXF fallback."""
     bad_statuses = {"conversion_failed", "requires_dxf", "requires_dxf_export"}
     names: list[str] = []
@@ -82,7 +118,16 @@ def unusable_dwg_names(budget_files: list[ProjectFile], upload_root: Path) -> li
         disk_path = Path(pf.storage_key)
         if not disk_path.is_file():
             continue
-        if dwg_has_usable_dxf(disk_path, upload_root, budget_files):
+        if dwg_has_usable_dxf(disk_path, upload_root, budget_files, readable_cache=readable_cache):
             continue
         names.append(pf.original_name)
     return names
+
+
+def budget_dxf_stems(budget_files: list[ProjectFile]) -> set[str]:
+    stems: set[str] = set()
+    for pf in budget_files:
+        name = (pf.original_name or "").lower()
+        if name.endswith(".dxf"):
+            stems.add(Path(pf.original_name).stem.lower())
+    return stems

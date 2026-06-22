@@ -21,7 +21,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.domain.budget_cad_attachments import auxiliary_dxf_candidates, unusable_dwg_names
+from app.domain.budget_cad_attachments import (
+    ReadableCache,
+    auxiliary_dxf_candidates,
+    budget_dxf_stems,
+    unusable_dwg_names,
+)
 from app.domain.budget_pipeline_meta import (
     budget_result_qualifies_for_volumetry,
     sync_volumetry_from_completed_job,
@@ -181,7 +186,9 @@ class BudgetService:
         budget_discipline = _normalize_budget_discipline(discipline, budget_files)
 
         upload_root = Path(get_settings().upload_root)
-        unusable = unusable_dwg_names(budget_files, upload_root)
+        readable_cache: ReadableCache = {}
+        dxf_stems_in_budget = budget_dxf_stems(budget_files)
+        unusable = unusable_dwg_names(budget_files, upload_root, readable_cache=readable_cache)
         dwg_count = sum(1 for pf in budget_files if (pf.original_name or "").lower().endswith(".dwg"))
         if dwg_count and len(unusable) / dwg_count > 0.5:
             sample = ", ".join(unusable[:8])
@@ -208,9 +215,11 @@ class BudgetService:
 
             if disk_path.suffix.lower() != ".dwg":
                 continue
-            stem = Path(pf.original_name).stem
-            for dxf_path in auxiliary_dxf_candidates(disk_path, upload_root):
-                dxf_name = f"{stem}.dxf"
+            stem_lower = Path(pf.original_name).stem.lower()
+            if stem_lower in dxf_stems_in_budget:
+                continue
+            for dxf_path in auxiliary_dxf_candidates(disk_path, upload_root, readable_cache=readable_cache):
+                dxf_name = f"{Path(pf.original_name).stem}.dxf"
                 if dxf_name.lower() in attached_names:
                     continue
                 multipart_files.append(

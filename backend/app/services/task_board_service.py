@@ -17,6 +17,7 @@ from app.repositories.permission_repository import PermissionRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
+from app.services.permission_service import PermissionService
 from app.schemas.task_board import (
     TaskAssigneeOption,
     TaskBoardResponse,
@@ -34,6 +35,7 @@ class TaskBoardService:
         self._workspace_id = workspace_id
         self._users = UserRepository(session)
         self._perm_repo = PermissionRepository(session)
+        self._perm_svc = PermissionService(session)
         self._projects = ProjectRepository(session)
         self._workspaces = WorkspaceRepository(session)
 
@@ -46,7 +48,12 @@ class TaskBoardService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Proyecto no encontrado",
             )
-        if not await self._projects.user_has_access_to_project(actor, project, self._workspace_id):
+        if not await self._projects.user_has_access_to_project(
+            actor,
+            project,
+            self._workspace_id,
+            view_all=await self._perm_svc.has(actor, "projects.view_all"),
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Sin acceso a este proyecto",
@@ -85,7 +92,12 @@ class TaskBoardService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Proyecto no encontrado",
             )
-        if not await self._projects.user_has_access_to_project(viewer, project, self._workspace_id):
+        if not await self._projects.user_has_access_to_project(
+            viewer,
+            project,
+            self._workspace_id,
+            view_all=await self._perm_svc.has(viewer, "projects.view_all"),
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Proyecto no encontrado",
