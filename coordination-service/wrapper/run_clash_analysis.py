@@ -22,6 +22,7 @@ _MAC_ODA_CONVERTER = Path("/Applications/ODAFileConverter.app/Contents/MacOS/ODA
 
 FAST_COMPARE_PROFILE = "fast_compare"
 FAST_COMPARE_LOCAL_PROFILE = "fast_compare_local"
+FAST_COMPARE_APS_PROFILE = "fast_compare_aps"
 
 load_project_env()
 
@@ -33,6 +34,10 @@ def _shared_cache_root() -> Path:
 
 def _max_workers() -> int:
     return max(1, int(os.getenv("COORDINATION_MAX_WORKERS", "6")))
+
+
+def _aps_configured() -> bool:
+    return bool((os.getenv("CLIENT_ID") or "").strip() and (os.getenv("CLIENT_SECRET") or "").strip())
 
 
 def _accore_available() -> bool:
@@ -59,11 +64,13 @@ def _accore_available() -> bool:
     return accore.is_file() and dll.is_file()
 
 
-def _resolve_analysis_profile() -> str:
+def _resolve_analysis_profile(*, budget_scope: bool = False) -> str:
     """Pick the fast clash profile consistently on Windows, macOS and Linux."""
     override = (os.getenv("COORDINATION_ANALYSIS_PROFILE") or "").strip()
     if override:
         return override
+    if budget_scope and _aps_configured():
+        return FAST_COMPARE_APS_PROFILE
     if _accore_available():
         return FAST_COMPARE_PROFILE
     return FAST_COMPARE_LOCAL_PROFILE
@@ -257,6 +264,7 @@ def _invoke_runner(
     output_dir: Path,
     include_disciplines: list[str] | None = None,
     control_points_path: Path | None = None,
+    budget_scope: bool = False,
 ) -> int:
     script = _runner_script()
     if not script.is_file():
@@ -267,11 +275,12 @@ def _invoke_runner(
     output_dir.mkdir(parents=True, exist_ok=True)
     clash_report = output_dir / "clash_project_report.json"
 
-    analysis_profile = _resolve_analysis_profile()
+    analysis_profile = _resolve_analysis_profile(budget_scope=budget_scope)
     logger.info(
-        "Clash analysis profile=%s local_cad=%s accore=%s workers=%d",
+        "Clash analysis profile=%s aps=%s budget_scope=%s accore=%s workers=%d",
         analysis_profile,
-        True,
+        _aps_configured(),
+        budget_scope,
         _accore_available(),
         _max_workers(),
     )
@@ -291,6 +300,9 @@ def _invoke_runner(
         "--stage",
         "full",
     ]
+
+    if analysis_profile == FAST_COMPARE_APS_PROFILE:
+        cmd.append("--dwg-via-aps")
 
     cache_root = _shared_cache_root()
     cmd.extend(["--cache-root", str(cache_root), "--max-workers", str(_max_workers())])
@@ -549,6 +561,7 @@ def run_clash_analysis(
     output_dir: Path,
     control_points: list[dict[str, Any]] | None = None,
     reanalysis_clash_code: str | None = None,
+    budget_scope: bool = False,
 ) -> dict[str, Any]:
     """Run clash detection and return StructuralAnalysisReport-shaped dict."""
     output_dir = Path(output_dir)
@@ -584,6 +597,7 @@ def run_clash_analysis(
             output_dir=output_dir,
             include_disciplines=staging.get("include_disciplines") or None,
             control_points_path=control_points_path,
+            budget_scope=budget_scope,
         )
         hybrid_geometry_summary = _build_hybrid_geometry_artifacts(
             inputs_dir=inputs_dir,

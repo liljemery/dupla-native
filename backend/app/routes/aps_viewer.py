@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user
+from app.dependencies import require_budget_access
 from app.models.user import User
 from app.schemas.clash_viewer import (
     ApsFileManifestRefreshResponse,
@@ -28,7 +28,7 @@ async def aps_token(current: Annotated[User, Depends(get_current_user)]) -> ApsT
 @router.get("/projects/{project_id}/aps/manifest", response_model=ApsManifestResponse)
 async def aps_manifest(
     project_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApsManifestResponse:
     if project_id == "demo":
@@ -43,7 +43,7 @@ async def aps_manifest(
 @router.post("/projects/{project_id}/aps/translate", response_model=ApsTranslateResponse)
 async def aps_translate_project_primary_file(
     project_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApsTranslateResponse:
     project_uuid = _parse_uuid(project_id)
@@ -66,7 +66,7 @@ async def aps_translate_project_primary_file(
 async def aps_translate_file(
     project_id: str,
     file_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApsTranslateResponse:
     return await ApsViewerService(session).translate_file(_parse_uuid(project_id), _parse_uuid(file_id))
@@ -76,7 +76,7 @@ async def aps_translate_file(
 async def aps_refresh_file_manifest(
     project_id: str,
     file_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> ApsFileManifestRefreshResponse:
     return await ApsViewerService(session).refresh_file_manifest(_parse_uuid(project_id), _parse_uuid(file_id))

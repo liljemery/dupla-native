@@ -188,14 +188,20 @@ function RelationshipBanner({ rel }: { rel: StructuralClashRelationship }) {
 }
 
 function geometryBadge(doc: StructuralAnalyzedDocument): { text: string; className: string } | null {
-  if (doc.geometry_quality === 'exact' || doc.geometry_source?.includes('local_ezdxf') || doc.geometry_source?.includes('dxf_ezdxf')) {
+  if (doc.geometry_quality === 'exact') {
+    return { text: 'Geometría exacta (SVF1)', className: 'bg-emerald-600/12 text-emerald-800' }
+  }
+  if (doc.geometry_source?.includes('local_ezdxf') || doc.geometry_source?.includes('dxf_ezdxf')) {
     return { text: 'Geometría exacta (CAD)', className: 'bg-emerald-600/12 text-emerald-800' }
   }
-  if (doc.geometry_quality === 'proxy') {
-    return { text: 'Geometría proxy', className: 'bg-amber-500/15 text-amber-900' }
+  if (doc.geometry_quality === 'proxy' || doc.aps_result === 'proxy') {
+    return { text: 'Proxy APS', className: 'bg-amber-500/15 text-amber-900' }
   }
   if (doc.geometry_source?.includes('pdf_companion')) {
     return { text: 'PDF compañero', className: 'bg-slate-500/12 text-slate-700' }
+  }
+  if (doc.aps_result === 'quota_exceeded') {
+    return { text: 'APS sin cuota', className: 'bg-primary/12 text-primary' }
   }
   return null
 }
@@ -224,6 +230,9 @@ function DocumentRow({
         <p className="text-xs text-muted">
           {doc.discipline_label}
           {typeof doc.element_count === 'number' ? ` · ${doc.element_count} elementos` : ''}
+          {typeof doc.viewer_elements === 'number' && doc.viewer_elements > 0
+            ? ` · ${doc.viewer_elements} exactos`
+            : ''}
           {warning ? ' · sin geometría extraíble' : ''}
         </p>
         {badge ? (
@@ -231,6 +240,7 @@ function DocumentRow({
             {badge.text}
           </span>
         ) : null}
+        {doc.aps_note ? <p className="mt-1 text-xs text-muted">{doc.aps_note}</p> : null}
         {!ok && doc.retryable ? (
           <button
             type="button"
@@ -526,6 +536,15 @@ export function WorkspaceHallazgosTab({
                     })()
                   : 'Ejecutar análisis de clashes'}
               </PrimaryButton>
+              <WorkspaceActionButton
+                type="button"
+                onAction={() => {
+                  const base = import.meta.env.VITE_API_BASE ?? ''
+                  window.open(`${base}/api/projects/${projectUuid}/viewer`, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                Ver en visor APS
+              </WorkspaceActionButton>
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <Card className="flex flex-col items-center justify-center gap-1 border-primary/20 bg-primary/6 p-3 sm:p-4">
                 <span className="text-xs font-semibold uppercase tracking-wide text-primary">Total de Clashes</span>

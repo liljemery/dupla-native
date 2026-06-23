@@ -400,6 +400,7 @@ class ClashService:
             "profile_slug": slug,
             "project_name": project.name,
             "file_metadata": json.dumps(file_metadata, ensure_ascii=False),
+            "budget_scope": "1",
         }
         if control_points:
             form_data["control_points_json"] = json.dumps(control_points, ensure_ascii=False)
@@ -647,6 +648,7 @@ class ClashService:
             "project_name": "reanalysis",
             "file_metadata": json.dumps(file_metadata),
             "reanalysis_clash_code": item.clash_code,
+            "budget_scope": "1",
         }
 
         try:

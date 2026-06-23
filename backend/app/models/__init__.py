@@ -9,6 +9,7 @@ from app.models.project_clash_event import ProjectClashEvent
 from app.models.project_clash_item import ProjectClashItem
 from app.models.project_clash_job import ProjectClashJob
 from app.models.project_technical_finding import ProjectTechnicalFinding
+from app.models.project_viewer_coordinate_settings import ProjectViewerCoordinateSettings
 from app.models.project import Project, ProjectArchitectureData
 from app.models.project_member import ProjectMember
 from app.models.project_event import ProjectEvent
@@ -37,6 +38,7 @@ __all__ = [
     "ProjectClashItem",
     "ProjectClashJob",
     "ProjectTechnicalFinding",
+    "ProjectViewerCoordinateSettings",
     "Project",
     "ProjectArchitectureData",
     "ProjectMember",

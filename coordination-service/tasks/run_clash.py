@@ -15,6 +15,7 @@ def run_clash_job(
     correlation_id: str,
     control_points: list[dict[str, Any]] | None = None,
     reanalysis_clash_code: str | None = None,
+    budget_scope: bool = False,
 ) -> dict[str, Any]:
     output_root = coordination_output_root()
     job_dir = output_root / correlation_id
@@ -33,5 +34,6 @@ def run_clash_job(
         output_dir=job_dir,
         control_points=control_points or [],
         reanalysis_clash_code=reanalysis_clash_code,
+        budget_scope=budget_scope,
     )
     return result
