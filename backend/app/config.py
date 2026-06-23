@@ -135,6 +135,15 @@ class Settings(BaseSettings):
             description="Máximo de mensajes user+assistant guardados en Redis (recorte por cola).",
         ),
     ] = 40
+    ai_assistant_snapshot_max_chars: Annotated[
+        int,
+        Field(
+            default=8000,
+            ge=2000,
+            le=20000,
+            description="Tope de caracteres del snapshot de proyecto en el system prompt del asistente.",
+        ),
+    ] = 8000
 
     aps_client_id: Annotated[
         Optional[str],
