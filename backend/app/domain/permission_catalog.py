@@ -29,6 +29,10 @@ PERMISSION_CATALOG: tuple[PermissionDef, ...] = (
     PermissionDef("lifecycle.control_review", "Marcar revisión de control", "Ciclo de vida"),
     PermissionDef("lifecycle.approve_specs", "Aprobar especificaciones", "Ciclo de vida"),
     PermissionDef("workspace.access_all", "Acceso a todos los workspaces", "Workspace"),
+    PermissionDef("tasks.board.edit", "Editar tablero de tareas", "Tareas"),
+    PermissionDef("tasks.board.view_all", "Ver todas las tareas del workspace", "Tareas"),
+    PermissionDef("tasks.board.assign", "Asignar tareas a otras personas", "Tareas"),
+    PermissionDef("tasks.board.manage", "Configurar columnas del tablero", "Tareas"),
 )
 
 ALL_PERMISSION_KEYS: frozenset[str] = frozenset(p.key for p in PERMISSION_CATALOG)
@@ -57,6 +61,10 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "budget.edit",
             "lifecycle.control_review",
             "lifecycle.approve_specs",
+            "tasks.board.edit",
+            "tasks.board.view_all",
+            "tasks.board.assign",
+            "tasks.board.manage",
         }
     ),
     UserRole.CONTROL.value: frozenset(
@@ -64,6 +72,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "budget.view",
             "budget.edit",
             "lifecycle.control_review",
+            "tasks.board.edit",
         }
     ),
     UserRole.PRESUPUESTO.value: frozenset(
@@ -75,6 +84,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     UserRole.ARQUITECTURA.value: frozenset(
         {
             "lifecycle.approve_specs",
+            "tasks.board.edit",
         }
     ),
 }

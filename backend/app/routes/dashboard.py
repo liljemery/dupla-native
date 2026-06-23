@@ -3,12 +3,11 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.dependencies import get_workspace_context, require_permission
-from app.domain.task_board_constants import TASK_LIST_DONE_UUID
 from app.domain.workspace_context import WorkspaceContext
 from app.domain.workflow_phase import WorkflowPhase
 from app.models.project import Project
@@ -40,6 +39,15 @@ async def dashboard_summary(
     phase_rows = (await session.execute(q_ph)).all()
     projects_by_phase = {str(r[0]): int(r[1]) for r in phase_rows}
 
+    done_title = func.lower(TaskList.title)
+    done_ids = (
+        select(TaskList.id)
+        .where(
+            TaskList.workspace_id == ws_id,
+            or_(done_title.like("%completado%"), done_title.like("%hecho%")),
+        )
+        .scalar_subquery()
+    )
     q_tasks = (
         select(func.count())
         .select_from(TaskCard)
@@ -47,7 +55,7 @@ async def dashboard_summary(
         .where(
             TaskList.workspace_id == ws_id,
             TaskCard.archived.is_(False),
-            TaskCard.list_id != TASK_LIST_DONE_UUID,
+            TaskCard.list_id.not_in(done_ids),
         )
     )
     pending_task_cards = int((await session.execute(q_tasks)).scalar_one() or 0)

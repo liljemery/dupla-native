@@ -50,6 +50,22 @@ export function canManagePermissions(permissions: readonly string[] | null | und
   return hasPermission(permissions, 'admin.permissions.manage')
 }
 
+export function canEditTaskBoard(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.edit')
+}
+
+export function canViewAllTasks(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.view_all')
+}
+
+export function canAssignTasks(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.assign')
+}
+
+export function canManageTaskBoard(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.manage')
+}
+
 export function canMarkControlReview(permissions: readonly string[] | null | undefined): boolean {
   return hasPermission(permissions, 'lifecycle.control_review')
 }

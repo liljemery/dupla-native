@@ -228,11 +228,12 @@ class ProjectLifecycleService:
         await self._assert_transition_guards_pair(user, project, current, target)
 
     async def _count_pending_tasks_for_project(self, project: Project) -> int:
+        done_title = func.lower(TaskList.title)
         done_list_ids = (
             select(TaskList.id)
             .where(
                 TaskList.workspace_id == project.workspace_id,
-                TaskList.title == "Hecho",
+                or_(done_title.like("%completado%"), done_title.like("%hecho%")),
             )
             .scalar_subquery()
         )
@@ -468,7 +469,7 @@ class ProjectLifecycleService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        "Hay tareas del proyecto pendientes en el tablero (fuera de «Hecho»). "
+                        "Hay tareas del proyecto pendientes en el tablero (fuera de «Completado»). "
                         "Complétalas o archívalas antes de avanzar de fase."
                     ),
                 )

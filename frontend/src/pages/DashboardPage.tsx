@@ -59,7 +59,7 @@ export function DashboardPage() {
           <Card className="p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Tareas Kanban pendientes</p>
             <p className="mt-2 text-3xl font-bold tabular-nums text-ink">{summary.pending_task_cards}</p>
-            <p className="mt-1 text-xs text-muted">Tarjetas fuera de la columna «Hecho»</p>
+            <p className="mt-1 text-xs text-muted">Tarjetas fuera de la columna «Completado»</p>
           </Card>
           <Card className="p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted">Proyectos con plazo vencido</p>

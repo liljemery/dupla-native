@@ -54,7 +54,7 @@ export function useChatSync() {
     let cancelled = false
 
     async function tick() {
-      const convRes = await apiFetch('/api/chat/conversations', { token })
+      const convRes = await apiFetch('/api/chat/conversations', { token, silent: true })
       if (!convRes.ok || cancelled) return
       const convData = (await convRes.json()) as ChatConversationSummary[]
       setConversations(convData)
@@ -81,7 +81,7 @@ export function useChatSync() {
       const url = last
         ? `/api/chat/conversations/${active}/messages?after_uuid=${encodeURIComponent(last.uuid)}`
         : `/api/chat/conversations/${active}/messages`
-      const msgRes = await apiFetch(url, { token })
+      const msgRes = await apiFetch(url, { token, silent: true })
       if (!msgRes.ok || cancelled) return
       const batch = (await msgRes.json()) as ChatMessage[]
       if (batch.length === 0) return

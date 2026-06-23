@@ -43,6 +43,12 @@ export const PERMISSION_CATEGORY_STYLE: Record<string, PermissionCategoryStyle> 
     badge: 'bg-primary/8 text-primary',
     dot: 'bg-primary/80',
   },
+  Tareas: {
+    border: 'border-l-emerald-600',
+    bg: 'bg-emerald-500/8',
+    badge: 'bg-emerald-500/12 text-emerald-800',
+    dot: 'bg-emerald-600',
+  },
   Workspace: {
     border: 'border-l-panel-dark-muted',
     bg: 'bg-surface-elevated',

@@ -41,13 +41,30 @@ function handleUnauthorizedSession(path: string): void {
 }
 
 // Status codes that should NOT emit a generic toast (callers handle them explicitly)
-const SILENT_STATUSES = new Set([400, 401, 404])
+const SILENT_STATUSES = new Set([400, 401, 404, 502, 503, 504])
+
+function isChatApiPath(path: string): boolean {
+  try {
+    const pathname = path.includes('://') ? new URL(path).pathname : path
+    return pathname.startsWith('/api/chat')
+  } catch {
+    return path.includes('/api/chat')
+  }
+}
+
+function shouldEmitErrorToast(path: string, status: number, silent?: boolean): boolean {
+  if (silent) return false
+  if (status < 400) return false
+  if (SILENT_STATUSES.has(status)) return false
+  if (isChatApiPath(path)) return false
+  return true
+}
 
 export async function apiFetch(
   path: string,
-  init: RequestInit & { token?: string | null } = {},
+  init: RequestInit & { token?: string | null; silent?: boolean } = {},
 ): Promise<Response> {
-  const { token, headers, ...rest } = init
+  const { token, silent, headers, ...rest } = init
   const h = new Headers(headers)
   if (token) {
     h.set('Authorization', `Bearer ${token}`)
@@ -65,7 +82,7 @@ export async function apiFetch(
     handleUnauthorizedSession(path)
   }
 
-  if (res.status >= 400 && !SILENT_STATUSES.has(res.status)) {
+  if (shouldEmitErrorToast(path, res.status, silent)) {
     // Clone so the caller can still read the body
     res.clone().json().then((body: unknown) => {
       const detail =
