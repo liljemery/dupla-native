@@ -25,17 +25,15 @@ def test_map_bucket_to_file_discipline() -> None:
 async def test_infer_subprocess_parses_json(tmp_path: Path) -> None:
     sample = tmp_path / "sample.pdf"
     sample.write_bytes(b"pdf")
-    payload = {
-        "discipline": "electrica",
-        "method": "pdf_text",
-        "confidence": 0.9,
-        "snapshot": {"cad_cache_key": "abc", "discipline_method": "pdf_text"},
-        "aps": None,
-    }
 
     with patch(
-        "app.services.motor_file_discipline._run_infer_subprocess",
-        return_value=payload,
+        "app.services.motor_file_discipline._run_infer",
+        return_value=MotorDisciplineInference(
+            discipline=FileDiscipline.ELECTRICA,
+            method="pdf_text",
+            confidence=0.9,
+            snapshot={"cad_cache_key": "abc", "discipline_method": "pdf_text"},
+        ),
     ):
         result = await infer_file_discipline_from_content(
             storage_path=sample,

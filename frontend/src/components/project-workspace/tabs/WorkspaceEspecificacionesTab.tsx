@@ -49,7 +49,6 @@ export function WorkspaceEspecificacionesTab({
   projectUuid,
   projectDisplayName,
   token,
-  role: _role,
   pliegoItemStates,
   setPliegoItemStates,
   pliegoApprovedSections,

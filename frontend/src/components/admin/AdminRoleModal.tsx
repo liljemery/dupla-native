@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 
 import { apiFetch } from '../../api/client'
 import { PrimaryButton } from '../PrimaryButton'
@@ -20,24 +20,31 @@ type Props = {
 }
 
 export function AdminRoleModal({ token, open, mode, role, onClose, onSaved }: Props) {
-  const [name, setName] = useState('')
-  const [slug, setSlug] = useState('')
+  if (!open) return null
+
+  return (
+    <AdminRoleModalForm
+      key={`${mode}-${role?.uuid ?? 'new'}`}
+      token={token}
+      mode={mode}
+      role={role}
+      onClose={onClose}
+      onSaved={onSaved}
+    />
+  )
+}
+
+function AdminRoleModalForm({
+  token,
+  mode,
+  role,
+  onClose,
+  onSaved,
+}: Omit<Props, 'open'>) {
+  const [name, setName] = useState(() => (mode === 'edit' && role ? role.name : ''))
+  const [slug, setSlug] = useState(() => (mode === 'edit' && role ? role.slug : ''))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    if (mode === 'edit' && role) {
-      setName(role.name)
-      setSlug(role.slug)
-    } else {
-      setName('')
-      setSlug('')
-    }
-    setError(null)
-  }, [open, mode, role])
-
-  if (!open) return null
 
   const isEdit = mode === 'edit'
 

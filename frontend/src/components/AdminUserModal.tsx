@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 
 import { apiFetch } from '../api/client'
@@ -97,6 +97,11 @@ export function AdminUserModal({ token, open, mode, user, rolesRefreshKey = 0, o
   })
   const editRoleUuid = useWatch({ control: editForm.control, name: 'primaryRoleUuid' })
 
+  const closeModal = useCallback(() => {
+    setPermissionsOpen(false)
+    onClose()
+  }, [onClose])
+
   useEffect(() => {
     if (!open) return
     void (async () => {
@@ -157,17 +162,16 @@ export function AdminUserModal({ token, open, mode, user, rolesRefreshKey = 0, o
         architectureAccess: true,
       })
     }
-    setPermissionsOpen(false)
   }, [open, mode, user, createForm, editForm, assignablePrimaryRoles])
 
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') closeModal()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, closeModal])
 
   function roleUuidsForSubmit(primaryRoleUuid: string, teamLeader: boolean): string[] {
     const ids = [primaryRoleUuid]
@@ -226,7 +230,7 @@ export function AdminUserModal({ token, open, mode, user, rolesRefreshKey = 0, o
     await saveUserWorkspaces(created.uuid, values.primaryRoleUuid)
     invalidateAdminUsersDirectoryCache()
     onSaved()
-    onClose()
+    closeModal()
   }
 
   async function submitEdit(values: AdminEditUserForm) {
@@ -264,7 +268,7 @@ export function AdminUserModal({ token, open, mode, user, rolesRefreshKey = 0, o
     await saveUserWorkspaces(user.uuid, values.primaryRoleUuid)
     invalidateAdminUsersDirectoryCache()
     onSaved()
-    onClose()
+    closeModal()
   }
 
   function toggleWorkspace(uuid: string) {
@@ -310,7 +314,7 @@ export function AdminUserModal({ token, open, mode, user, rolesRefreshKey = 0, o
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       role="presentation"
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose()
+        if (e.target === e.currentTarget) closeModal()
       }}
     >
       <div
@@ -346,7 +350,7 @@ export function AdminUserModal({ token, open, mode, user, rolesRefreshKey = 0, o
               <p className="text-sm text-primary">{createForm.formState.errors.root.message}</p>
             ) : null}
             <ModalActions
-              onClose={onClose}
+              onClose={closeModal}
               submitting={createForm.formState.isSubmitting}
               disabled={rolesLoading || assignablePrimaryRoles.length === 0}
               create
@@ -393,7 +397,7 @@ export function AdminUserModal({ token, open, mode, user, rolesRefreshKey = 0, o
               <p className="text-sm text-primary">{editForm.formState.errors.root.message}</p>
             ) : null}
             <ModalActions
-              onClose={onClose}
+              onClose={closeModal}
               submitting={editForm.formState.isSubmitting}
               disabled={rolesLoading || assignablePrimaryRoles.length === 0}
             />

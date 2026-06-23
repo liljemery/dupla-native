@@ -24,7 +24,9 @@ type Props = {
 
 export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
   const onRolesChangedRef = useRef(onRolesChanged)
-  onRolesChangedRef.current = onRolesChanged
+  useEffect(() => {
+    onRolesChangedRef.current = onRolesChanged
+  }, [onRolesChanged])
 
   const [catalog, setCatalog] = useState<PermissionRow[]>([])
   const [roles, setRoles] = useState<RoleRow[]>([])

@@ -28,7 +28,6 @@ export function ProjectWorkspaceFlowAside({
   templateStepProgress,
   nextPhase,
   flowMsg,
-  role: _role,
   viewBudget,
   onAdvancePhase,
   onOpenChat,

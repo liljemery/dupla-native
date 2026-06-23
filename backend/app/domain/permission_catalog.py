@@ -79,6 +79,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         {
             "budget.view",
             "budget.edit",
+            "tasks.board.edit",
         }
     ),
     UserRole.ARQUITECTURA.value: frozenset(

@@ -94,7 +94,6 @@ export function ProjectWorkspaceDashboard({
   orderedTemplateSteps,
   flowMsg,
   nextPhase,
-  role: _role,
   viewBudget,
   memberRows,
   quotesCount,
