@@ -285,7 +285,7 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
           <Loader2 className="size-10 animate-spin text-primary" strokeWidth={1.5} />
         </div>
         <div className="space-y-2">
-          <h2 className="text-xl font-bold text-ink">Procesando con IA…</h2>
+          <h2 className="text-xl font-bold text-ink">Procesando con Dupla OS…</h2>
           <p className="text-sm text-muted">
             {job ? budgetPhaseMessage(job) : 'Analizando planos DWG, extrayendo volumetrías y generando presupuesto.'}
           </p>
