@@ -45,7 +45,7 @@ services:
       COORDINATION_SMOKE_MODE: "false"
       DUPLA_ROOT: /motor
       PYTHONPATH: /motor:/app
-      COORDINATION_CACHE_ROOT: /app/var/coord_output/aps_cache
+      COORDINATION_CACHE_ROOT: /app/var/coord_output/cad_cache
     ports:
       - "8000:8000"
     volumes:
@@ -62,8 +62,8 @@ services:
 
   processor:
     build:
-      context: ./processor
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./processor/Dockerfile
     env_file:
       - ./backend/.env
       - ./processor/.env
@@ -72,9 +72,12 @@ services:
       DUPLA_CACHE_DIR: /app/cache
       DUPLA_ARTIFACT_DIR: /app/artifacts
       DUPLA_JOB_TIMEOUT_SECONDS: "10800"
+      DUPLA_ROOT: /motor
+      PYTHONPATH: /motor:/app
     ports:
       - "8001:8000"
     volumes:
+      - ./motor:/motor:ro
       - dupla_outputs:/app/output
       - dupla_cache:/app/cache
       - dupla_artifacts:/app/artifacts
@@ -84,8 +87,8 @@ services:
 
   processor-worker:
     build:
-      context: ./processor
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./processor/Dockerfile
     command: ["python", "worker.py"]
     restart: unless-stopped
     env_file:
@@ -96,7 +99,10 @@ services:
       DUPLA_CACHE_DIR: /app/cache
       DUPLA_ARTIFACT_DIR: /app/artifacts
       DUPLA_JOB_TIMEOUT_SECONDS: "10800"
+      DUPLA_ROOT: /motor
+      PYTHONPATH: /motor:/app
     volumes:
+      - ./motor:/motor:ro
       - dupla_outputs:/app/output
       - dupla_cache:/app/cache
       - dupla_artifacts:/app/artifacts
@@ -137,7 +143,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       DUPLA_ROOT: /motor
       COORDINATION_OUTPUT_ROOT: /app/output
-      COORDINATION_CACHE_ROOT: /app/output/aps_cache
+      COORDINATION_CACHE_ROOT: /app/output/cad_cache
       COORDINATION_MAX_WORKERS: "6"
       COORDINATION_SMOKE_MODE: "false"
       PYTHONPATH: /motor:/app

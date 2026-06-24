@@ -230,7 +230,7 @@ class ClashExportService:
         job, items = await workflow.list_workflow_rows_for_export(user, project_uuid, job_id=job_id)
         meta = await self._export_meta(user, project, job)
         revision = self._bump_revision(job, "final_human")
-        cache_root = workflow.resolve_aps_cache_root(job)
+        cache_root = workflow.resolve_coord_cache_root(job)
         logo = workflow.resolve_checklist_logo_path()
         pdf_bytes = build_checklist_pdf_from_items(
             items=items,

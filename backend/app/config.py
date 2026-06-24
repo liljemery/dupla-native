@@ -135,6 +135,15 @@ class Settings(BaseSettings):
             description="Máximo de mensajes user+assistant guardados en Redis (recorte por cola).",
         ),
     ] = 40
+    ai_assistant_snapshot_max_chars: Annotated[
+        int,
+        Field(
+            default=8000,
+            ge=2000,
+            le=20000,
+            description="Tope de caracteres del snapshot de proyecto en el system prompt del asistente.",
+        ),
+    ] = 8000
 
     aps_client_id: Annotated[
         Optional[str],
@@ -220,13 +229,20 @@ class Settings(BaseSettings):
         int,
         Field(default=5, ge=2, le=60, description="Intervalo entre consultas de estado del manifest."),
     ] = 5
+
     ga_fo_classification_confidence_min: Annotated[
         float,
         Field(default=0.55, ge=0.0, le=1.0, description="Umbral mínimo de confidence para auto-completar ítem GA-FO."),
     ] = 0.55
-    ga_fo_aps_context_max_chars: Annotated[
+    ga_fo_cad_context_max_chars: Annotated[
         int,
-        Field(default=32000, ge=4000, le=120000, description="Máximo de caracteres del resumen APS enviado a OpenAI."),
+        Field(
+            default=32000,
+            ge=4000,
+            le=120000,
+            validation_alias=AliasChoices("GA_FO_CAD_CONTEXT_MAX_CHARS", "GA_FO_APS_CONTEXT_MAX_CHARS"),
+            description="Máximo de caracteres del resumen CAD local enviado a OpenAI.",
+        ),
     ] = 32000
 
     frontend_url: Annotated[

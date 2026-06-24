@@ -18,6 +18,7 @@ HEADERS = (
     "Nat",
     "Ud",
     "Resumen",
+    "Plano origen",
     "CanPres",
     "PrPres",
     "ImpPres",
@@ -209,12 +210,14 @@ def export_budget_workbook(
         assumptions_text = ""
         apu_code = ""
         apu_desglose = ""
+        plano_origen = ""
         needs_review = False
         if row.row_type == "line":
             price_source = str(row.metadata.get("price_source") or "")
             quantity_source = str(row.metadata.get("quantity_source_display") or "")
             bc3_origin = str(row.metadata.get("bc3_origin") or "")
             candidate_source = str(row.metadata.get("candidate_source") or "")
+            plano_origen = str(row.metadata.get("source_file") or "")
             needs_review = bool(row.metadata.get("requiere_revision"))
             requiere_revision_text = "Sí" if needs_review else "No"
             raw_conf = row.metadata.get("confidence")
@@ -233,6 +236,7 @@ def export_budget_workbook(
             row.nat,
             row.unit,
             row.summary,
+            plano_origen,
             row.quantity,
             row.unit_price,
             row.amount,
@@ -251,7 +255,7 @@ def export_budget_workbook(
             cell = worksheet.cell(row=target_row, column=column_index)
             _write_value(cell, value)
             cell.border = ALL_BORDER
-            if 5 <= column_index <= 7:
+            if 6 <= column_index <= 8:
                 cell.number_format = '#,##0.00'
 
         row_fill = None
@@ -269,7 +273,7 @@ def export_budget_workbook(
             cell = worksheet.cell(row=target_row, column=column_index)
             cell.font = row_font
             cell.alignment = Alignment(
-                horizontal="left" if column_index <= 4 or column_index >= 8 else "right",
+                horizontal="left" if column_index <= 5 or column_index >= 9 else "right",
                 vertical="center",
             )
             if row_fill is not None:

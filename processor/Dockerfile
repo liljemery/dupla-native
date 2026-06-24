@@ -1,22 +1,23 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends \
-    build-essential \
-    libffi-dev \
-    libssl-dev \
-  && rm -rf /var/lib/apt/lists/*
+COPY docker/install-libredwg.sh /tmp/install-libredwg.sh
+RUN chmod +x /tmp/install-libredwg.sh \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends libffi-dev libssl-dev fonts-dejavu-core fontconfig \
+  && /tmp/install-libredwg.sh \
+  && rm /tmp/install-libredwg.sh
 
-COPY requirements.txt .
+COPY processor/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY processor/ .
 
 ENV PYTHONUNBUFFERED=1 \
     DUPLA_CACHE_DIR=/app/cache \
-    DUPLA_ARTIFACT_DIR=/app/artifacts
+    DUPLA_ARTIFACT_DIR=/app/artifacts \
+    PYTHONPATH=/motor:/app
 
 RUN mkdir -p /app/cache /app/artifacts /app/output
 

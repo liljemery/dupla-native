@@ -9,9 +9,6 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from aps_integration.aps_auth import get_aps_token
-from aps_integration.oss_manager import create_bucket, upload_file_to_bucket, APS_BUCKET_NAME
-from aps_integration.model_derivative import ApsCapacityError, extract_dwg_data
 from agents.vision_agent import VISION_PROMPT_VERSION, run_full_vision_analysis, vision_model_id
 from processors.json_processor import process_autodesk_json
 from knowledge.bc3_embeddings import load_or_build_embeddings
@@ -23,6 +20,7 @@ from core.schemas import ProjectContext
 from core import paths
 from disciplines import get_engine
 from pipeline_discipline import resolve_auto_continue_disciplines
+from local_cad_bridge import LOCAL_EXTRACTOR, display_name_from_storage, extract_cad_facts
 
 from pricing.excel_price_loader import load_or_cache_constructor_pricing
 from pricing.apu_matcher import APUMatcher
@@ -59,50 +57,20 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_APS_CAPACITY_EXHAUSTED = False
 
-
-def _aps_capacity_exhausted() -> bool:
-    return _APS_CAPACITY_EXHAUSTED
-
-
-def _mark_aps_capacity_exhausted() -> None:
-    global _APS_CAPACITY_EXHAUSTED
-    _APS_CAPACITY_EXHAUSTED = True
-
-
-def _skipped_aps_raw_data(*, reason: str) -> dict[str, Any]:
-    return {"views": [], "aps_error": reason, "manifest_status": "skipped"}
-
-
-def _extract_dwg_via_aps_or_skip(
-    *,
-    token: str,
-    bucket_name: str,
-    object_name: str,
-    translation_timeout_seconds: int,
-    poll_interval_seconds: int,
-    max_property_wait_seconds: int,
-) -> dict[str, Any]:
-    if _aps_capacity_exhausted():
-        return _skipped_aps_raw_data(reason="quota_exceeded")
+def _local_extractor_signature() -> str:
     try:
-        return extract_dwg_data(
-            token,
-            bucket_name,
-            object_name,
-            views=("2d",),
-            translation_timeout_seconds=translation_timeout_seconds,
-            poll_interval_seconds=poll_interval_seconds,
-            max_property_wait_seconds=max_property_wait_seconds,
-            failed_manifest_grace_polls=3,
-            failed_manifest_grace_sleep_seconds=20,
-        )
-    except ApsCapacityError as exc:
-        _mark_aps_capacity_exhausted()
-        logger.warning("APS capacity/quota denied; skipping remaining DWG translations: %s", exc)
-        return _skipped_aps_raw_data(reason="quota_exceeded")
+        from coordination.extraction.libredwg_convert import libredwg_version
 
+        ver = libredwg_version()
+        if ver and ver != "unknown":
+            return f"{LOCAL_EXTRACTOR}:{ver}"
+    except Exception:
+        pass
+    return LOCAL_EXTRACTOR
+
+
+_LOCAL_EXTRACTOR_SIGNATURE = _local_extractor_signature()
 
 _STANDARD_DISCIPLINES = ("arquitectura", "estructura", "sanitario", "electrico")
 _BASE_EXTRACTION_ALIASES = {
@@ -129,7 +97,7 @@ _DISCIPLINE_ALIASES = {
     "plomeria": "sanitario",
     "hidrosanitario": "sanitario",
 }
-_EXTRACTION_ARTIFACT_VERSION = "extraction-v1"
+_EXTRACTION_ARTIFACT_VERSION = "extraction-v4-dxf-resilient"
 _DEFAULT_ARTIFACT_DIR = "/app/artifacts"
 
 
@@ -165,40 +133,90 @@ def _env_int(name: str, default: int, *, minimum: int = 1) -> int:
         return default
 
 
-def _safe_upload_name(filename: str | None, fallback: str) -> str:
+def _safe_upload_name(
+    filename: str | None,
+    fallback: str,
+    *,
+    content_hash: str | None = None,
+) -> str:
     value = Path(filename or fallback).name.strip()
-    return value or fallback
+    value = value or fallback
+    if content_hash:
+        return f"{content_hash[:8]}_{value}"
+    return value
+
+
+def _classify_extract_error(exc: BaseException) -> tuple[str, str]:
+    try:
+        from coordination.extraction.libredwg_convert import DwgConvertError
+
+        if isinstance(exc, DwgConvertError):
+            return "failed", exc.error_code
+    except ImportError:
+        pass
+    msg = str(exc)
+    if "Invalid group code" in msg or "Invalid DXF attribute" in msg:
+        return "failed", "PARSE_ERROR"
+    if "READ ERROR" in msg or "0x940" in msg:
+        return "failed", "READ_ERROR"
+    if "WRITE ERROR" in msg or "not overwritten" in msg.lower():
+        return "failed", "WRITE_ERROR"
+    return "failed", "EXTRACTION_ERROR"
+
+
+def _extract_status_from_payload(
+    payload: dict[str, Any] | None,
+    *,
+    error_code: str = "",
+    error_note: str = "",
+) -> dict[str, str]:
+    if isinstance(payload, dict) and payload.get("cad_facts"):
+        gs = str(payload.get("geometry_source") or "")
+        if gs == "dxf_companion":
+            return {"extract_status": "companion_dxf", "extract_error_code": "", "extract_note": ""}
+        if payload.get("recovered_salvaged") or "_salvaged" in gs:
+            return {"extract_status": "ok_salvaged", "extract_error_code": "", "extract_note": ""}
+        return {"extract_status": "ok", "extract_error_code": "", "extract_note": ""}
+    return {
+        "extract_status": "failed",
+        "extract_error_code": error_code or "EXTRACTION_ERROR",
+        "extract_note": (error_note or "")[:400],
+    }
+
+
+def _log_cad_extract_summary(dwg_manifest: list[dict[str, Any]], normalized: dict[str, Any]) -> None:
+    ok = companion = failed = 0
+    failures: list[str] = []
+    for entry in dwg_manifest:
+        status = str(entry.get("extract_status") or "")
+        code = str(entry.get("extract_error_code") or "")
+        name = str(entry.get("filename") or "")
+        if status == "companion_dxf":
+            companion += 1
+        elif status == "ok":
+            ok += 1
+        elif status in ("failed", "unknown"):
+            failed += 1
+            if name:
+                failures.append(f"{name} ({code or status})")
+    layers = len(normalized.get("cad_facts", {}).get("layers", {}))
+    logger.info(
+        "CAD extract summary: ok=%d companion=%d failed=%d layers=%d",
+        ok,
+        companion,
+        failed,
+        layers,
+    )
+    if failures:
+        logger.info("CAD extract failures: %s", ", ".join(failures[:20]))
 
 
 def _maybe_enrich_da_geometry(
     dwg_files: list[tuple[str, bytes]],
     normalized: dict[str, Any],
 ) -> None:
-    """Run DA geometry when enabled, including on extraction cache hits."""
-    if not _env_bool("DUPLA_USE_DA_GEOMETRY", False):
-        return
-    if normalized.get("da_geometry_used"):
-        logger.info("DA geometry already in artifact; skipping re-run")
-        return
-    if not dwg_files:
-        return
-    try:
-        import tempfile
-        from aps_integration.geometry_source import enrich_cad_facts_with_da
-
-        with tempfile.TemporaryDirectory(prefix="dupla_da_") as tmp:
-            paths: list[str] = []
-            for idx, (name, content) in enumerate(dwg_files):
-                p = Path(tmp) / _safe_upload_name(name, f"upload_{idx}.dwg")
-                p.write_bytes(content)
-                paths.append(str(p))
-            logger.info("DA geometry enabled (post-cache): enriching %d DWG(s)", len(paths))
-            enrich_cad_facts_with_da(normalized, paths)
-    except Exception:
-        logger.warning(
-            "DA geometry enrichment failed (post-cache); keeping cached geometry",
-            exc_info=True,
-        )
+    """Design Automation (APS) geometry enrichment removed — local ezdxf only."""
+    del dwg_files, normalized
 
 
 def _maybe_apply_scale_calibration(normalized: dict[str, Any]) -> None:
@@ -237,7 +255,7 @@ def _build_artifact_key(
 ) -> str:
     payload = {
         "version": _EXTRACTION_ARTIFACT_VERSION,
-        "aps_views": ["2d"],
+        "extractor": _LOCAL_EXTRACTOR_SIGNATURE,
         "pdf_dpi": pdf_dpi,
         "dwg_files": [
             {
@@ -306,16 +324,7 @@ def _resolve_target_disciplines(
         return [], "base_extraction"
 
     if raw in _ALL_DISCIPLINE_ALIASES:
-        if allow_multi:
-            return list(_STANDARD_DISCIPLINES), "all_explicit"
-        inferred = _infer_discipline_from_filenames(filenames)
-        logger.warning(
-            "Discipline '%s' requested but DUPLA_ALLOW_MULTI_DISCIPLINE is disabled; "
-            "running inferred single discipline '%s'.",
-            raw,
-            inferred,
-        )
-        return [inferred], "all_limited_to_inferred"
+        return list(_STANDARD_DISCIPLINES), "all_explicit"
 
     requested = _split_disciplines(raw)
     if not requested:
@@ -539,6 +548,7 @@ def _build_extraction_artifacts(
     *,
     artifact_key: str,
     pdf_dpi: int,
+    dxf_files: list[tuple[str, bytes]] | None = None,
 ) -> ExtractionArtifacts:
     root = _artifact_root()
     final_dir = _artifact_dir(artifact_key)
@@ -558,140 +568,192 @@ def _build_extraction_artifacts(
     uploads_dir.mkdir(parents=True, exist_ok=True)
     pages_dir.mkdir(parents=True, exist_ok=True)
 
-    bucket_name = os.getenv("APS_BUCKET_NAME", "dupla_processing_bucket")
-    aps_views_signature = "2d"
-    aps_token: list[str] = []
-    aps_session_lock = threading.Lock()
-
-    def _ensure_aps_session() -> str:
-        with aps_session_lock:
-            if not aps_token:
-                token = get_aps_token()
-                create_bucket(token, bucket_name)
-                aps_token.append(token)
-        return aps_token[0]
-
     cad_facts: dict[str, Any] = {}
     all_raw_data: list[dict[str, Any]] = []
     dwg_manifest: list[dict[str, Any]] = []
+    cad_cache_root = root / "cad_cache"
+    dxf_work_dir = uploads_dir / "dxf_work"
+
+    dxf_files = dxf_files or []
 
     async def _extract_all_dwg_raw_data() -> list[dict[str, Any]]:
-        global _APS_CAPACITY_EXHAUSTED
-        _APS_CAPACITY_EXHAUSTED = False
-        semaphore = asyncio.Semaphore(30)
+        semaphore = asyncio.Semaphore(max(1, _env_int("LOCAL_CAD_CONCURRENCY", 4)))
         work_items: list[dict[str, Any]] = []
+        seen_hashes: set[str] = set()
+        staged_dwg_stems: set[str] = set()
+
+        for idx, (filename, content) in enumerate(dxf_files):
+            file_hash = sha256_bytes(content)
+            safe_name = _safe_upload_name(filename, f"upload_{idx}.dxf", content_hash=file_hash)
+            dxf_path = uploads_dir / safe_name
+            dxf_path.write_bytes(content)
 
         for idx, (filename, content) in enumerate(dwg_files):
-            safe_name = _safe_upload_name(filename, f"upload_{idx}.dwg")
+            dwg_hash = sha256_bytes(content)
+            safe_name = _safe_upload_name(filename, f"upload_{idx}.dwg", content_hash=dwg_hash)
             dwg_path = uploads_dir / safe_name
             dwg_path.write_bytes(content)
-            dwg_hash = sha256_bytes(content)
+            try:
+                staged_dwg_stems.add(Path(display_name_from_storage(safe_name)).stem.lower())
+            except Exception:
+                staged_dwg_stems.add(Path(safe_name).stem.lower())
+            if dwg_hash in seen_hashes:
+                work_items.append(
+                    {
+                        "idx": idx,
+                        "safe_name": safe_name,
+                        "cad_path": dwg_path,
+                        "file_hash": dwg_hash,
+                        "cache_key": "",
+                        "skipped_duplicate": True,
+                    }
+                )
+                continue
+            seen_hashes.add(dwg_hash)
             cache_key = compose_key(
                 dwg_hash,
                 _EXTRACTION_ARTIFACT_VERSION,
-                f"views={aps_views_signature}",
+                f"extractor={_LOCAL_EXTRACTOR_SIGNATURE}",
             )
             work_items.append(
                 {
                     "idx": idx,
                     "safe_name": safe_name,
-                    "dwg_path": dwg_path,
-                    "dwg_hash": dwg_hash,
+                    "cad_path": dwg_path,
+                    "file_hash": dwg_hash,
                     "cache_key": cache_key,
+                    "skipped_duplicate": False,
                 }
             )
 
-        async def _upload_one(item: dict[str, Any]) -> dict[str, Any]:
+        for idx, (filename, content) in enumerate(dxf_files):
+            file_hash = sha256_bytes(content)
+            safe_name = _safe_upload_name(filename, f"upload_{idx}.dxf", content_hash=file_hash)
+            try:
+                stem = Path(display_name_from_storage(safe_name)).stem.lower()
+            except Exception:
+                stem = Path(safe_name).stem.lower()
+            if stem in staged_dwg_stems:
+                continue
+            if file_hash in seen_hashes:
+                continue
+            seen_hashes.add(file_hash)
+            safe_name = _safe_upload_name(filename, f"upload_{idx}.dxf", content_hash=file_hash)
+            dxf_path = uploads_dir / safe_name
+            cache_key = compose_key(
+                file_hash,
+                _EXTRACTION_ARTIFACT_VERSION,
+                f"extractor={_LOCAL_EXTRACTOR_SIGNATURE}",
+                "kind=dxf_only",
+            )
+            work_items.append(
+                {
+                    "idx": len(dwg_files) + idx,
+                    "safe_name": safe_name,
+                    "cad_path": dxf_path,
+                    "file_hash": file_hash,
+                    "cache_key": cache_key,
+                    "skipped_duplicate": False,
+                }
+            )
+
+        async def _extract_one(item: dict[str, Any]) -> dict[str, Any]:
             idx = int(item["idx"])
-            dwg_path = item["dwg_path"]
             safe_name = str(item["safe_name"])
+            file_hash = str(item["file_hash"])
+            cad_path = Path(item["cad_path"])
 
-            def _upload() -> str:
-                logger.info("APS upload (%d/%d): %s", idx + 1, len(dwg_files), dwg_path.name)
-                token = _ensure_aps_session()
-                object_name = upload_file_to_bucket(
-                    token,
-                    bucket_name,
-                    str(dwg_path),
-                    unique_suffix=f"api_job_{idx}",
-                )
-                if not object_name:
-                    raise RuntimeError(f"DWG upload to Autodesk failed: {dwg_path.name}")
-                return object_name
+            if item.get("skipped_duplicate"):
+                status = {
+                    "extract_status": "skipped_duplicate",
+                    "extract_error_code": "",
+                    "extract_note": "",
+                }
+                return {
+                    "idx": idx,
+                    "dwg": safe_name,
+                    "sha256": file_hash,
+                    "data": {"extractor": _LOCAL_EXTRACTOR_SIGNATURE, "payload": {}},
+                    **status,
+                }
 
-            async with semaphore:
-                object_name = await asyncio.to_thread(_upload)
-            enriched = dict(item)
-            enriched["object_name"] = object_name
-            enriched["token"] = _ensure_aps_session()
-            return enriched
-
-        async def _translate_one(item: dict[str, Any]) -> dict[str, Any]:
-            idx = int(item["idx"])
-            safe_name = str(item["safe_name"])
-            dwg_hash = str(item["dwg_hash"])
             cache_key = str(item["cache_key"])
-            object_name = str(item["object_name"])
-            token = str(item["token"])
 
-            def _extract_via_aps() -> dict[str, Any]:
-                logger.info(
-                    "APS translate+poll (%d/%d): %s",
-                    idx + 1,
-                    len(dwg_files),
-                    safe_name,
-                )
-                return _extract_dwg_via_aps_or_skip(
-                    token=token,
-                    bucket_name=bucket_name,
-                    object_name=object_name,
-                    translation_timeout_seconds=_env_int("APS_TRANSLATION_TIMEOUT_SECONDS", 3600),
-                    poll_interval_seconds=_env_int("APS_POLL_INTERVAL_SECONDS", 3),
-                    max_property_wait_seconds=_env_int("APS_PROPERTY_WAIT_SECONDS", 3600),
-                )
+            def _extract_local() -> tuple[dict[str, Any], dict[str, str]]:
+                logger.info("Local CAD extract (%d/%d): %s", idx + 1, len(work_items), safe_name)
+                try:
+                    payload = extract_cad_facts(
+                        cad_path,
+                        cache_root=cad_cache_root,
+                        work_dir=dxf_work_dir / file_hash[:12],
+                        search_roots=[uploads_dir],
+                    )
+                    return payload, _extract_status_from_payload(payload)
+                except Exception as exc:
+                    logger.warning("Local CAD extraction failed for %s: %s", safe_name, exc)
+                    _, error_code = _classify_extract_error(exc)
+                    return {}, _extract_status_from_payload(
+                        None,
+                        error_code=error_code,
+                        error_note=str(exc),
+                    )
 
             t0 = asyncio.get_running_loop().time()
             async with semaphore:
-                raw_data = await asyncio.to_thread(_extract_via_aps)
-            _STATS.bump("aps_extract", seconds_saved_estimate=asyncio.get_running_loop().time() - t0)
-            cache_set("aps_extract", cache_key, raw_data)
+                payload, status = await asyncio.to_thread(_extract_local)
+            _STATS.bump("local_cad_extract", seconds_saved_estimate=asyncio.get_running_loop().time() - t0)
+            cache_set("local_cad_extract", cache_key, payload)
             return {
                 "idx": idx,
                 "dwg": safe_name,
-                "sha256": dwg_hash,
-                "data": raw_data,
+                "sha256": file_hash,
+                "data": {"extractor": _LOCAL_EXTRACTOR_SIGNATURE, "payload": payload},
+                **status,
             }
 
         logger.info(
-            "Launching APS DWG extraction concurrently: files=%d concurrency=30",
+            "Launching local CAD extraction concurrently: files=%d concurrency=%d",
             len(work_items),
+            max(1, _env_int("LOCAL_CAD_CONCURRENCY", 4)),
         )
         cached_results: list[dict[str, Any]] = []
         misses: list[dict[str, Any]] = []
         for item in work_items:
-            cache_key = str(item["cache_key"])
-            cached = cache_get("aps_extract", cache_key)
-            if cached is not None:
+            if item.get("skipped_duplicate"):
                 cached_results.append(
                     {
                         "idx": int(item["idx"]),
                         "dwg": str(item["safe_name"]),
-                        "sha256": str(item["dwg_hash"]),
-                        "data": cached,
+                        "sha256": str(item["file_hash"]),
+                        "data": {"extractor": _LOCAL_EXTRACTOR_SIGNATURE, "payload": {}},
+                        "extract_status": "skipped_duplicate",
+                        "extract_error_code": "",
+                        "extract_note": "",
+                    }
+                )
+                continue
+            cache_key = str(item["cache_key"])
+            cached = cache_get("local_cad_extract", cache_key)
+            if cached is not None:
+                status = _extract_status_from_payload(cached if isinstance(cached, dict) else None)
+                cached_results.append(
+                    {
+                        "idx": int(item["idx"]),
+                        "dwg": str(item["safe_name"]),
+                        "sha256": str(item["file_hash"]),
+                        "data": {"extractor": _LOCAL_EXTRACTOR_SIGNATURE, "payload": cached},
+                        **status,
                     }
                 )
             else:
-                _STATS.bump("aps_extract", misses=1)
+                _STATS.bump("local_cad_extract", misses=1)
                 misses.append(item)
 
         if not misses:
             return cached_results
 
-        logger.info("APS upload phase: %d cache misses", len(misses))
-        uploaded = list(await asyncio.gather(*[_upload_one(item) for item in misses]))
-        logger.info("APS translate phase: %d uploaded DWGs", len(uploaded))
-        translated = list(await asyncio.gather(*[_translate_one(item) for item in uploaded]))
-        return cached_results + translated
+        extracted = list(await asyncio.gather(*[_extract_one(item) for item in misses]))
+        return cached_results + extracted
 
     try:
         extracted_raw_items = sorted(
@@ -704,11 +766,19 @@ def _build_extraction_artifacts(
             dwg_hash = str(raw_item["sha256"])
             raw_data = raw_item["data"]
             all_raw_data.append({"dwg": safe_name, "sha256": dwg_hash, "data": raw_data})
-            dwg_manifest.append({"filename": safe_name, "sha256": dwg_hash})
+            dwg_manifest.append(
+                {
+                    "filename": safe_name,
+                    "sha256": dwg_hash,
+                    "extract_status": raw_item.get("extract_status", "unknown"),
+                    "extract_error_code": raw_item.get("extract_error_code", ""),
+                    "extract_note": raw_item.get("extract_note", ""),
+                }
+            )
 
-            if raw_data.get("aps_error") == "quota_exceeded" or not raw_data.get("views"):
-                if raw_data.get("aps_error") == "quota_exceeded":
-                    logger.warning("APS skipped for %s (quota_exceeded)", safe_name)
+            payload = raw_data.get("payload") if isinstance(raw_data, dict) else None
+            if not isinstance(payload, dict):
+                logger.warning("Local CAD extraction returned no payload for %s", safe_name)
                 continue
 
             temp_raw_json = outputs_dir / f"raw_{idx}.json"
@@ -716,30 +786,9 @@ def _build_extraction_artifacts(
                 json.dumps(raw_data, indent=2, ensure_ascii=False),
                 encoding="utf-8",
             )
-            partial_facts = process_autodesk_json(str(temp_raw_json))
-            _merge_cad_facts(cad_facts, partial_facts)
+            _merge_cad_facts(cad_facts, payload)
 
-        # Optional: replace Model Derivative geometry (properties only — a plain
-        # LINE or a legend segment has no measurable length) with true AutoCAD
-        # geometry from Design Automation (DuplaExtractor). Off unless
-        # DUPLA_USE_DA_GEOMETRY=1. Any failure keeps the Model Derivative facts.
-        if _env_bool("DUPLA_USE_DA_GEOMETRY", False):
-            try:
-                from aps_integration.geometry_source import enrich_cad_facts_with_da
-
-                da_dwg_paths = [
-                    str(uploads_dir / _safe_upload_name(name, f"upload_{idx}.dwg"))
-                    for idx, (name, _content) in enumerate(dwg_files)
-                ]
-                da_dwg_paths = [path for path in da_dwg_paths if os.path.exists(path)]
-                if da_dwg_paths:
-                    logger.info("DA geometry enabled: enriching %d DWG(s)", len(da_dwg_paths))
-                    enrich_cad_facts_with_da(cad_facts, da_dwg_paths)
-            except Exception:
-                logger.warning(
-                    "DA geometry enrichment failed; keeping Model Derivative geometry",
-                    exc_info=True,
-                )
+        _log_cad_extract_summary(dwg_manifest, cad_facts)
 
         page_manifest, _ = _render_pdf_artifacts(
             pdf_files,
@@ -764,9 +813,7 @@ def _build_extraction_artifacts(
         manifest = {
             "artifact_key": artifact_key,
             "version": _EXTRACTION_ARTIFACT_VERSION,
-            "extractor": "aps_model_derivative",
-            "aps_views": ["2d"],
-            "aps_result": "quota_exceeded" if _aps_capacity_exhausted() else "ok",
+            "extractor": _LOCAL_EXTRACTOR_SIGNATURE,
             "pdf_dpi": pdf_dpi,
             "dwg_files": dwg_manifest,
             "pdf_files": [
@@ -808,6 +855,7 @@ def _load_or_build_extraction_artifacts(
     pdf_files: list[tuple[str, bytes]],
     *,
     pdf_dpi: int,
+    dxf_files: list[tuple[str, bytes]] | None = None,
 ) -> ExtractionArtifacts:
     forced_key = (os.getenv("DUPLA_USE_ARTIFACT_KEY") or "").strip()
     artifact_key = forced_key or _build_artifact_key(dwg_files, pdf_files, pdf_dpi=pdf_dpi)
@@ -819,9 +867,9 @@ def _load_or_build_extraction_artifacts(
 
     if forced_key:
         raise RuntimeError(f"DUPLA_USE_ARTIFACT_KEY={forced_key} was requested but no ready artifact exists")
-    if _env_bool("DUPLA_SKIP_APS", False):
+    if _env_bool("DUPLA_SKIP_EXTRACTION", False) or _env_bool("DUPLA_SKIP_APS", False):
         raise RuntimeError(
-            "DUPLA_SKIP_APS=1 but no extraction artifact exists for these inputs. "
+            "DUPLA_SKIP_EXTRACTION=1 but no extraction artifact exists for these inputs. "
             "Run base_extraction once first or set DUPLA_USE_ARTIFACT_KEY."
         )
 
@@ -831,6 +879,7 @@ def _load_or_build_extraction_artifacts(
         pdf_files,
         artifact_key=artifact_key,
         pdf_dpi=pdf_dpi,
+        dxf_files=dxf_files,
     )
 
 
@@ -1041,8 +1090,6 @@ def _run_dupla_pipeline_legacy(
     reset_stats()
 
     # Lightweight preflight logging (non-blocking).
-    if not os.getenv("CLIENT_ID") or not os.getenv("CLIENT_SECRET"):
-        logger.warning("APS credentials may be missing: CLIENT_ID or CLIENT_SECRET not set")
     if not (os.getenv("OPENAI_API_KEY") or os.getenv("DUPLA_OPENAI_KEYS")):
         logger.warning("OPENAI_API_KEY/DUPLA_OPENAI_KEYS not set — PartidaGenerator will be disabled")
 
@@ -1073,57 +1120,30 @@ def _run_dupla_pipeline_legacy(
         outputs_dir = base_dir / "outputs"
         outputs_dir.mkdir(exist_ok=True)
 
-        # 1. APS Extraction (multi-DWG -> merged cad_facts) — cached per DWG content hash
-        bucket_name = os.getenv("APS_BUCKET_NAME", "dupla_processing_bucket")
-        _aps_views_signature = "2d"  # MUST be bumped if extract_dwg_data params change
-        _aps_token: list = []  # lazy: only fetch on first miss
-        _aps_bucket_created = [False]
-
-        def _ensure_aps_session() -> str:
-            if not _aps_token:
-                tok = get_aps_token()
-                create_bucket(tok, bucket_name)
-                _aps_token.append(tok)
-                _aps_bucket_created[0] = True
-            return _aps_token[0]
-
+        # 1. Local CAD extraction (multi-DWG -> merged cad_facts) — cached per DWG content hash
+        cad_cache_root = _artifact_root() / "cad_cache"
+        dxf_work_dir = base_dir / "dxf_work"
         cad_facts: dict = {}
         all_raw_data: list[dict] = []
-        global _APS_CAPACITY_EXHAUSTED
-        _APS_CAPACITY_EXHAUSTED = False
         for idx, (filename, content) in enumerate(dwg_files):
             dwg_path = base_dir / (filename or f"upload_{idx}.dwg")
             dwg_path.write_bytes(content)
             dwg_hash = sha256_bytes(content)
-            cache_key = compose_key(dwg_hash, _aps_views_signature)
+            cache_key = compose_key(dwg_hash, _LOCAL_EXTRACTOR_SIGNATURE)
 
-            def _extract_via_aps(_idx=idx, _path=dwg_path, _cache_key=cache_key):
-                logger.info("APS extraction (%d/%d): %s", _idx + 1, len(dwg_files), _path.name)
-                tok = _ensure_aps_session()
-                object_name = upload_file_to_bucket(
-                    tok, bucket_name, str(_path), unique_suffix=f"api_job_{_idx}"
-                )
-                if not object_name:
-                    raise RuntimeError(f"DWG upload to Autodesk failed: {_path.name}")
-                return _extract_dwg_via_aps_or_skip(
-                    token=tok,
-                    bucket_name=bucket_name,
-                    object_name=object_name,
-                    translation_timeout_seconds=3600,
-                    poll_interval_seconds=10,
-                    max_property_wait_seconds=3600,
-                )
+            def _extract_local(_idx=idx, _path=dwg_path, _cache_key=cache_key):
+                logger.info("Local CAD extraction (%d/%d): %s", _idx + 1, len(dwg_files), _path.name)
+                try:
+                    return extract_cad_facts(_path, cache_root=cad_cache_root, work_dir=dxf_work_dir)
+                except Exception as exc:
+                    logger.warning("Local CAD extraction failed for %s: %s", _path.name, exc)
+                    return {}
 
-            raw_data = cached_stage("aps_extract", cache_key, _extract_via_aps)
-            all_raw_data.append({"dwg": dwg_path.name, "data": raw_data})
+            payload = cached_stage("local_cad_extract", cache_key, _extract_local)
+            all_raw_data.append({"dwg": dwg_path.name, "data": {"extractor": _LOCAL_EXTRACTOR_SIGNATURE, "payload": payload}})
 
-            if raw_data.get("aps_error") == "quota_exceeded" or not raw_data.get("views"):
-                continue
-
-            temp_raw_json = outputs_dir / f"raw_{idx}.json"
-            temp_raw_json.write_text(json.dumps(raw_data, indent=2, ensure_ascii=False), encoding="utf-8")
-            partial_facts = process_autodesk_json(str(temp_raw_json))
-            _merge_cad_facts(cad_facts, partial_facts)
+            if isinstance(payload, dict) and payload.get("cad_facts"):
+                _merge_cad_facts(cad_facts, payload)
 
         raw_json_path = outputs_dir / "raw.json"
         raw_json_path.write_text(json.dumps(all_raw_data, indent=2, ensure_ascii=False), encoding="utf-8")
@@ -1439,6 +1459,7 @@ def run_dupla_pipeline(
     discipline_id: str | None = None,
     project_name: str | None = None,
     correlation_id: str = "unknown",
+    dxf_files: list[tuple[str, bytes]] | None = None,
 ) -> dict:
     """Run the Fase 1/2 pipeline.
 
@@ -1457,13 +1478,12 @@ def run_dupla_pipeline(
     reset_stats()
 
     pdf_files = pdf_files or []
+    dxf_files = dxf_files or []
     resolved_project_name = (project_name or "").strip() or "Dupla API Job"
     forced_artifact = bool((os.getenv("DUPLA_USE_ARTIFACT_KEY") or "").strip())
-    if not dwg_files and not forced_artifact:
-        raise RuntimeError("No DWG files provided")
+    if not dwg_files and not dxf_files and not forced_artifact:
+        raise RuntimeError("No CAD files provided")
 
-    if not os.getenv("CLIENT_ID") or not os.getenv("CLIENT_SECRET"):
-        logger.warning("APS credentials may be missing: CLIENT_ID or CLIENT_SECRET not set")
     if not (os.getenv("OPENAI_API_KEY") or os.getenv("DUPLA_OPENAI_KEYS")):
         logger.warning("OPENAI_API_KEY/DUPLA_OPENAI_KEYS not set; OpenAI-backed stages will use fallbacks where available")
 
@@ -1485,6 +1505,7 @@ def run_dupla_pipeline(
         dwg_files,
         pdf_files,
         pdf_dpi=pdf_dpi,
+        dxf_files=dxf_files,
     )
     normalized = artifacts.normalized
     raw_json_path = artifacts.raw_json_path
@@ -1496,6 +1517,7 @@ def run_dupla_pipeline(
         len(page_paths),
         len(normalized.get("cad_facts", {}).get("layers", {})),
     )
+    _log_cad_extract_summary(list(artifacts.manifest.get("dwg_files") or []), normalized)
 
     _maybe_enrich_da_geometry(dwg_files, normalized)
     _maybe_apply_scale_calibration(normalized)

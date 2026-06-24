@@ -79,7 +79,8 @@ async def process_project(
 ):
     """
     Accept one or more uploaded files (DWG / PDF).
-    All .dwg files found are extracted via APS and merged into a single
+    All .dwg/.dxf files are extracted via the local ezdxf pipeline (LibreDWG + ezdxf)
+    and merged into a single
     unified cad_facts; the first .pdf file found is used for vision analysis.
 
     Optional ``discipline`` form field (arquitectura | estructura | electrico |
@@ -91,6 +92,7 @@ async def process_project(
         correlation_id = x_correlation_id or "unknown"
         logger.info(f"Received job processing request with correlation ID: {correlation_id}")
         dwg_files: List[tuple[str, bytes]] = []
+        dxf_files: List[tuple[str, bytes]] = []
         pdf_files: List[tuple[str, bytes]] = []
 
         for uf in files:
@@ -98,19 +100,22 @@ async def process_project(
             content = await uf.read()
             if name_lower.endswith(".dwg"):
                 dwg_files.append((uf.filename or "upload.dwg", content))
+            elif name_lower.endswith(".dxf"):
+                dxf_files.append((uf.filename or "upload.dxf", content))
             elif name_lower.endswith(".pdf"):
                 pdf_files.append((uf.filename or "upload.pdf", content))
 
-        if not dwg_files:
-            raise HTTPException(status_code=422, detail="No .dwg file found in uploaded files")
+        if not dwg_files and not dxf_files:
+            raise HTTPException(status_code=422, detail="No .dwg or .dxf file found in uploaded files")
 
         from tasks import run_dupla_pipeline
         job_timeout = _job_timeout_seconds()
         logger.info(
-            "Enqueuing processor job: discipline=%s project_name=%s dwgs=%d pdfs=%d timeout=%ss",
+            "Enqueuing processor job: discipline=%s project_name=%s dwgs=%d dxfs=%d pdfs=%d timeout=%ss",
             discipline or "(base_extraction)",
             project_name or "(none)",
             len(dwg_files),
+            len(dxf_files),
             len(pdf_files),
             job_timeout,
         )
@@ -121,6 +126,7 @@ async def process_project(
             discipline_id=discipline,
             project_name=project_name,
             correlation_id=correlation_id,
+            dxf_files=dxf_files,
             job_timeout=job_timeout,
         )
         return {"job_id": job.id, "status": "queued"}

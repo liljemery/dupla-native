@@ -19,6 +19,17 @@ def test_auto_continue_infers_single_discipline_by_default() -> None:
     assert result == (["estructura"], "auto_continue_inferred")
 
 
+def test_auto_continue_all_for_todas_without_multi_env() -> None:
+    result = resolve_auto_continue_disciplines(
+        discipline_id="todas",
+        suggested_discipline="arquitectura",
+    )
+    assert result is not None
+    disciplines, mode = result
+    assert mode == "auto_continue_all"
+    assert set(disciplines) == {"arquitectura", "estructura", "sanitario", "electrico"}
+
+
 def test_auto_continue_all_when_multi_enabled_and_todas(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DUPLA_ALLOW_MULTI_DISCIPLINE", "1")
     result = resolve_auto_continue_disciplines(

@@ -13,13 +13,19 @@ import {
   MessageCircle,
   PanelLeft,
   SquareKanban,
+  Video,
 } from 'lucide-react'
 
 import { TutorialesReference } from '../components/tutorials/TutorialesReference'
+import { TutorialVideoModal } from '../components/tutorials/TutorialVideoModal'
 import {
   type TutorialsGuidesFilter,
   TUTORIALS_GUIDE_FILTERS,
 } from '../constants/tutorialsGuidesFilter'
+import {
+  TUTORIAL_VIDEO_BY_TOUR_ID,
+  type TutorialDeliveryMode,
+} from '../constants/tutorialVideos'
 import {
   startChatTour,
   startProjectsTour,
@@ -74,10 +80,60 @@ function scrollToWrittenGuide(): void {
   document.getElementById('guia-escrita')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
+function TutorialModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: TutorialDeliveryMode
+  onChange: (mode: TutorialDeliveryMode) => void
+}) {
+  return (
+    <div
+      className="mt-3 flex rounded-lg border border-black/10 bg-[#faf8f5] p-0.5"
+      role="group"
+      aria-label="Modo del tutorial"
+    >
+      {(
+        [
+          { id: 'interactive' as const, label: 'Recorrido' },
+          { id: 'video' as const, label: 'Video' },
+        ] as const
+      ).map((option) => {
+        const active = mode === option.id
+        return (
+          <button
+            key={option.id}
+            type="button"
+            aria-pressed={active}
+            className={
+              active
+                ? 'flex-1 rounded-md bg-white px-2 py-1.5 text-xs font-semibold text-primary shadow-sm outline-none ring-1 ring-primary/15'
+                : 'flex-1 rounded-md px-2 py-1.5 text-xs font-medium text-muted outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-primary/30'
+            }
+            onClick={() => onChange(option.id)}
+          >
+            {option.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 export function TutorialesPage() {
   const navigate = useNavigate()
   const permissions = useAuthStore((s) => s.permissions)
   const [filter, setFilter] = useState<TutorialsGuidesFilter>('primeros')
+  const [modeById, setModeById] = useState<Record<string, TutorialDeliveryMode>>({})
+  const [openVideo, setOpenVideo] = useState<{ title: string; src: string } | null>(null)
+
+  function getMode(id: string): TutorialDeliveryMode {
+    return modeById[id] ?? 'interactive'
+  }
+
+  function setMode(id: string, mode: TutorialDeliveryMode): void {
+    setModeById((prev) => ({ ...prev, [id]: mode }))
+  }
 
   const recorridos = useMemo<Recorrido[]>(
     () => [
@@ -200,38 +256,62 @@ export function TutorialesPage() {
             Recorridos guiados
           </h2>
           <ul className="grid list-none grid-cols-1 gap-5 p-0 sm:grid-cols-2 lg:grid-cols-3">
-            {recorridos.map((r) => (
-              <li key={r.id}>
-                <article className={`${tutorialCardBorder} flex h-full flex-col overflow-hidden`}>
-                  <TutorialThumb
-                    Icon={r.Icon}
-                    durationLabel={r.durationLabel}
-                    badge={r.isNew ? 'Nuevo' : undefined}
-                  />
-                  <div className="flex flex-1 flex-col p-4 sm:p-5">
-                    <h3 className="text-base font-bold leading-snug text-ink">{r.title}</h3>
-                    <p className="mt-2 line-clamp-2 flex-1 text-sm leading-relaxed text-muted">{r.description}</p>
-                    <div className="mt-4 flex items-center gap-4 text-xs text-muted">
-                      <span className="inline-flex items-center gap-1">
-                        <Eye className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                        Guía interactiva
-                      </span>
-                      <span className="inline-flex items-center gap-1">
-                        <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                        Siempre actual
-                      </span>
+            {recorridos.map((r) => {
+              const video = TUTORIAL_VIDEO_BY_TOUR_ID[r.id]
+              const mode = getMode(r.id)
+              const isVideoMode = mode === 'video' && video != null
+
+              return (
+                <li key={r.id}>
+                  <article className={`${tutorialCardBorder} flex h-full flex-col overflow-hidden`}>
+                    <TutorialThumb
+                      Icon={r.Icon}
+                      durationLabel={isVideoMode ? video.durationLabel : r.durationLabel}
+                      badge={r.isNew ? 'Nuevo' : undefined}
+                    />
+                    <div className="flex flex-1 flex-col p-4 sm:p-5">
+                      <h3 className="text-base font-bold leading-snug text-ink">{r.title}</h3>
+                      <p className="mt-2 line-clamp-2 flex-1 text-sm leading-relaxed text-muted">
+                        {r.description}
+                      </p>
+                      {video ? (
+                        <TutorialModeSwitch mode={mode} onChange={(next) => setMode(r.id, next)} />
+                      ) : null}
+                      <div className="mt-4 flex items-center gap-4 text-xs text-muted">
+                        {isVideoMode ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Video className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                            Video
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1">
+                            <Eye className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                            Guía interactiva
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                          Siempre actual
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="mt-4 self-end rounded-lg border-2 border-primary bg-transparent px-4 py-2 text-sm font-semibold text-primary outline-none transition-colors hover:bg-primary/8 focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2"
+                        onClick={() => {
+                          if (isVideoMode) {
+                            setOpenVideo({ title: r.title, src: video.src })
+                          } else {
+                            r.onStart()
+                          }
+                        }}
+                      >
+                        {isVideoMode ? 'Ver video' : 'Comenzar recorrido'}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="mt-4 self-end rounded-lg border-2 border-primary bg-transparent px-4 py-2 text-sm font-semibold text-primary outline-none transition-colors hover:bg-primary/8 focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2"
-                      onClick={r.onStart}
-                    >
-                      Comenzar recorrido
-                    </button>
-                  </div>
-                </article>
-              </li>
-            ))}
+                  </article>
+                </li>
+              )
+            })}
           </ul>
         </section>
 
@@ -278,6 +358,13 @@ export function TutorialesPage() {
           </article>
         </section>
       </div>
+
+      <TutorialVideoModal
+        open={openVideo != null}
+        title={openVideo?.title ?? ''}
+        src={openVideo?.src ?? ''}
+        onClose={() => setOpenVideo(null)}
+      />
 
       <section id="guia-escrita" className="mt-10 scroll-mt-6">
         <h2 className="text-lg font-bold text-ink">Contenido de la guía</h2>

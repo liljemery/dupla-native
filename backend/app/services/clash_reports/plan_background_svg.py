@@ -15,32 +15,6 @@ _MARKER_FILL = "#FFF59D"
 _MARKER_STROKE = "#111111"
 
 
-def resolve_viewer_dump(cache_root: str | Path | None, dwg_filename: str) -> dict[str, Any] | None:
-    if not cache_root:
-        return None
-    root = Path(cache_root)
-    if not root.is_dir():
-        return None
-    target = Path(dwg_filename).name.lower()
-    for diag_path in root.glob("*.diagnostics.json"):
-        try:
-            diag = json.loads(diag_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        if str(diag.get("path") or "").lower() != target:
-            continue
-        key = diag_path.name.split(".diagnostics.json")[0]
-        viewer_path = root / f"{key}.viewer.json"
-        if viewer_path.is_file():
-            try:
-                payload = json.loads(viewer_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                return None
-            if isinstance(payload, dict):
-                return payload
-    return None
-
-
 def resolve_plan_pdf(search_dirs: list[str | Path], dwg_filename: str) -> Path | None:
     """Find a companion PDF for the DWG (same stem or fuzzy token match)."""
     from app.services.clash_reports.companion_pdf import _score_pdf_match, resolve_companion_pdf
@@ -84,56 +58,6 @@ def rasterize_pdf_page(pdf_path: str | Path, *, page_index: int = 0, zoom: float
         return pix.tobytes("png")
     except Exception:
         return None
-
-
-def _primitive_segments(primitive: dict[str, Any]) -> list[tuple[float, float, float, float]]:
-    kind = str(primitive.get("type") or "").lower()
-    if kind == "line":
-        return [
-            (
-                float(primitive["x1"]),
-                float(primitive["y1"]),
-                float(primitive["x2"]),
-                float(primitive["y2"]),
-            )
-        ]
-    if kind == "rect":
-        x, y = float(primitive["x"]), float(primitive["y"])
-        w, h = float(primitive["width"]), float(primitive["height"])
-        return [(x, y, x + w, y), (x + w, y, x + w, y + h), (x + w, y + h, x, y + h), (x, y + h, x, y)]
-    if kind == "quad":
-        pts = [(float(px), float(py)) for px, py in primitive.get("points") or []]
-        if len(pts) < 2:
-            return []
-        return [(pts[i][0], pts[i][1], pts[(i + 1) % len(pts)][0], pts[(i + 1) % len(pts)][1]) for i in range(len(pts))]
-    if kind == "arc":
-        cx, cy = float(primitive["cx"]), float(primitive["cy"])
-        radius = float(primitive["radius"])
-        start, end = float(primitive.get("start", 0.0)), float(primitive.get("end", 2.0 * math.pi))
-        steps = max(12, int(abs(end - start) / (math.pi / 18)))
-        pts = [(cx + radius * math.cos(start + (end - start) * (k / steps)), cy + radius * math.sin(start + (end - start) * (k / steps))) for k in range(steps + 1)]
-        return [(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]) for i in range(len(pts) - 1)]
-    return []
-
-
-def _collect_segments(viewer_dump: dict[str, Any], *, level_id: str | None = None) -> list[tuple[float, float, float, float]]:
-    segments: list[tuple[float, float, float, float]] = []
-    level_key = str(level_id or "").strip().upper()
-    for view in viewer_dump.get("views") or []:
-        if not isinstance(view, dict):
-            continue
-        view_name = str(view.get("name") or "").upper()
-        if level_key and level_key not in view_name and view_name not in level_key and level_key not in ("", "SIN NIVEL", "—"):
-            continue
-        for obj in view.get("objects") or []:
-            if not isinstance(obj, dict):
-                continue
-            for primitive in obj.get("primitives") or []:
-                if isinstance(primitive, dict):
-                    segments.extend(_primitive_segments(primitive))
-    if not segments and level_key:
-        return _collect_segments(viewer_dump, level_id=None)
-    return segments
 
 
 def _obs_bounds(obs: dict[str, Any]) -> tuple[float, float, float, float] | None:
@@ -204,8 +128,8 @@ def render_annotated_plan_svg(
     tile_path: TilePathFn = None,
 ) -> str:
     """Full-bleed plan sheet matching GA-FO-08 reference (large page + numbered callouts)."""
-    viewer = resolve_viewer_dump(cache_root, dwg_name)
-    segments = _collect_segments(viewer, level_id=level_id) if viewer else []
+    del cache_root, dwg_name, level_id
+    segments: list[tuple[float, float, float, float]] = []
     xmin, ymin, xmax, ymax = _sheet_extent(numbered, segments)
     world_w = max(xmax - xmin, 1.0)
     world_h = max(ymax - ymin, 1.0)

@@ -94,7 +94,7 @@ def _dupla_root() -> Path:
 def registry_path_for_profile(profile_slug: str) -> Path | None:
     root = _dupla_root()
     candidates = {
-        "nasas09": root / "aps_integration" / "NASAS 09" / "coordination" / "sample_project_levels.json",
+        "nasas09": root / "var" / "fixtures" / "nasas09" / "coordination" / "sample_project_levels.json",
         "serena18": root / "repositorios" / "SERENA 18" / "coordination" / "serena18_project_levels.json",
         "tortuga_c40": root / "repositorios" / "TORTUGA C40" / "coordination" / "tortuga_c40_project_levels.json",
     }

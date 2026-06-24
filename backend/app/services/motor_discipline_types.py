@@ -12,4 +12,3 @@ class MotorDisciplineInference:
     method: str
     confidence: float
     snapshot: dict[str, Any]
-    aps: dict[str, Any] | None

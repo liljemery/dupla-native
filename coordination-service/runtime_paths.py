@@ -22,7 +22,7 @@ def coordination_cache_root() -> Path:
     if override:
         cache = Path(override)
     else:
-        cache = coordination_output_root() / "aps_cache"
+        cache = coordination_output_root() / "cad_cache"
     cache.mkdir(parents=True, exist_ok=True)
     return cache
 
@@ -32,7 +32,7 @@ def default_redis_url() -> str:
 
 
 def load_project_env() -> None:
-    """Load backend/.env so APS credentials are visible to the worker."""
+    """Load backend/.env so coordination credentials are visible to the worker."""
     from dotenv import load_dotenv
 
     load_dotenv()

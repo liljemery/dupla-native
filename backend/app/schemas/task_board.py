@@ -91,6 +91,18 @@ class TaskBoardResponse(BaseModel):
     archived_cards: list[TaskCardResponse] = Field(default_factory=list)
 
 
+class TaskListReorderRequest(BaseModel):
+    list_uuids: list[UUID] = Field(min_length=1)
+
+
+class TaskListCreateRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
+class TaskListPatchRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+
+
 class TaskCardCreateRequest(BaseModel):
     list_uuid: UUID
     title: str = Field(min_length=1, max_length=255)

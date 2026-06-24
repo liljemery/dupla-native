@@ -191,6 +191,9 @@ function geometryBadge(doc: StructuralAnalyzedDocument): { text: string; classNa
   if (doc.geometry_quality === 'exact') {
     return { text: 'Geometría exacta (SVF1)', className: 'bg-emerald-600/12 text-emerald-800' }
   }
+  if (doc.geometry_source?.includes('local_ezdxf') || doc.geometry_source?.includes('dxf_ezdxf')) {
+    return { text: 'Geometría exacta (CAD)', className: 'bg-emerald-600/12 text-emerald-800' }
+  }
   if (doc.geometry_quality === 'proxy' || doc.aps_result === 'proxy') {
     return { text: 'Proxy APS', className: 'bg-amber-500/15 text-amber-900' }
   }
@@ -533,6 +536,15 @@ export function WorkspaceHallazgosTab({
                     })()
                   : 'Ejecutar análisis de clashes'}
               </PrimaryButton>
+              <WorkspaceActionButton
+                type="button"
+                onAction={() => {
+                  const base = import.meta.env.VITE_API_BASE ?? ''
+                  window.open(`${base}/api/projects/${projectUuid}/viewer`, '_blank', 'noopener,noreferrer')
+                }}
+              >
+                Ver en visor APS
+              </WorkspaceActionButton>
               <div className="grid grid-cols-3 gap-2 sm:gap-3">
               <Card className="flex flex-col items-center justify-center gap-1 border-primary/20 bg-primary/6 p-3 sm:p-4">
                 <span className="text-xs font-semibold uppercase tracking-wide text-primary">Total de Clashes</span>

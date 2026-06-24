@@ -30,6 +30,7 @@ from .chapter_rules import (
     default_bc3_code_for_takeoff,
     select_strong_candidate,
 )
+from .provenance import provenance_payload
 from .waste_policy import apply_waste
 
 def infer_source_discipline(takeoff: QuantityTakeoff, context: ProjectContext | None) -> str:
@@ -773,6 +774,7 @@ def compose_budget_rows(
             "chapter_path": [segment.title for segment in prepared.chapter_path],
             "chapter_codes": [segment.code for segment in prepared.chapter_path],
             "source_discipline": infer_source_discipline(prepared.takeoff, context),
+            **provenance_payload(prepared.takeoff),
             "candidate_summary": prepared.candidate.summary if prepared.candidate else None,
             "candidate_rationale": prepared.candidate.rationale if prepared.candidate else None,
             "candidate_source": prepared.candidate.source if prepared.candidate else None,

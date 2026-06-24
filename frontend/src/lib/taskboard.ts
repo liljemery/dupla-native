@@ -76,9 +76,9 @@ export function cardMatchesSearch(card: TaskCardDto, needle: string): boolean {
   )
 }
 
-export function boardQueryParams(includeArchived: boolean, projectUuid: string): string {
+export function boardQueryParams(includeArchived: boolean, projectUuid: string, viewAll: boolean): string {
   const p = new URLSearchParams()
-  p.set('mine', 'true')
+  if (!viewAll) p.set('mine', 'true')
   if (includeArchived) p.set('include_archived', 'true')
   if (projectUuid) p.set('project_uuid', projectUuid)
   const s = p.toString()

@@ -9,13 +9,13 @@ from app.models.project_clash_event import ProjectClashEvent
 from app.models.project_clash_item import ProjectClashItem
 from app.models.project_clash_job import ProjectClashJob
 from app.models.project_technical_finding import ProjectTechnicalFinding
+from app.models.project_viewer_coordinate_settings import ProjectViewerCoordinateSettings
 from app.models.project import Project, ProjectArchitectureData
 from app.models.project_member import ProjectMember
 from app.models.project_event import ProjectEvent
 from app.models.project_file import ProjectFile
 from app.models.project_price_database_file import ProjectPriceDatabaseFile
 from app.models.project_file_folder import ProjectFileFolder
-from app.models.project_viewer_coordinate_settings import ProjectViewerCoordinateSettings
 from app.models.subcontract_quote import SubcontractQuote, SubcontractQuoteLine
 from app.models.task_board import TaskCard, TaskCardComment, TaskList
 from app.models.password_reset_token import PasswordResetToken
@@ -38,6 +38,7 @@ __all__ = [
     "ProjectClashItem",
     "ProjectClashJob",
     "ProjectTechnicalFinding",
+    "ProjectViewerCoordinateSettings",
     "Project",
     "ProjectArchitectureData",
     "ProjectMember",
@@ -45,7 +46,6 @@ __all__ = [
     "ProjectFile",
     "ProjectPriceDatabaseFile",
     "ProjectFileFolder",
-    "ProjectViewerCoordinateSettings",
     "SubcontractQuote",
     "SubcontractQuoteLine",
     "TaskCard",

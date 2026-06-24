@@ -1,7 +1,7 @@
 import type { UserRole } from '../constants/userRoles'
 import { WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases'
 
-export const BUDGET_WORKSPACE_TAB_IDS = ['presupuestoMaestro', 'basePrecios'] as const
+export const BUDGET_WORKSPACE_TAB_IDS = ['presupuestoMaestro', 'basePrecios', 'hallazgos'] as const
 
 export const BUDGET_WORKFLOW_PHASES = new Set([
   'BUDGETING_PIPELINE',
@@ -48,6 +48,22 @@ export function canCreateUsers(permissions: readonly string[] | null | undefined
 
 export function canManagePermissions(permissions: readonly string[] | null | undefined): boolean {
   return hasPermission(permissions, 'admin.permissions.manage')
+}
+
+export function canEditTaskBoard(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.edit')
+}
+
+export function canViewAllTasks(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.view_all')
+}
+
+export function canAssignTasks(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.assign')
+}
+
+export function canManageTaskBoard(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'tasks.board.manage')
 }
 
 export function canMarkControlReview(permissions: readonly string[] | null | undefined): boolean {

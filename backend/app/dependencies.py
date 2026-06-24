@@ -112,16 +112,9 @@ async def require_budget_access(
     return current
 
 
-async def require_task_creator(
-    current: Annotated[User, Depends(get_current_user)],
-) -> User:
-    return current
-
-
-async def require_task_operator(
-    current: Annotated[User, Depends(get_current_user)],
-) -> User:
-    return current
+require_task_creator = require_permission("tasks.board.edit")
+require_task_operator = require_permission("tasks.board.edit")
+require_task_board_manage = require_permission("tasks.board.manage")
 
 
 async def get_workspace_context(

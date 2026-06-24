@@ -28,7 +28,7 @@ from core.schemas import (
     Window,
 )
 
-logger = logging.getLogger("dupla.quantifier")
+from budget.provenance import enrich_takeoff_description
 
 # ---------------------------------------------------------------------------
 # Default dimensions for MVP — applied when explicit values are missing
@@ -112,7 +112,7 @@ def _merge_inputs_with_description(base: dict[str, Any], description: str) -> di
     return merged
 
 
-def _wall_entity_description(wall: Wall) -> str:
+def _wall_entity_description(wall: Wall, *, level_name: str = "") -> str:
     inp = getattr(wall, "inputs", None) or {}
     raw = inp.get("raw") if isinstance(inp.get("raw"), dict) else {}
     typ = (
@@ -153,7 +153,14 @@ def _wall_entity_description(wall: Wall) -> str:
         parts.append(f"espesor {thick_cm} cm")
     if loc:
         parts.append(f"ubicación {loc}")
-    return ", ".join(parts)
+    base = ", ".join(parts)
+    inp = getattr(wall, "inputs", None) or {}
+    return enrich_takeoff_description(
+        base,
+        level_name=level_name,
+        source_file=str(inp.get("source_file") or ""),
+        ubicacion=loc,
+    )
 
 
 def _door_entity_description(door: Door) -> str:
@@ -288,6 +295,12 @@ def _make_takeoff(
         explicit_confidence=confidence,
         explicit_requiere_revision=requiere_revision,
     )
+    merged_inputs = dict(inputs)
+    if not merged_inputs.get("source_file"):
+        for ref in source_refs:
+            if ref.startswith("file:"):
+                merged_inputs["source_file"] = ref.split(":", 1)[1]
+                break
     return QuantityTakeoff(
         item_key=item_key,
         item_type=item_type,
@@ -295,7 +308,7 @@ def _make_takeoff(
         unit=unit,
         quantity=quantity,
         formula=formula,
-        inputs=inputs,
+        inputs=merged_inputs,
         assumptions=assumptions,
         source_refs=source_refs,
         trace=trace,
@@ -802,7 +815,7 @@ def _wall_takeoffs(level: LevelInventory) -> list[QuantityTakeoff]:
     takeoffs: list[QuantityTakeoff] = []
 
     for wall in level.walls:
-        wall_desc = _wall_entity_description(wall)
+        wall_desc = _wall_entity_description(wall, level_name=level.level_name)
         if wall.length_m is not None:
             finish_h = wall.height_m
             finish_h_eff = finish_h if finish_h is not None else _DEFAULT_WALL_HEIGHT_M
@@ -820,6 +833,9 @@ def _wall_takeoffs(level: LevelInventory) -> list[QuantityTakeoff]:
                             "length_m": wall.length_m,
                             "finish_height_m": finish_h_eff,
                             "finish_height_source": finish_src,
+                            "level_name": level.level_name,
+                            "source_layer": (wall.inputs or {}).get("source_layer") or (wall.source_layers[0] if wall.source_layers else ""),
+                            "source_file": (wall.inputs or {}).get("source_file") or "",
                         },
                         wall_desc,
                     ),

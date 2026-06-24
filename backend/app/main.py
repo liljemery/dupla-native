@@ -1,4 +1,6 @@
+import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,6 +33,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logging.getLogger("ezdxf").setLevel(logging.ERROR)
     from app.services.project_file_classification_service import requeue_pending_discipline_classifications
 
     await requeue_pending_discipline_classifications()
@@ -65,8 +68,8 @@ def create_app() -> FastAPI:
     app.include_router(budget.router)
     app.include_router(clash.router)
     app.include_router(clash_workflow.router)
-    app.include_router(clash_viewer.router)
     app.include_router(aps_viewer.router)
+    app.include_router(clash_viewer.router)
     app.include_router(workflow_templates.router)
     app.include_router(project_lifecycle.router)
     app.include_router(admin.router)
@@ -74,7 +77,9 @@ def create_app() -> FastAPI:
     app.include_router(chat.router)
     app.include_router(tasks.router)
     app.include_router(health.router)
-    app.mount("/static", StaticFiles(directory="app/static"), name="static")
+    static_dir = Path(__file__).resolve().parent / "static"
+    static_dir.mkdir(exist_ok=True)
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     return app
 
 

@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user, get_workspace_context
+from app.dependencies import get_workspace_context, require_budget_access
 from app.domain.workspace_context import WorkspaceContext
 from app.models.user import User
 from app.services.clash_export_service import ClashExportService, content_disposition_header
@@ -61,7 +61,7 @@ def _clash_job_response(job) -> ClashJobResponse:
 )
 async def get_project_files_count(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> ProjectFilesCountResponse:
@@ -77,7 +77,7 @@ async def get_project_files_count(
 )
 async def list_coordination_folders(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> list[dict[str, Any]]:
@@ -92,7 +92,7 @@ async def list_coordination_folders(
 )
 async def get_coordination_inventory(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     folder_uuid: Annotated[Optional[UUID], Query()] = None,
@@ -110,7 +110,7 @@ async def get_coordination_inventory(
 async def enqueue_clash_job(
     project_uuid: UUID,
     body: EnqueueClashJobRequest,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> ClashJobResponse:
@@ -132,7 +132,7 @@ async def enqueue_clash_job(
 )
 async def get_latest_clash_job(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> ClashJobResponse:
@@ -152,7 +152,7 @@ async def get_latest_clash_job(
 )
 async def get_structural_analysis_report(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -168,7 +168,7 @@ async def get_structural_analysis_report(
 )
 async def export_latest_clash_technical_pdf(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -188,7 +188,7 @@ async def export_latest_clash_technical_pdf(
 )
 async def export_latest_clash_human_pdf(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -209,7 +209,7 @@ async def export_latest_clash_human_pdf(
 async def export_clash_technical_pdf(
     project_uuid: UUID,
     job_id: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -230,7 +230,7 @@ async def export_clash_technical_pdf(
 async def export_clash_human_pdf(
     project_uuid: UUID,
     job_id: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -268,7 +268,7 @@ class UpsertControlPointsRequest(BaseModel):
 )
 async def list_control_points(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> list[dict[str, Any]]:
@@ -284,7 +284,7 @@ async def list_control_points(
 async def upsert_control_points(
     project_uuid: UUID,
     body: UpsertControlPointsRequest,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -308,7 +308,7 @@ async def upsert_control_points(
 async def delete_control_points(
     project_uuid: UUID,
     discipline: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> None:

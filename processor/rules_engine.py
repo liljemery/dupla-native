@@ -211,6 +211,10 @@ class RulesEngine:
         base_inputs = getattr(base, "inputs", {}) or {}
         if isinstance(base_inputs.get("context_tags"), list):
             inputs["context_tags"] = base_inputs["context_tags"]
+        if base_inputs.get("source_file"):
+            inputs["source_file"] = base_inputs["source_file"]
+        if base_inputs.get("level_name"):
+            inputs["level_name"] = base_inputs["level_name"]
 
         trace = QuantityTrace(
             source_entity_ids=[self._element_root(base.item_key)],

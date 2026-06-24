@@ -35,37 +35,9 @@ def _check_redis(url: str) -> dict[str, Any]:
         return {"status": "unreachable", "detail": str(exc)}
 
 
-async def _check_aps() -> dict[str, Any]:
-    settings = get_settings()
-    client_id = getattr(settings, "aps_client_id", None) or ""
-    client_secret = getattr(settings, "aps_client_secret", None) or ""
-    if not client_id or not client_secret:
-        return {"status": "not_configured", "detail": "APS_CLIENT_ID / APS_CLIENT_SECRET not set"}
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(
-                "https://developer.api.autodesk.com/authentication/v2/token",
-                data={
-                    "grant_type": "client_credentials",
-                    "scope": "data:read",
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-            )
-        if resp.status_code == 200:
-            return {"status": "ok"}
-        return {
-            "status": "auth_failed",
-            "detail": f"HTTP {resp.status_code}: {resp.text[:200]}",
-        }
-    except Exception as exc:
-        return {"status": "unreachable", "detail": str(exc)}
-
-
 @router.get("/integrations", summary="Check external integration health")
 async def integrations_health() -> dict[str, Any]:
-    """Returns the health of Redis, coordination service, and APS."""
+    """Returns the health of Redis and the coordination service."""
     settings = get_settings()
 
     coordination_url: str = getattr(settings, "coordination_url", "http://coordination-service:8001")
@@ -73,18 +45,13 @@ async def integrations_health() -> dict[str, Any]:
 
     coord_status = await _check_coordination(coordination_url)
     redis_status = _check_redis(redis_url)
-    aps_status = await _check_aps()
 
-    all_ok = all(
-        s["status"] == "ok"
-        for s in (coord_status, redis_status, aps_status)
-    )
+    all_ok = all(s["status"] == "ok" for s in (coord_status, redis_status))
 
     return {
         "overall": "ok" if all_ok else "degraded",
         "integrations": {
             "coordination_service": coord_status,
             "redis": redis_status,
-            "aps": aps_status,
         },
     }

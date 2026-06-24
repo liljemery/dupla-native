@@ -55,7 +55,6 @@ export function ProjectWorkspaceConsoleHeader({
   tab,
   onSelectTab,
   onOpenConfig,
-  role: _role,
   viewBudget,
   onGoPresupuesto,
   phaseLabel,

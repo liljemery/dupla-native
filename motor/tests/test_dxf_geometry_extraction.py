@@ -119,3 +119,58 @@ def test_extract_dxf_geometry_serializes_stable_contract(tmp_path: Path) -> None
         "block_name",
     }.issubset(first)
 
+
+def test_probe_dxf_readable_valid_and_invalid(tmp_path: Path) -> None:
+    from coordination.extraction.dxf_geometry import probe_dxf_readable
+
+    valid = tmp_path / "ok.dxf"
+    _write_basic_dxf(valid)
+    assert probe_dxf_readable(valid)
+
+    bad = tmp_path / "bad.dxf"
+    bad.write_text("0\nSECTION\n", encoding="utf-8")
+    assert not probe_dxf_readable(bad)
+
+
+def test_parse_error_line_reads_ezdxf_message() -> None:
+    from coordination.extraction.dxf_geometry import _parse_error_line
+
+    assert _parse_error_line(Exception('Invalid group code "X" at line 42.')) == 42
+    assert _parse_error_line(Exception("no line here")) is None
+
+
+def test_salvage_dxf_at_line_truncates_before_error(tmp_path: Path) -> None:
+    from coordination.extraction.dxf_geometry import _salvage_dxf_at_line
+
+    source = tmp_path / "source.dxf"
+    source.write_text("0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nEOF\n", encoding="utf-8")
+    salvaged = _salvage_dxf_at_line(source, 4)
+    assert salvaged is not None
+    text = salvaged.read_text(encoding="utf-8")
+    assert "SECTION" in text
+    assert "HEADER" not in text
+    assert text.endswith("0\nEOF\n")
+
+
+def test_read_dxf_salvage_when_recover_fails(tmp_path: Path, monkeypatch) -> None:
+    from ezdxf import recover as recover_mod
+
+    from coordination.extraction import dxf_geometry as dg
+
+    source = tmp_path / "source.dxf"
+    _write_basic_dxf(source)
+    err_line = len(source.read_text(encoding="utf-8").splitlines()) + 1
+    real_recover = recover_mod.readfile
+
+    def fail_read(path: str, errors: str | None = None) -> object:
+        if ".salvaged" in path:
+            return real_recover(path, errors=errors)
+        raise Exception(f'Invalid group code "X" at line {err_line}.')
+
+    monkeypatch.setattr(dg.ezdxf, "readfile", lambda path: fail_read(path))
+    monkeypatch.setattr(recover_mod, "readfile", fail_read)
+
+    doc, _partial, salvaged = dg._read_dxf(source)
+    assert salvaged
+    assert len(list(doc.modelspace())) >= 3
+
