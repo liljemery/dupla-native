@@ -166,6 +166,8 @@ services:
 
 volumes:
   dupla_pg:
+    external: true
+    name: dupla_dupla_pg
   dupla_uploads:
   dupla_outputs:
   dupla_coord_outputs:
