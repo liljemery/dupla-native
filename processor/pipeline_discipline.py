@@ -25,9 +25,11 @@ def resolve_auto_continue_disciplines(
     """After base extraction, continue into budget unless extraction-only is requested."""
     if env_bool("DUPLA_EXTRACTION_ONLY", False):
         return None
-    allow_multi = env_bool("DUPLA_ALLOW_MULTI_DISCIPLINE", False)
     raw = normalize_discipline_token(discipline_id)
-    if allow_multi and (not raw or raw in _ALL_DISCIPLINE_ALIASES):
+    if raw in _ALL_DISCIPLINE_ALIASES:
+        return list(_STANDARD_DISCIPLINES), "auto_continue_all"
+    allow_multi = env_bool("DUPLA_ALLOW_MULTI_DISCIPLINE", False)
+    if allow_multi and not raw:
         return list(_STANDARD_DISCIPLINES), "auto_continue_all"
     return [suggested_discipline], "auto_continue_inferred"
 

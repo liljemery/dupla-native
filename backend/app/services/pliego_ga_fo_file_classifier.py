@@ -201,7 +201,7 @@ async def _openai_ga_fo_matches(
         return []
     allowed = expected_ga_fo_item_ids()
     client = AsyncOpenAI(api_key=key)
-    cap = settings.ga_fo_aps_context_max_chars
+    cap = settings.ga_fo_cad_context_max_chars
     user_blocks: dict[str, Any] = {
         "archivo": {"nombre": original_name, "mime": mime or "", "tamaño_bytes": file_size},
         "aps_analysis": aps_analysis[:cap] if len(aps_analysis) > cap else aps_analysis,

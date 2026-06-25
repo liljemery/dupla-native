@@ -10,7 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user
+from app.dependencies import require_budget_access
 from app.domain.clash_workflow_enums import ClashStatus
 from app.models.project_clash_item import ProjectClashItem
 from app.models.project_clash_job import ProjectClashJob
@@ -45,6 +45,7 @@ def _parse_project_id(project_id: str) -> UUID:
 @router.get("/{project_id}/viewer")
 async def aps_clash_viewer(
     project_id: str,
+    current: Annotated[User, Depends(require_budget_access)],
     coordinate_space: Annotated[str, Query(pattern="^(world|model)$")] = "world",
     debug: bool = False,
 ) -> FileResponse:
@@ -103,7 +104,7 @@ async def demo_reset_coordinate_settings(
 @router.get("/{project_id}/viewer/config", response_model=ViewerConfigResponse)
 async def viewer_config(
     project_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     coordinate_space: Annotated[str, Query(pattern="^(world|model)$")] = "world",
 ) -> ViewerConfigResponse:
@@ -115,7 +116,7 @@ async def viewer_config(
 @router.get("/{project_id}/viewer/clashes", response_model=ClashViewerResponse)
 async def viewer_clashes(
     project_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     coordinate_space: Annotated[str, Query(pattern="^(world|model)$")] = "world",
     severity: str | None = None,
@@ -136,7 +137,7 @@ async def viewer_clashes(
 @router.get("/{project_id}/viewer/coordinate-settings", response_model=ViewerCoordinateSettings)
 async def get_coordinate_settings(
     project_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     coordinate_space: Annotated[str, Query(pattern="^(world|model)$")] = "world",
 ) -> ViewerCoordinateSettings:
@@ -149,7 +150,7 @@ async def get_coordinate_settings(
 async def put_coordinate_settings(
     project_id: str,
     body: ViewerCoordinateSettings,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> ViewerCoordinateSettings:
     if project_id == "demo":
@@ -164,7 +165,7 @@ async def put_coordinate_settings(
 @router.post("/{project_id}/viewer/coordinate-settings/reset", response_model=ViewerCoordinateSettings)
 async def reset_coordinate_settings(
     project_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     coordinate_space: Annotated[str, Query(pattern="^(world|model)$")] = "world",
 ) -> ViewerCoordinateSettings:
@@ -177,7 +178,7 @@ async def reset_coordinate_settings(
 async def mapping_candidates(
     project_id: str,
     clash_id: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
 ) -> ClashMappingCandidatesResponse:
     if project_id != "demo":
         _parse_project_id(project_id)
@@ -200,7 +201,7 @@ async def update_viewer_clash_status(
     project_id: str,
     clash_id: str,
     body: ClashStatusUpdate,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, str]:
     if project_id == "demo":

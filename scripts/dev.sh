@@ -30,7 +30,7 @@ export DUPLA_CACHE_DIR="${DUPLA_CACHE_DIR:-$VAR_DIR/cache}"
 export DUPLA_ARTIFACT_DIR="${DUPLA_ARTIFACT_DIR:-$VAR_DIR/artifacts}"
 export COORDINATION_SMOKE_MODE="${COORDINATION_SMOKE_MODE:-false}"
 export COORDINATION_MAX_WORKERS="${COORDINATION_MAX_WORKERS:-6}"
-export COORDINATION_CACHE_ROOT="${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/aps_cache}"
+export COORDINATION_CACHE_ROOT="${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/cad_cache}"
 export PYTHONPATH="${DUPLA_ROOT}:${COORD_DIR}:${PYTHONPATH:-}"
 
 usage() {
@@ -48,10 +48,10 @@ Comandos:
 Variables útiles:
   DUPLA_ROOT                 Ruta al motor de coordinación (default: motor/ en la raíz del repo)
   COORDINATION_OUTPUT_ROOT   Salida compartida clash (default: var/coord_outputs)
-  COORDINATION_CACHE_ROOT    Caché APS persistente entre corridas (default: var/coord_outputs/aps_cache)
+  COORDINATION_CACHE_ROOT    Caché CAD persistente entre corridas (default: var/coord_outputs/cad_cache)
   COORDINATION_MAX_WORKERS   Workers paralelos para extracción DWG (default: 6)
-  COORDINATION_ANALYSIS_PROFILE  fast_compare_aps | fast_compare | standard (auto si no se define)
-  COORDINATION_SMOKE_MODE    false para detección real vía APS (default: false; override en backend/.env)
+  COORDINATION_ANALYSIS_PROFILE  fast_compare_local | fast_compare | standard (auto si no se define)
+  COORDINATION_SMOKE_MODE    false para detección real (default: false; override en backend/.env)
 EOF
 }
 
@@ -100,7 +100,7 @@ cmd_setup() {
     "$VAR_DIR/cache" \
     "$VAR_DIR/artifacts" \
     "$VAR_DIR/coord_outputs" \
-    "$VAR_DIR/coord_outputs/aps_cache" \
+    "$VAR_DIR/coord_outputs/cad_cache" \
     "$VAR_DIR/processor_outputs" \
     "$PID_DIR" \
     "$LOG_DIR" \
@@ -265,10 +265,10 @@ cmd_start() {
   launch_detached processor-worker bash -c "cd '$PROCESSOR_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && exec python worker.py"
 
   echo "==> Arrancando coordination API :8002"
-  launch_detached coordination bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/aps_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export CLIENT_ID='${CLIENT_ID:-}' && export CLIENT_SECRET='${CLIENT_SECRET:-}' && export APS_BUCKET_NAME='${APS_BUCKET_NAME:-}' && export APS_VIEWER_GEOMETRY_DUMP='${APS_VIEWER_GEOMETRY_DUMP:-true}' && export APS_VIEWER_GEOMETRY_FORMAT='${APS_VIEWER_GEOMETRY_FORMAT:-svf1}' && export APS_VIEWER_GEOMETRY_TIMEOUT='${APS_VIEWER_GEOMETRY_TIMEOUT:-900}' && export APS_VIEWER_MAX_VIEWS='${APS_VIEWER_MAX_VIEWS:-4}' && export APS_VIEWER_MAX_OBJECTS_PER_VIEW='${APS_VIEWER_MAX_OBJECTS_PER_VIEW:-500}' && export APS_VIEWER_LINE_BUFFER_MM='${APS_VIEWER_LINE_BUFFER_MM:-}' && export PUPPETEER_EXECUTABLE_PATH='${PUPPETEER_EXECUTABLE_PATH:-}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python -m uvicorn main:app --reload --host 0.0.0.0 --port 8002"
+  launch_detached coordination bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/cad_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python -m uvicorn main:app --reload --host 0.0.0.0 --port 8002"
 
   echo "==> Arrancando coordination-worker"
-  launch_detached coordination-worker bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/aps_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export CLIENT_ID='${CLIENT_ID:-}' && export CLIENT_SECRET='${CLIENT_SECRET:-}' && export APS_BUCKET_NAME='${APS_BUCKET_NAME:-}' && export APS_VIEWER_GEOMETRY_DUMP='${APS_VIEWER_GEOMETRY_DUMP:-true}' && export APS_VIEWER_GEOMETRY_FORMAT='${APS_VIEWER_GEOMETRY_FORMAT:-svf1}' && export APS_VIEWER_GEOMETRY_TIMEOUT='${APS_VIEWER_GEOMETRY_TIMEOUT:-900}' && export APS_VIEWER_MAX_VIEWS='${APS_VIEWER_MAX_VIEWS:-4}' && export APS_VIEWER_MAX_OBJECTS_PER_VIEW='${APS_VIEWER_MAX_OBJECTS_PER_VIEW:-500}' && export APS_VIEWER_LINE_BUFFER_MM='${APS_VIEWER_LINE_BUFFER_MM:-}' && export PUPPETEER_EXECUTABLE_PATH='${PUPPETEER_EXECUTABLE_PATH:-}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python worker.py"
+  launch_detached coordination-worker bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/cad_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python worker.py"
 
   echo "==> Arrancando frontend :5173"
   launch_detached frontend bash -c "cd '$FRONTEND_DIR' && exec pnpm dev --host 127.0.0.1 --port 5173"

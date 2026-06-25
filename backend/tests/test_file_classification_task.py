@@ -34,7 +34,6 @@ async def test_apply_motor_sets_discipline_and_snapshot(tmp_path: Path) -> None:
         method="pdf_text",
         confidence=0.82,
         snapshot={"discipline_method": "pdf_text", "confidence": 0.82},
-        aps=None,
     )
 
     class Session:
@@ -99,7 +98,6 @@ async def test_apply_motor_uses_project_sibling_when_inconclusive(tmp_path: Path
         method="inconclusive",
         confidence=0.0,
         snapshot={"discipline_method": "inconclusive", "confidence": 0.0},
-        aps=None,
     )
 
     class Session:
@@ -142,7 +140,6 @@ async def test_apply_motor_uses_filename_fallback_when_inconclusive(tmp_path: Pa
         method="inconclusive",
         confidence=0.0,
         snapshot={"discipline_method": "inconclusive", "confidence": 0.0, "classified_at": "2026-01-01T00:00:00Z"},
-        aps=None,
     )
 
     class Session:
@@ -187,7 +184,6 @@ async def test_run_classification_task_commits(tmp_path: Path) -> None:
         method="inconclusive",
         confidence=0.0,
         snapshot={"discipline_method": "inconclusive", "confidence": 0.0},
-        aps=None,
     )
 
     cm = MagicMock()

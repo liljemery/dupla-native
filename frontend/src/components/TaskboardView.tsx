@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal, Settings } from 'lucide-react'
 
 import { apiFetch } from '../api/client'
 import { boardQueryParams, cardMatchesSearch, CARD_MIME, userDisplayInitials } from '../lib/taskboard'
@@ -12,6 +12,7 @@ import {
 import { formatPersonFullName } from '../lib/personDisplay'
 import { TaskboardCardModal } from './TaskboardCardModal'
 import { TaskboardCreateModal } from './TaskboardCreateModal'
+import { TaskboardSettingsModal } from './TaskboardSettingsModal'
 import { TaskboardListTable } from './TaskboardListTable'
 import { TaskboardToolbar } from './TaskboardToolbar'
 import { useAuthStore } from '../store/authStore'
@@ -33,7 +34,6 @@ function taskCardPalette(uuid: string) {
 function cardProgressSegments(accent: ReturnType<typeof columnAccentForListTitle>): number {
   if (accent === 'green') return 6
   if (accent === 'amber') return 3
-  if (accent === 'red') return 2
   return 1
 }
 
@@ -67,6 +67,10 @@ export function TaskboardView({
 }: TaskboardViewProps) {
   const token = useAuthStore((s) => s.token)
   const userUuid = useAuthStore((s) => s.userUuid)
+  const canEditBoard = useAuthStore((s) => s.hasPermission('tasks.board.edit'))
+  const canViewAllTasks = useAuthStore((s) => s.hasPermission('tasks.board.view_all'))
+  const canAssignOthers = useAuthStore((s) => s.hasPermission('tasks.board.assign'))
+  const canManageBoard = useAuthStore((s) => s.hasPermission('tasks.board.manage'))
   const [searchParams, setSearchParams] = useSearchParams()
   const [board, setBoard] = useState<TaskBoardDto | null>(null)
   const [assignees, setAssignees] = useState<TaskAssigneeOption[]>([])
@@ -76,6 +80,7 @@ export function TaskboardView({
   const [boardSearch, setBoardSearch] = useState('')
   const [modalCard, setModalCard] = useState<TaskCardDto | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const dragRef = useRef(false)
 
   const assigneeProjectScope = useMemo(
@@ -86,7 +91,7 @@ export function TaskboardView({
   const load = useCallback(async () => {
     if (!token) return
     setError(null)
-    const qs = boardQueryParams(includeArchived, projectFilter)
+    const qs = boardQueryParams(includeArchived, projectFilter, canViewAllTasks)
     const res = await apiFetch(`/api/tasks/board${qs}`, { token })
     if (!res.ok) {
       setError('No se pudo cargar el tablero')
@@ -94,12 +99,13 @@ export function TaskboardView({
       return
     }
     setBoard((await res.json()) as TaskBoardDto)
-  }, [token, includeArchived, projectFilter])
+  }, [token, includeArchived, projectFilter, canViewAllTasks])
 
-  const selfAssignees = useMemo(
-    () => (userUuid ? assignees.filter((a) => a.uuid === userUuid) : []),
-    [assignees, userUuid],
-  )
+  const assigneeOptions = useMemo(() => {
+    if (canAssignOthers) return assignees
+    if (userUuid) return assignees.filter((a) => a.uuid === userUuid)
+    return []
+  }, [assignees, canAssignOthers, userUuid])
 
   useEffect(() => {
     let cancelled = false
@@ -163,6 +169,7 @@ export function TaskboardView({
   }
 
   function onDropOnColumn(e: React.DragEvent, list: TaskListDto) {
+    if (!canEditBoard) return
     e.preventDefault()
     const cardUuid = e.dataTransfer.getData(CARD_MIME)
     if (!cardUuid) return
@@ -171,6 +178,7 @@ export function TaskboardView({
   }
 
   function onDropOnCard(e: React.DragEvent, list: TaskListDto, insertIndex: number) {
+    if (!canEditBoard) return
     e.preventDefault()
     e.stopPropagation()
     const cardUuid = e.dataTransfer.getData(CARD_MIME)
@@ -242,7 +250,6 @@ export function TaskboardView({
 
   function columnDotClass(accent: ReturnType<typeof columnAccentForListTitle>): string {
     if (accent === 'green') return 'bg-emerald-500'
-    if (accent === 'red') return 'bg-primary'
     if (accent === 'amber') return 'bg-amber-400'
     return 'bg-black/35'
   }
@@ -256,14 +263,18 @@ export function TaskboardView({
               Dupla
             </Link>
             <span className="mx-2 text-black/20">/</span>
-            <span className="text-ink">Mis tareas</span>
+            <span className="text-ink">{canViewAllTasks ? 'Tareas' : 'Mis tareas'}</span>
           </nav>
 
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">Mis tareas</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-ink md:text-3xl">
+                {canViewAllTasks ? 'Tareas del workspace' : 'Mis tareas'}
+              </h1>
               <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-                Haz clic en cualquier tarea para ir directamente a trabajar en ella.
+                {canViewAllTasks
+                  ? 'Revisa las tareas pendientes y asígnalas al equipo.'
+                  : 'Haz clic en cualquier tarea para ir directamente a trabajar en ella.'}
               </p>
               {projectFilter ? (
                 <p className="mt-3 text-sm text-ink">
@@ -282,11 +293,23 @@ export function TaskboardView({
               ) : null}
             </div>
 
-            <div
-              className="flex shrink-0 rounded-lg border border-black/10 bg-white/40 p-1 backdrop-blur-md"
-              role="tablist"
-              aria-label="Vista de tareas"
-            >
+            <div className="flex shrink-0 items-start gap-2">
+              {canManageBoard ? (
+                <button
+                  type="button"
+                  className="flex size-10 items-center justify-center rounded-lg border border-black/10 bg-white/60 text-muted shadow-sm backdrop-blur-md transition hover:border-primary/30 hover:text-primary"
+                  aria-label="Configurar tablero"
+                  title="Configurar columnas"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings className="size-5" strokeWidth={2} aria-hidden />
+                </button>
+              ) : null}
+              <div
+                className="flex rounded-lg border border-black/10 bg-white/40 p-1 backdrop-blur-md"
+                role="tablist"
+                aria-label="Vista de tareas"
+              >
               <button
                 type="button"
                 role="tab"
@@ -321,6 +344,7 @@ export function TaskboardView({
               >
                 Cronograma
               </button>
+              </div>
             </div>
           </div>
 
@@ -337,12 +361,13 @@ export function TaskboardView({
         <div className="flex min-h-0 flex-1 flex-col gap-3">
           <TaskboardToolbar
             embedded={embedded}
-            showAddTask
+            showAddTask={canEditBoard}
             onAddTask={() => setCreateOpen(true)}
             boardSearch={boardSearch}
             setBoardSearch={setBoardSearch}
             includeArchived={includeArchived}
             setIncludeArchived={setIncludeArchived}
+            viewAll={canViewAllTasks}
           />
 
           {viewMode === 'list' && !embedded ? (
@@ -383,8 +408,8 @@ export function TaskboardView({
                         ? 'flex h-full min-h-0 w-52 shrink-0 flex-col overflow-hidden rounded-xl border border-black/10 bg-white/35 backdrop-blur-md sm:w-56'
                         : 'flex h-full min-h-0 w-[min(100%,17.5rem)] shrink-0 flex-col overflow-hidden rounded-xl border border-black/10 bg-white/35 backdrop-blur-md sm:w-72 md:min-w-0 md:max-w-none md:w-auto md:min-w-[17.5rem]'
                     }
-                    onDragOver={onDragOver}
-                    onDrop={(e) => onDropOnColumn(e, list)}
+                    onDragOver={canEditBoard ? onDragOver : undefined}
+                    onDrop={canEditBoard ? (e) => onDropOnColumn(e, list) : undefined}
                   >
                     <div
                       className={`shrink-0 border-b border-black/10 bg-white/70 font-semibold text-ink ${
@@ -428,11 +453,11 @@ export function TaskboardView({
                             key={card.uuid}
                             role="button"
                             tabIndex={0}
-                            draggable
-                            onDragStart={(e) => onDragStartCard(e, card.uuid)}
-                            onDragEnd={onDragEnd}
-                            onDragOver={onDragOver}
-                            onDrop={(e) => onDropOnCard(e, list, index)}
+                            draggable={canEditBoard}
+                            onDragStart={canEditBoard ? (e) => onDragStartCard(e, card.uuid) : undefined}
+                            onDragEnd={canEditBoard ? onDragEnd : undefined}
+                            onDragOver={canEditBoard ? onDragOver : undefined}
+                            onDrop={canEditBoard ? (e) => onDropOnCard(e, list, index) : undefined}
                             onClick={() => openCard(card)}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter' || e.key === ' ') {
@@ -442,7 +467,7 @@ export function TaskboardView({
                             }}
                             className={`group relative flex min-w-0 flex-col justify-between rounded-2xl text-left shadow-sm outline-none transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/40 ${palette.bg} ${
                               embedded ? 'min-h-28 cursor-pointer p-2.5' : 'min-h-40 cursor-pointer p-3.5'
-                            }`}
+                            } ${canEditBoard ? '' : 'cursor-default hover:translate-y-0 hover:shadow-sm'}`}
                           >
                             <button
                               type="button"
@@ -567,21 +592,30 @@ export function TaskboardView({
         <TaskboardCardModal
           token={token}
           card={modalCard}
-          assignees={selfAssignees.length > 0 ? selfAssignees : assignees}
-          readOnly={false}
+          assignees={assigneeOptions}
+          readOnly={!canEditBoard}
           onClose={() => setModalCard(null)}
           onSaved={() => void load()}
         />
       ) : null}
 
-      {createOpen && token && listOptions.length > 0 ? (
+      {createOpen && token && listOptions.length > 0 && canEditBoard ? (
         <TaskboardCreateModal
           token={token}
           lists={listOptions}
-          assignees={selfAssignees.length > 0 ? selfAssignees : assignees}
+          assignees={assigneeOptions}
           defaultProjectUuid={projectFilter || undefined}
           onClose={() => setCreateOpen(false)}
           onCreated={() => void load()}
+        />
+      ) : null}
+
+      {settingsOpen && token && board ? (
+        <TaskboardSettingsModal
+          token={token}
+          lists={lists}
+          onClose={() => setSettingsOpen(false)}
+          onChanged={() => void load()}
         />
       ) : null}
     </div>

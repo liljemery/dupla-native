@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user, get_workspace_context
+from app.dependencies import get_workspace_context, require_budget_access
 from app.domain.workspace_context import WorkspaceContext
 from app.models.user import User
 from app.services.clash_export_service import ClashExportService, content_disposition_header
@@ -46,7 +46,7 @@ def _query_filters(**kwargs: str | None) -> dict[str, str]:
 @router.get("/{project_uuid}/clash-workflow/dashboard")
 async def clash_workflow_dashboard(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     priority: Annotated[Optional[str], Query()] = None,
@@ -78,7 +78,7 @@ async def clash_workflow_dashboard(
 @router.get("/{project_uuid}/clash-workflow/filters")
 async def clash_workflow_filters(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -91,7 +91,7 @@ async def clash_workflow_filters(
 @router.get("/{project_uuid}/clash-workflow/clashes")
 async def clash_workflow_list(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     priority: Annotated[Optional[str], Query()] = None,
@@ -124,7 +124,7 @@ async def clash_workflow_list(
 async def clash_workflow_detail(
     project_uuid: UUID,
     item_id: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -139,7 +139,7 @@ async def clash_workflow_status(
     project_uuid: UUID,
     item_id: UUID,
     body: StatusBody,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -154,7 +154,7 @@ async def clash_workflow_decision(
     project_uuid: UUID,
     item_id: UUID,
     body: DecisionBody,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -169,7 +169,7 @@ async def clash_workflow_assign(
     project_uuid: UUID,
     item_id: UUID,
     body: AssignBody,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -184,7 +184,7 @@ async def clash_workflow_comment(
     project_uuid: UUID,
     item_id: UUID,
     body: CommentBody,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -198,7 +198,7 @@ async def clash_workflow_comment(
 async def clash_workflow_upload_correction(
     project_uuid: UUID,
     item_id: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
     target: Annotated[str, Form()],
@@ -224,7 +224,7 @@ async def clash_workflow_upload_correction(
 async def clash_workflow_reanalysis(
     project_uuid: UUID,
     item_id: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> dict[str, Any]:
@@ -244,7 +244,7 @@ async def clash_workflow_reanalysis(
 async def clash_workflow_tile(
     project_uuid: UUID,
     filename: str,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> FileResponse:
@@ -263,7 +263,7 @@ async def clash_workflow_tile(
 @router.get("/{project_uuid}/clash/jobs/latest/exports/technical.xlsx")
 async def export_latest_clash_technical_excel(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -281,7 +281,7 @@ async def export_latest_clash_technical_excel(
 async def export_clash_technical_excel(
     project_uuid: UUID,
     job_id: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -298,7 +298,7 @@ async def export_clash_technical_excel(
 @router.get("/{project_uuid}/clash/jobs/latest/exports/final-technical.pdf")
 async def export_final_technical_pdf(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -311,7 +311,7 @@ async def export_final_technical_pdf(
 @router.get("/{project_uuid}/clash/jobs/latest/exports/final-technical.xlsx")
 async def export_final_technical_excel(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:
@@ -328,7 +328,7 @@ async def export_final_technical_excel(
 @router.get("/{project_uuid}/clash/jobs/latest/exports/final-human.pdf")
 async def export_final_human_pdf(
     project_uuid: UUID,
-    current: Annotated[User, Depends(get_current_user)],
+    current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> Response:

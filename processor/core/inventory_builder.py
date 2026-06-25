@@ -15,6 +15,24 @@ from typing import Any, Iterable, Mapping, TypeVar
 
 logger = logging.getLogger("dupla.inventory_builder")
 
+
+def _hint_source_refs(hint: dict[str, Any]) -> list[str]:
+    refs: list[str] = []
+    handle = hint.get("handle") or hint.get("layer")
+    if handle:
+        refs.append(f"geometry:{handle}")
+    source_file = str(hint.get("source_file") or "").strip()
+    if source_file:
+        refs.append(f"file:{source_file}")
+    return refs
+
+
+def _source_file_from_refs(refs: list[str]) -> str:
+    for ref in refs:
+        if ref.startswith("file:"):
+            return ref.split(":", 1)[1]
+    return ""
+
 from core.schemas import (
     Door,
     Fixture,
@@ -724,7 +742,7 @@ def _build_json_walls(
             if length is None:
                 continue
             wall_lengths[canon] = wall_lengths.get(canon, 0.0) + float(length)
-            wall_refs.setdefault(canon, []).append(f"geometry:{hint.get('handle') or layer}")
+            wall_refs.setdefault(canon, []).extend(_hint_source_refs(hint))
             token_wall_layers.add(canon)
             layer_display.setdefault(canon, layer)
 
@@ -746,7 +764,7 @@ def _build_json_walls(
         if length is None:
             continue
         gpt_wall_lengths[canon] = gpt_wall_lengths.get(canon, 0.0) + float(length)
-        gpt_wall_refs.setdefault(canon, []).append(f"geometry:{hint.get('handle') or layer}")
+        gpt_wall_refs.setdefault(canon, []).extend(_hint_source_refs(hint))
         layer_display.setdefault(canon, layer)
 
     gpt_wall_layers: set[str] = set()
@@ -828,6 +846,8 @@ def _build_json_walls(
                     "json_length_m": length,
                     "detected_by_geometry": is_fallback,
                     "wall_detection": detection,
+                    "source_file": _source_file_from_refs(wall_refs.get(canon, [])),
+                    "source_layer": display_layer,
                     **({"gpt_layer_role": gpt_role} if gpt_role else {}),
                 },
                 assumptions=[
@@ -969,7 +989,7 @@ def _build_json_structural_elements(
         add_numeric(group, "length_m", hint.get("length"))
         add_numeric(group, "area_m2", hint.get("area"))
         if hint.get("handle"):
-            group["source_refs"].append(f"geometry:{hint['handle']}")
+            group["source_refs"].extend(_hint_source_refs(hint))
         group["evidence"].append(
             f"Aggregated geometry hint for structural {entity_type} from layer {layer}."
         )
@@ -994,7 +1014,11 @@ def _build_json_structural_elements(
         group = ensure_group(element_type, layer, block_name)
         group["count"] += 1
         if block.get("handle"):
-            group["source_refs"].append(f"block:{block['handle']}")
+            block_refs = [f"block:{block['handle']}"]
+            source_file = str(block.get("source_file") or "").strip()
+            if source_file:
+                block_refs.append(f"file:{source_file}")
+            group["source_refs"].extend(block_refs)
         group["evidence"].append(
             f"Counted explicit structural block '{block_name}' on layer {layer}."
         )

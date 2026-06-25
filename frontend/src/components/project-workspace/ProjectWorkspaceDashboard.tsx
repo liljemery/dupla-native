@@ -94,7 +94,6 @@ export function ProjectWorkspaceDashboard({
   orderedTemplateSteps,
   flowMsg,
   nextPhase,
-  role: _role,
   viewBudget,
   memberRows,
   quotesCount,
@@ -335,13 +334,15 @@ export function ProjectWorkspaceDashboard({
               Presupuesto maestro
             </button>
           ) : null}
-          <button
-            type="button"
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-            onClick={() => onOpenTab('hallazgos')}
-          >
-            Hallazgos
-          </button>
+          {viewBudget ? (
+            <button
+              type="button"
+              className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
+              onClick={() => onOpenTab('hallazgos')}
+            >
+              Hallazgos
+            </button>
+          ) : null}
           <Link
             className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink no-underline shadow-sm hover:border-primary/25"
             to={`/app/tasks?mine=true&project_uuid=${encodeURIComponent(projectUuid)}`}

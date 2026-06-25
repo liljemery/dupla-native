@@ -21,6 +21,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.domain.budget_cad_attachments import (
+    ReadableCache,
+    auxiliary_dxf_candidates,
+    budget_dxf_stems,
+    unusable_dwg_names,
+)
 from app.domain.budget_pipeline_meta import (
     budget_result_qualifies_for_volumetry,
     sync_volumetry_from_completed_job,
@@ -116,8 +122,10 @@ def _normalize_budget_discipline(raw: str | None, files: list[ProjectFile]) -> s
     omitted/empty means "todas" to preserve the existing user workflow.
     """
     value = _fold_text(raw)
-    if not value or value in _BUDGET_ALL_DISCIPLINE_ALIASES or value in _BUDGET_AUTO_DISCIPLINE_ALIASES:
+    if value in _BUDGET_AUTO_DISCIPLINE_ALIASES:
         return _infer_budget_discipline_from_files(files)
+    if not value or value in _BUDGET_ALL_DISCIPLINE_ALIASES:
+        return "todas"
 
     normalized = _BUDGET_DISCIPLINE_ALIASES.get(value)
     if normalized:
@@ -178,7 +186,24 @@ class BudgetService:
         budget_discipline = _normalize_budget_discipline(discipline, budget_files)
 
         upload_root = Path(get_settings().upload_root)
+        readable_cache: ReadableCache = {}
+        dxf_stems_in_budget = budget_dxf_stems(budget_files)
+        unusable = unusable_dwg_names(budget_files, upload_root, readable_cache=readable_cache)
+        dwg_count = sum(1 for pf in budget_files if (pf.original_name or "").lower().endswith(".dwg"))
+        if dwg_count and len(unusable) / dwg_count > 0.5:
+            sample = ", ".join(unusable[:8])
+            more = f" (+{len(unusable) - 8} más)" if len(unusable) > 8 else ""
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    "La mayoría de los DWG no tienen geometría usable para presupuesto. "
+                    "Exporta DXF desde CAD y súbelos junto a cada DWG. "
+                    f"Archivos sin DXF: {sample}{more}"
+                ),
+            )
+
         multipart_files: list[tuple[str, tuple[str, bytes, str]]] = []
+        attached_names: set[str] = set()
         for pf in budget_files:
             disk_path = Path(pf.storage_key)
             if not disk_path.exists():
@@ -186,6 +211,21 @@ class BudgetService:
 
             mime_type = pf.mime or "application/octet-stream"
             multipart_files.append(("files", (pf.original_name, disk_path.read_bytes(), mime_type)))
+            attached_names.add(Path(pf.original_name).name.lower())
+
+            if disk_path.suffix.lower() != ".dwg":
+                continue
+            stem_lower = Path(pf.original_name).stem.lower()
+            if stem_lower in dxf_stems_in_budget:
+                continue
+            for dxf_path in auxiliary_dxf_candidates(disk_path, upload_root, readable_cache=readable_cache):
+                dxf_name = f"{Path(pf.original_name).stem}.dxf"
+                if dxf_name.lower() in attached_names:
+                    continue
+                multipart_files.append(
+                    ("files", (dxf_name, dxf_path.read_bytes(), "application/dxf"))
+                )
+                attached_names.add(dxf_name.lower())
 
         if not multipart_files:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No se encontraron archivos en disco")

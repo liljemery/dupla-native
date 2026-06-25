@@ -22,7 +22,7 @@ from app.domain.ga_fo_01_arquitectura import clear_ga_fo_approval, expected_ga_f
 from app.domain.project_uploads import sanitize_project_original_filename
 from app.models.project import Project
 from app.models.project_file import ProjectFile
-from app.services.aps_derivative_pipeline import build_manifest_summary, run_aps_derivative_context
+from app.services.local_cad_derivative_context import build_local_cad_context
 from app.services.discipline_folder_service import resolve_discipline_folder_id
 from app.services.motor_file_discipline import folder_rel_posix_for_file, infer_file_discipline_from_content
 from app.services.motor_discipline_types import MotorDisciplineInference
@@ -89,14 +89,6 @@ async def _classify_and_merge_pliego_hint(session: AsyncSession, pf: ProjectFile
     flag_modified(project, "specifications_document")
 
 
-def _aps_configured(settings: Settings) -> bool:
-    return bool(
-        (settings.aps_client_id or "").strip()
-        and (settings.aps_client_secret or "").strip()
-        and (settings.aps_bucket_name or "").strip()
-    )
-
-
 def _ga_fo_is_pdf(path: Path, mime: Optional[str]) -> bool:
     if path.suffix.lower() == ".pdf":
         return True
@@ -119,27 +111,6 @@ def _pdf_snippet_from_cache(cache_key: str | None) -> str | None:
         return None
     text = payload.get("text") if isinstance(payload, dict) else None
     return text if isinstance(text, str) and text.strip() else None
-
-
-def _aps_context_from_snapshot(pf: ProjectFile, settings: Settings) -> str | None:
-    snap = pf.file_ingest_snapshot if isinstance(pf.file_ingest_snapshot, dict) else None
-    if snap is None or not pf.aps_urn:
-        return None
-    manifest = pf.aps_manifest_json if isinstance(pf.aps_manifest_json, dict) else None
-    if manifest and manifest.get("derivatives"):
-        return build_manifest_summary(manifest, settings.ga_fo_aps_context_max_chars)
-    layers = snap.get("dominant_layers") or []
-    method = snap.get("discipline_method")
-    confidence = snap.get("confidence")
-    sampled = snap.get("entities_sampled")
-    parts = [
-        f"APS traducido previamente (URN presente). Disciplina inferida: método={method}, confianza={confidence}.",
-        f"Entidades muestreadas: {sampled}.",
-    ]
-    if layers:
-        parts.append("Capas dominantes: " + ", ".join(str(x) for x in layers[:8]) + ".")
-    text = " ".join(str(p) for p in parts if p)
-    return text[: settings.ga_fo_aps_context_max_chars]
 
 
 def _ga_fo_item_pending(states: dict, item_id: str) -> bool:
@@ -234,30 +205,6 @@ async def _fill_pending_ga_fo_from_project_files(session: AsyncSession, project_
                 return
 
 
-def _persist_aps_columns(pf: ProjectFile, aps: dict[str, Any]) -> None:
-    pf.aps_bucket_key = aps.get("bucket_key") if isinstance(aps.get("bucket_key"), str) else pf.aps_bucket_key
-    pf.aps_object_key = aps.get("object_key") if isinstance(aps.get("object_key"), str) else pf.aps_object_key
-    pf.aps_object_id = aps.get("object_id") if isinstance(aps.get("object_id"), str) else pf.aps_object_id
-    pf.aps_urn = aps.get("urn") if isinstance(aps.get("urn"), str) else pf.aps_urn
-    pf.aps_derivative_status = (
-        aps.get("derivative_status") if isinstance(aps.get("derivative_status"), str) else pf.aps_derivative_status
-    )
-    pf.aps_viewable_guid = (
-        aps.get("viewable_guid") if isinstance(aps.get("viewable_guid"), str) else pf.aps_viewable_guid
-    )
-    manifest = aps.get("manifest_json")
-    if isinstance(manifest, dict):
-        pf.aps_manifest_json = manifest
-    translated_at = aps.get("last_translated_at")
-    if isinstance(translated_at, str):
-        try:
-            pf.aps_last_translated_at = datetime.fromisoformat(translated_at.replace("Z", "+00:00"))
-        except ValueError:
-            pf.aps_last_translated_at = datetime.now(timezone.utc)
-    elif translated_at is None and pf.aps_urn:
-        pf.aps_last_translated_at = datetime.now(timezone.utc)
-
-
 async def _infer_discipline_from_project_siblings(
     session: AsyncSession,
     pf: ProjectFile,
@@ -316,12 +263,9 @@ async def _apply_motor_discipline_from_content(session: AsyncSession, pf: Projec
             method=inference.method,
             confidence=inference.confidence,
             snapshot=snap,
-            aps=inference.aps,
         )
 
     pf.file_ingest_snapshot = inference.snapshot
-    if inference.aps:
-        _persist_aps_columns(pf, inference.aps)
 
     if inference.discipline is not None and inference.confidence >= 0.55:
         pf.discipline = inference.discipline.value
@@ -385,45 +329,24 @@ async def _run_ga_fo_autofill_from_upload(session: AsyncSession, pf: ProjectFile
     is_pdf = _ga_fo_is_pdf(path, pf.mime)
     is_cad = path.suffix.lower() in (".dwg", ".dxf")
     logger.info(
-        "GA-FO pipeline start file=%s name=%s aps_configured=%s is_pdf=%s is_cad=%s",
+        "GA-FO pipeline start file=%s name=%s is_pdf=%s is_cad=%s",
         pf.id,
         pf.original_name,
-        _aps_configured(settings),
         is_pdf,
         is_cad,
     )
     snap = pf.file_ingest_snapshot if isinstance(pf.file_ingest_snapshot, dict) else {}
-    pdf_snippet = _pdf_snippet_from_cache(snap.get("aps_cache_key") if isinstance(snap.get("aps_cache_key"), str) else None)
+    cache_key = snap.get("cad_cache_key") or snap.get("aps_cache_key")
+    pdf_snippet = _pdf_snippet_from_cache(cache_key if isinstance(cache_key, str) else None)
     if not pdf_snippet:
         pdf_snippet = extract_pdf_text_snippet(path)
 
-    aps_analysis = "unavailable"
+    cad_analysis = "unavailable"
     if is_pdf:
-        logger.info("GA-FO: PDF sin APS (Model Derivative); clasificación por nombre/MIME y texto extraído")
-    else:
-        cached_context = _aps_context_from_snapshot(pf, settings)
-        if cached_context:
-            aps_analysis = cached_context
-            logger.info("GA-FO: reutilizando contexto APS de clasificación file=%s", pf.id)
-        elif is_cad and not pf.aps_urn:
-            logger.info("GA-FO: omitiendo segundo APS para CAD sin URN tras clasificación file=%s", pf.id)
-        elif _aps_configured(settings):
-            safe_name = sanitize_project_original_filename(pf.original_name)
-            object_key = f"dupla/{pf.project_id}/{pf.id}_{safe_name}"[:1024]
-            if settings.aps_auto_unique_object_name:
-                suffix = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-                object_key = f"dupla/{pf.project_id}/{pf.id}_{suffix}_{safe_name}"[:1024]
-            try:
-                aps_analysis = await run_aps_derivative_context(
-                    settings,
-                    path,
-                    settings.aps_bucket_name or "",
-                    object_key,
-                    pf.mime,
-                )
-            except Exception as exc:
-                logger.warning("APS pipeline: %s", exc)
-                aps_analysis = "unavailable"
+        logger.info("GA-FO: PDF sin traducción CAD; clasificación por nombre/MIME y texto extraído")
+    elif is_cad:
+        cad_analysis = build_local_cad_context(path, max_chars=settings.ga_fo_cad_context_max_chars)
+        logger.info("GA-FO: contexto local ezdxf file=%s chars=%d", pf.id, len(cad_analysis))
 
     try:
         matches = await classify_ga_fo_matches(
@@ -431,7 +354,7 @@ async def _run_ga_fo_autofill_from_upload(session: AsyncSession, pf: ProjectFile
             original_name=pf.original_name,
             mime=pf.mime,
             file_size=path.stat().st_size,
-            aps_analysis=aps_analysis,
+            aps_analysis=cad_analysis,
             pdf_snippet=pdf_snippet,
             discipline=pf.discipline,
         )

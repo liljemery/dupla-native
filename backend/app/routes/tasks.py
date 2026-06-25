@@ -5,7 +5,13 @@ from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
-from app.dependencies import get_current_user, get_workspace_context, require_task_creator, require_task_operator
+from app.dependencies import (
+    get_current_user,
+    get_workspace_context,
+    require_task_board_manage,
+    require_task_creator,
+    require_task_operator,
+)
 from app.domain.workspace_context import WorkspaceContext
 from app.models.user import User
 from app.schemas.task_board import (
@@ -16,6 +22,10 @@ from app.schemas.task_board import (
     TaskCardCreateRequest,
     TaskCardPatchRequest,
     TaskCardResponse,
+    TaskListCreateRequest,
+    TaskListPatchRequest,
+    TaskListReorderRequest,
+    TaskListResponse,
 )
 from app.services.task_board_service import TaskBoardService
 
@@ -49,9 +59,9 @@ async def list_task_assignees(
     response_model=TaskBoardResponse,
     summary="Tablero de tareas",
     description=(
-        "Solo tareas visibles para el usuario actual (asignadas a él o sin asignar creadas por él). "
+        "Por defecto solo tareas propias. Con `tasks.board.view_all` se ven todas. "
         "`project_uuid` filtra por proyecto. `include_archived=1` añade `archived_cards`. "
-        "`assignee_uuid` distinto del usuario actual devuelve 403."
+        "`assignee_uuid` distinto del usuario actual requiere ver todas."
     ),
 )
 async def get_task_board(
@@ -106,7 +116,7 @@ async def create_task_card(
 )
 async def list_task_card_comments(
     card_uuid: UUID,
-    current: Annotated[User, Depends(require_task_operator)],
+    current: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
 ) -> list[TaskCardCommentResponse]:
@@ -167,5 +177,75 @@ async def delete_task_card(
 ) -> Response:
     svc = TaskBoardService(session, ws_ctx.workspace_id)
     await svc.delete_card(current, card_uuid)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/lists",
+    response_model=TaskListResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Añadir columna al tablero",
+)
+async def create_task_list(
+    body: TaskListCreateRequest,
+    current: Annotated[User, Depends(require_task_board_manage)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> TaskListResponse:
+    svc = TaskBoardService(session, ws_ctx.workspace_id)
+    row = await svc.create_list(current, body)
+    await session.commit()
+    return TaskListResponse.from_list(row, [])
+
+
+@router.patch(
+    "/lists/{list_uuid}",
+    response_model=TaskListResponse,
+    summary="Renombrar columna",
+)
+async def patch_task_list(
+    list_uuid: UUID,
+    body: TaskListPatchRequest,
+    current: Annotated[User, Depends(require_task_board_manage)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> TaskListResponse:
+    svc = TaskBoardService(session, ws_ctx.workspace_id)
+    row = await svc.patch_list(current, list_uuid, body)
+    await session.commit()
+    return TaskListResponse.from_list(row, [])
+
+
+@router.put(
+    "/lists/order",
+    response_model=list[TaskListResponse],
+    summary="Reordenar columnas",
+)
+async def reorder_task_lists(
+    body: TaskListReorderRequest,
+    current: Annotated[User, Depends(require_task_board_manage)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> list[TaskListResponse]:
+    svc = TaskBoardService(session, ws_ctx.workspace_id)
+    rows = await svc.reorder_lists(current, body)
+    await session.commit()
+    return [TaskListResponse.from_list(row, []) for row in rows]
+
+
+@router.delete(
+    "/lists/{list_uuid}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar columna vacía",
+)
+async def delete_task_list(
+    list_uuid: UUID,
+    current: Annotated[User, Depends(require_task_board_manage)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> Response:
+    svc = TaskBoardService(session, ws_ctx.workspace_id)
+    await svc.delete_list(current, list_uuid)
     await session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

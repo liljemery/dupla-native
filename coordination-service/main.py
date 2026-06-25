@@ -38,6 +38,7 @@ async def enqueue_clash_analysis(
     file_metadata: Optional[str] = Form(None),
     control_points_json: Optional[str] = Form(None),
     reanalysis_clash_code: Optional[str] = Form(None),
+    budget_scope: Optional[str] = Form(None),
     x_correlation_id: Optional[str] = Header(None),
 ):
     try:
@@ -86,6 +87,7 @@ async def enqueue_clash_analysis(
             raise HTTPException(status_code=422, detail="No .dwg or .dxf file found in uploaded files")
 
         slug = (profile_slug or "folder").strip() or "folder"
+        budget_scope_enabled = (budget_scope or "").strip().lower() in ("1", "true", "yes", "on")
 
         from tasks.run_clash import run_clash_job
 
@@ -106,6 +108,7 @@ async def enqueue_clash_analysis(
             correlation_id,
             control_points,
             reanalysis_clash_code,
+            budget_scope_enabled,
             job_timeout=int(os.getenv("COORDINATION_JOB_TIMEOUT_SECONDS", "3600")),
             meta={"correlation_id": correlation_id},
         )

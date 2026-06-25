@@ -10,6 +10,9 @@ from typing import Any
 
 try:
     import ezdxf
+    from coordination.extraction.ezdxf_font_setup import ensure_ezdxf_fallback_fonts
+
+    ensure_ezdxf_fallback_fonts()
 except ImportError:  # ponytail: backend subprocess env may lack CAD deps
     ezdxf = None  # type: ignore[assignment]
 
@@ -20,7 +23,7 @@ except ImportError:
 
 from coordination.core.models_25d import Discipline
 from coordination.core.nasas_paths import discipline_from_nasas_relative_path
-from coordination.extraction.aps_cache import file_cache_key, save_cached_json
+from coordination.extraction.cad_cache import file_cache_key, save_cached_json
 from coordination.extraction.from_autodesk_properties import (
     discipline_from_autodesk_layer,
     is_nonphysical_entity,
@@ -61,7 +64,7 @@ class DisciplineInferenceResult:
     pdf_text_snippet_chars: int = 0
     pdf_text_snippet_sha256: str | None = None
     extraction_diagnostics: dict[str, Any] | None = None
-    aps_cache_key: str | None = None
+    cad_cache_key: str | None = None
 
 
 def collect_layer_histogram_from_autodesk_raw(
@@ -300,7 +303,7 @@ def _infer_from_pdf(path: Path, path_hint: Discipline | None, cache_root: Path |
         entities_sampled=len(text),
         pdf_text_snippet_chars=len(text),
         pdf_text_snippet_sha256=snippet_sha,
-        aps_cache_key=cache_key,
+        cad_cache_key=cache_key,
         level_hint={"level_id": level.level_id, "source": level.source},
     )
 
@@ -310,7 +313,6 @@ def infer_discipline_from_file(
     *,
     rel_posix: str | None = None,
     cache_root: Path | None = None,
-    aps_raw: dict[str, Any] | None = None,
 ) -> DisciplineInferenceResult:
     path = path.resolve()
     path_hint = _path_hint_discipline(path, rel_posix)
@@ -330,31 +332,9 @@ def infer_discipline_from_file(
                 dominant_layers=ezdxf_result.dominant_layers,
                 entities_sampled=ezdxf_result.entities_sampled,
                 geometry_quality=ezdxf_result.geometry_quality,
-                aps_cache_key=file_cache_key(path),
+                cad_cache_key=file_cache_key(path),
             )
             return ezdxf_result
-        if aps_raw is not None:
-            aps_result = vote_discipline_from_autodesk_raw(aps_raw)
-            counts, _ = vote_discipline_from_layer_histogram(aps_result.layer_histogram or {})
-            disc, confidence = _resolve_discipline_votes(counts, path_hint=path_hint)
-            method = "aps_layers"
-            if disc is None and path_hint is not None:
-                disc = path_hint
-                confidence = max(confidence, CONFIDENCE_THRESHOLD)
-                method = "path_hint"
-            elif disc is None:
-                method = "inconclusive"
-            return DisciplineInferenceResult(
-                discipline=disc,
-                method=method,
-                confidence=confidence,
-                layer_histogram=aps_result.layer_histogram,
-                dominant_layers=aps_result.dominant_layers,
-                entities_sampled=aps_result.entities_sampled,
-                geometry_quality=aps_result.geometry_quality,
-                aps_cache_key=file_cache_key(path),
-                extraction_diagnostics=aps_result.extraction_diagnostics,
-            )
 
     if path_hint is not None:
         return DisciplineInferenceResult(

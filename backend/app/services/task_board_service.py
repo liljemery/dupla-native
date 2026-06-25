@@ -17,16 +17,18 @@ from app.repositories.permission_repository import PermissionRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.workspace_repository import WorkspaceRepository
+from app.services.permission_service import PermissionService
 from app.schemas.task_board import (
     TaskAssigneeOption,
     TaskBoardResponse,
     TaskCardCreateRequest,
     TaskCardPatchRequest,
     TaskCardResponse,
+    TaskListCreateRequest,
+    TaskListPatchRequest,
+    TaskListReorderRequest,
     TaskListResponse,
 )
-from app.services.workspace_bootstrap_service import task_list_uuid_for_workspace
-
 
 class TaskBoardService:
     def __init__(self, session: AsyncSession, workspace_id: uuid.UUID) -> None:
@@ -34,6 +36,7 @@ class TaskBoardService:
         self._workspace_id = workspace_id
         self._users = UserRepository(session)
         self._perm_repo = PermissionRepository(session)
+        self._perm_svc = PermissionService(session)
         self._projects = ProjectRepository(session)
         self._workspaces = WorkspaceRepository(session)
 
@@ -46,7 +49,12 @@ class TaskBoardService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Proyecto no encontrado",
             )
-        if not await self._projects.user_has_access_to_project(actor, project, self._workspace_id):
+        if not await self._projects.user_has_access_to_project(
+            actor,
+            project,
+            self._workspace_id,
+            view_all=await self._perm_svc.has(actor, "projects.view_all"),
+        ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Sin acceso a este proyecto",
@@ -85,7 +93,12 @@ class TaskBoardService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Proyecto no encontrado",
             )
-        if not await self._projects.user_has_access_to_project(viewer, project, self._workspace_id):
+        if not await self._projects.user_has_access_to_project(
+            viewer,
+            project,
+            self._workspace_id,
+            view_all=await self._perm_svc.has(viewer, "projects.view_all"),
+        ):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Proyecto no encontrado",
@@ -100,6 +113,7 @@ class TaskBoardService:
         assignee_uuid: Optional[uuid.UUID],
         *,
         project_scope_id: Optional[uuid.UUID] = None,
+        allow_outside_team: bool = False,
     ) -> None:
         if assignee_uuid is None:
             return
@@ -122,18 +136,44 @@ class TaskBoardService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Proyecto no válido para la asignación",
                 )
-            if not await self._projects.user_is_project_team_member(project, assignee_uuid):
+            if not allow_outside_team and not await self._projects.user_is_project_team_member(project, assignee_uuid):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="El asignado debe ser miembro del equipo del proyecto",
                 )
 
-    def _task_visible_to_viewer(self, card: TaskCard, viewer_id: uuid.UUID) -> bool:
+    def _task_visible_to_viewer(self, card: TaskCard, viewer_id: uuid.UUID, *, view_all: bool) -> bool:
+        if view_all:
+            return True
         if card.assignee_id == viewer_id:
             return True
         if card.assignee_id is None and card.created_by == viewer_id:
             return True
         return False
+
+    async def _can_view_all_tasks(self, viewer: User) -> bool:
+        return await self._perm_svc.has(viewer, "tasks.board.view_all")
+
+    async def _can_assign_others(self, actor: User) -> bool:
+        return await self._perm_svc.has(actor, "tasks.board.assign")
+
+    async def _card_accessible(self, actor: User, card: TaskCard) -> bool:
+        view_all = await self._can_view_all_tasks(actor)
+        return self._task_visible_to_viewer(card, actor.id, view_all=view_all)
+
+    async def _list_in_workspace(self, list_uuid: uuid.UUID) -> TaskList:
+        lst = await self._session.get(TaskList, list_uuid)
+        if lst is None or lst.workspace_id != self._workspace_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lista no encontrada")
+        return lst
+
+    async def _load_workspace_lists(self) -> list[TaskList]:
+        result = await self._session.execute(
+            select(TaskList)
+            .where(TaskList.workspace_id == self._workspace_id)
+            .order_by(TaskList.position, TaskList.id)
+        )
+        return list(result.scalars().all())
 
     async def get_board(
         self,
@@ -144,7 +184,8 @@ class TaskBoardService:
         filter_assignee: Optional[uuid.UUID],
         filter_project: Optional[uuid.UUID] = None,
     ) -> TaskBoardResponse:
-        if filter_assignee is not None and filter_assignee != viewer.id:
+        view_all = await self._can_view_all_tasks(viewer)
+        if filter_assignee is not None and filter_assignee != viewer.id and not view_all:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Solo podés consultar tus propias tareas",
@@ -158,14 +199,21 @@ class TaskBoardService:
                 selectinload(TaskList.cards).selectinload(TaskCard.project),
             )
             .where(TaskList.workspace_id == self._workspace_id)
-            .order_by(TaskList.position)
+            .order_by(TaskList.position, TaskList.id)
         )
         lists = list(result.scalars().all())
 
         list_responses: list[TaskListResponse] = []
         for tl in lists:
             active = [c for c in tl.cards if not c.archived]
-            active = [c for c in active if self._task_visible_to_viewer(c, viewer.id)]
+            if mine and not view_all:
+                active = [c for c in active if self._task_visible_to_viewer(c, viewer.id, view_all=False)]
+            elif not view_all:
+                active = [c for c in active if self._task_visible_to_viewer(c, viewer.id, view_all=False)]
+            elif mine:
+                active = [c for c in active if c.assignee_id == viewer.id]
+            if filter_assignee is not None:
+                active = [c for c in active if c.assignee_id == filter_assignee]
             if filter_project is not None:
                 active = [c for c in active if c.project_id == filter_project]
             list_responses.append(TaskListResponse.from_list(tl, active))
@@ -183,7 +231,16 @@ class TaskBoardService:
                 .order_by(TaskCard.archived_at.desc(), TaskCard.created_at.desc())
             )
             arch_rows = list((await self._session.execute(q)).scalars().all())
-            filtered = [c for c in arch_rows if self._task_visible_to_viewer(c, viewer.id)]
+            if mine and not view_all:
+                filtered = [c for c in arch_rows if self._task_visible_to_viewer(c, viewer.id, view_all=False)]
+            elif not view_all:
+                filtered = [c for c in arch_rows if self._task_visible_to_viewer(c, viewer.id, view_all=False)]
+            elif mine:
+                filtered = [c for c in arch_rows if c.assignee_id == viewer.id]
+            else:
+                filtered = arch_rows
+            if filter_assignee is not None:
+                filtered = [c for c in filtered if c.assignee_id == filter_assignee]
             if filter_project is not None:
                 filtered = [c for c in filtered if c.project_id == filter_project]
             archived_cards = [TaskCardResponse.from_card(c) for c in filtered]
@@ -198,17 +255,20 @@ class TaskBoardService:
         allow_assign_other: bool = False,
     ) -> TaskCard:
         assignee = body.assignee_uuid if body.assignee_uuid is not None else actor.id
-        if not allow_assign_other and assignee != actor.id:
+        can_assign = await self._can_assign_others(actor)
+        if not allow_assign_other and not can_assign and assignee != actor.id:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Solo podés asignarte tareas a vos mismo",
             )
-        await self._validate_assignee(assignee, project_scope_id=body.project_uuid)
+        await self._validate_assignee(
+            assignee,
+            project_scope_id=body.project_uuid,
+            allow_outside_team=can_assign or allow_assign_other,
+        )
         await self._require_project_access_for_card(actor, body.project_uuid)
 
-        lst = await self._session.get(TaskList, body.list_uuid)
-        if lst is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lista no encontrada")
+        lst = await self._list_in_workspace(body.list_uuid)
 
         q = select(TaskCard).where(TaskCard.list_id == body.list_uuid, TaskCard.archived.is_(False))
         existing = list((await self._session.execute(q)).scalars().all())
@@ -260,10 +320,12 @@ class TaskBoardService:
         if card is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
 
-        if not self._task_visible_to_viewer(card, actor.id):
+        if not await self._card_accessible(actor, card):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
 
         await self._require_project_access_for_card(actor, card.project_id)
+
+        can_assign = await self._can_assign_others(actor)
 
         snap: dict[str, Any] = {
             "list_id": card.list_id,
@@ -282,12 +344,16 @@ class TaskBoardService:
 
         if "assignee_uuid" in updates:
             uid = updates["assignee_uuid"]
-            if uid is not None and uid != actor.id:
+            if uid is not None and uid != actor.id and not can_assign:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Solo podés asignarte tareas a vos mismo",
                 )
-            await self._validate_assignee(uid, project_scope_id=target_project_id)
+            await self._validate_assignee(
+                uid,
+                project_scope_id=target_project_id,
+                allow_outside_team=can_assign,
+            )
             card.assignee_id = uid if uid is not None else actor.id
 
         if "project_uuid" in updates:
@@ -335,7 +401,7 @@ class TaskBoardService:
         card = await self._session.get(TaskCard, card_uuid)
         if card is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
-        if not self._task_visible_to_viewer(card, actor.id):
+        if not await self._card_accessible(actor, card):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
         await self._require_project_access_for_card(actor, card.project_id)
         pid = card.project_id
@@ -452,10 +518,7 @@ class TaskBoardService:
             c.position = i
 
     async def _move_card(self, card: TaskCard, new_list_uuid: uuid.UUID, position: int) -> None:
-        new_list = await self._session.get(TaskList, new_list_uuid)
-        if new_list is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lista destino no encontrada")
-
+        new_list = await self._list_in_workspace(new_list_uuid)
         old_id = card.list_id
         if old_id == new_list_uuid:
             ids = await self._ordered_ids(old_id)
@@ -478,7 +541,7 @@ class TaskBoardService:
         card = await self._session.get(TaskCard, card_uuid)
         if card is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
-        if not self._task_visible_to_viewer(card, actor.id):
+        if not await self._card_accessible(actor, card):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
         await self._require_project_access_for_card(actor, card.project_id)
         q = (
@@ -493,7 +556,7 @@ class TaskBoardService:
         card = await self._session.get(TaskCard, card_uuid)
         if card is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
-        if not self._task_visible_to_viewer(card, actor.id):
+        if not await self._card_accessible(actor, card):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarjeta no encontrada")
         await self._require_project_access_for_card(actor, card.project_id)
         text = body.strip()
@@ -513,6 +576,74 @@ class TaskBoardService:
         await self._session.flush()
         await self._session.refresh(row, attribute_names=["author"])
         return row
+
+    async def create_list(self, actor: User, body: TaskListCreateRequest) -> TaskList:
+        del actor
+        title = body.title.strip()
+        if not title:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El título es obligatorio")
+        lists = await self._load_workspace_lists()
+        position = max((lst.position for lst in lists), default=-1) + 1
+        row = TaskList(
+            id=uuid.uuid4(),
+            workspace_id=self._workspace_id,
+            title=title,
+            position=position,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def patch_list(self, actor: User, list_uuid: uuid.UUID, body: TaskListPatchRequest) -> TaskList:
+        del actor
+        lst = await self._list_in_workspace(list_uuid)
+        title = body.title.strip()
+        if not title:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El título es obligatorio")
+        lst.title = title
+        await self._session.flush()
+        return lst
+
+    async def reorder_lists(self, actor: User, body: TaskListReorderRequest) -> list[TaskList]:
+        del actor
+        lists = await self._load_workspace_lists()
+        by_id = {lst.id: lst for lst in lists}
+        if len(body.list_uuids) != len(lists):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Debes incluir todas las columnas del tablero",
+            )
+        if set(body.list_uuids) != set(by_id.keys()):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Columnas no válidas para este workspace",
+            )
+        for pos, list_uuid in enumerate(body.list_uuids):
+            by_id[list_uuid].position = pos
+        await self._session.flush()
+        return await self._load_workspace_lists()
+
+    async def delete_list(self, actor: User, list_uuid: uuid.UUID) -> None:
+        del actor
+        lists = await self._load_workspace_lists()
+        if len(lists) <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Debe quedar al menos una columna",
+            )
+        lst = await self._list_in_workspace(list_uuid)
+        q = select(TaskCard.id).where(TaskCard.list_id == lst.id, TaskCard.archived.is_(False)).limit(1)
+        if (await self._session.execute(q)).scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Solo podés eliminar columnas vacías",
+            )
+        await self._session.delete(lst)
+        await self._session.flush()
+        remaining = await self._load_workspace_lists()
+        for pos, row in enumerate(remaining):
+            row.position = pos
+        await self._session.flush()
 
     async def create_automation_card_for_phase(
         self,
@@ -541,8 +672,11 @@ class TaskBoardService:
         if assignee is not None and project is not None:
             if not await self._projects.user_is_project_team_member(project, assignee):
                 assignee = None
+        lists = await self._load_workspace_lists()
+        if not lists:
+            return None
         body = TaskCardCreateRequest(
-            list_uuid=task_list_uuid_for_workspace(self._workspace_id, 0),
+            list_uuid=lists[0].id,
             title=title.strip(),
             description=(description.strip() if description else None),
             assignee_uuid=assignee,

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { apiFetch } from '../../api/client'
 import { permissionCategoryStyle } from '../../constants/permissionCategories'
+import { confirmDestructive } from '../../lib/duplaAlert'
 import { Card } from '../Card'
 import { PrimaryButton } from '../PrimaryButton'
 import { AdminRoleModal } from './AdminRoleModal'
@@ -23,7 +24,9 @@ type Props = {
 
 export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
   const onRolesChangedRef = useRef(onRolesChanged)
-  onRolesChangedRef.current = onRolesChanged
+  useEffect(() => {
+    onRolesChangedRef.current = onRolesChanged
+  }, [onRolesChanged])
 
   const [catalog, setCatalog] = useState<PermissionRow[]>([])
   const [roles, setRoles] = useState<RoleRow[]>([])
@@ -32,6 +35,9 @@ export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [savingKey, setSavingKey] = useState<string | null>(null)
   const [roleModalOpen, setRoleModalOpen] = useState(false)
+  const [roleModalMode, setRoleModalMode] = useState<'create' | 'edit'>('create')
+  const [editingRole, setEditingRole] = useState<RoleRow | null>(null)
+  const [deletingRoleUuid, setDeletingRoleUuid] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     setError(null)
@@ -100,6 +106,43 @@ export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
     await refresh()
   }
 
+  function openCreateRole() {
+    setRoleModalMode('create')
+    setEditingRole(null)
+    setRoleModalOpen(true)
+  }
+
+  function openEditRole(role: RoleRow) {
+    setRoleModalMode('edit')
+    setEditingRole(role)
+    setRoleModalOpen(true)
+  }
+
+  async function deleteRole(role: RoleRow) {
+    if (
+      !(await confirmDestructive({
+        title: `¿Eliminar rol «${role.name}»?`,
+        text: 'Los usuarios con este rol perderán esos permisos. Esta acción no se puede deshacer.',
+      }))
+    ) {
+      return
+    }
+    setDeletingRoleUuid(role.uuid)
+    setError(null)
+    const res = await apiFetch(`/api/admin/roles/${role.uuid}`, { method: 'DELETE', token })
+    setDeletingRoleUuid(null)
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}))
+      setError((j as { detail?: string }).detail ?? 'No se pudo eliminar el rol')
+      return
+    }
+    if (selectedRoleUuid === role.uuid) {
+      setSelectedRoleUuid(null)
+    }
+    await refresh()
+    onRolesChangedRef.current?.()
+  }
+
   if (loading) {
     return <p className="du-meta">Cargando matriz…</p>
   }
@@ -113,7 +156,7 @@ export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
             Elige un rol y activa los permisos que debe tener. Los overrides por usuario se editan en cada perfil.
           </p>
         </div>
-        <PrimaryButton type="button" onClick={() => setRoleModalOpen(true)}>
+        <PrimaryButton type="button" onClick={openCreateRole}>
           Nuevo rol
         </PrimaryButton>
       </div>
@@ -150,7 +193,7 @@ export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
               <p className="text-lg font-semibold text-ink">{selectedRole.name}</p>
               <p className="du-meta mt-0.5 font-mono text-xs">{selectedRole.slug}</p>
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex rounded-full bg-primary/12 px-2.5 py-0.5 text-xs font-bold text-primary">
                 {grantedCount} de {catalog.length} permisos
               </span>
@@ -158,6 +201,23 @@ export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
                 <span className="inline-flex rounded-full bg-white px-2.5 py-0.5 text-xs font-medium text-muted ring-1 ring-black/10">
                   Rol del sistema
                 </span>
+              ) : null}
+              <button
+                type="button"
+                className="du-pill-action py-1 text-xs"
+                onClick={() => openEditRole(selectedRole)}
+              >
+                Editar nombre
+              </button>
+              {selectedRole.is_deletable ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-primary/30 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/5 disabled:opacity-50"
+                  disabled={deletingRoleUuid === selectedRole.uuid}
+                  onClick={() => void deleteRole(selectedRole)}
+                >
+                  {deletingRoleUuid === selectedRole.uuid ? 'Eliminando…' : 'Eliminar rol'}
+                </button>
               ) : null}
             </div>
           </div>
@@ -234,6 +294,8 @@ export function AdminPermissionsPage({ token, onRolesChanged }: Props) {
       <AdminRoleModal
         token={token}
         open={roleModalOpen}
+        mode={roleModalMode}
+        role={editingRole}
         onClose={() => setRoleModalOpen(false)}
         onSaved={() => {
           void refresh().then(() => onRolesChangedRef.current?.())

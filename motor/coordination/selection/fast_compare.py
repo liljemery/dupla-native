@@ -16,6 +16,7 @@ from coordination.selection.source_selection import normalize_source_text, relat
 
 FAST_COMPARE_ANALYSIS_PROFILE = "fast_compare"
 FAST_COMPARE_APS_PROFILE = "fast_compare_aps"
+FAST_COMPARE_LOCAL_PROFILE = "fast_compare_local"
 FAST_COMPARE_DISCIPLINES = (Discipline.ARCH, Discipline.STRUC)
 FAST_COMPARE_LEVEL_THICKNESS_MM = {
     "CIMENTACION": 800.0,

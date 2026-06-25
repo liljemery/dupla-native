@@ -66,6 +66,28 @@ function disciplineBadgeText(f: { ingest_status: string; discipline?: string | n
   return disciplineLabel(f.discipline) ?? 'Sin clasificar'
 }
 
+function cadConversionLabel(
+  status?: string | null,
+  errorCode?: string | null,
+  companionDxf?: string | null,
+): string | null {
+  if (!status?.trim()) return null
+  if (status === 'converted_to_dxf') return 'DXF auxiliar OK'
+  if (status === 'native_dxf') return 'DXF nativo'
+  if (status === 'companion_dxf_available') {
+    return companionDxf ? `DXF: ${companionDxf}` : 'DXF companion disponible'
+  }
+  if (status === 'requires_dxf_export' || errorCode === 'READ_ERROR') {
+    return 'Sube DXF exportado'
+  }
+  if (status === 'conversion_deferred' || status === 'conversion_failed') {
+    return 'DWG guardado · DXF pendiente'
+  }
+  if (status === 'requires_dxf') return 'DWG guardado · DXF pendiente'
+  if (status === 'probe_skipped') return 'DWG guardado'
+  return null
+}
+
 function fileCategoryLabel(raw: string | null | undefined): string | null {
   if (!raw?.trim()) return null
   return PROJECT_FILE_CATEGORY_LABELS[raw] ?? raw
@@ -625,6 +647,11 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                             {fileCategoryLabel(f.category)}
                           </span>
                         ) : null}
+                        {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf) ? (
+                          <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                            {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf)}
+                          </span>
+                        ) : null}
                       </div>
                       {f.description ? (
                         <p className="mt-1 line-clamp-2 text-xs leading-snug text-muted">{f.description}</p>
@@ -702,6 +729,11 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                         {fileCategoryLabel(f.category) ? (
                           <span className="mt-1 inline-block rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] font-medium text-ink">
                             {fileCategoryLabel(f.category)}
+                          </span>
+                        ) : null}
+                        {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf) ? (
+                          <span className="mt-1 inline-block rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                            {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf)}
                           </span>
                         ) : null}
                         {f.description ? <p className="mt-1 line-clamp-2 text-muted">{f.description}</p> : null}
@@ -824,6 +856,11 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                       {fileCategoryLabel(f.category) ? (
                         <span className="rounded-full bg-black/[0.06] px-1.5 py-0.5 text-[10px] font-medium text-ink">
                           {fileCategoryLabel(f.category)}
+                        </span>
+                      ) : null}
+                      {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf) ? (
+                        <span className="rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                          {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf)}
                         </span>
                       ) : null}
                     </div>
@@ -956,6 +993,11 @@ export function WorkspaceArchivosTab({ projectUuid, token, workflowPhase, flowMs
                       {fileCategoryLabel(f.category) ? (
                         <span className="mt-1 inline-block rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] font-medium text-ink">
                           {fileCategoryLabel(f.category)}
+                        </span>
+                      ) : null}
+                      {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf) ? (
+                        <span className="mt-1 inline-block rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                          {cadConversionLabel(f.cad_conversion_status, f.cad_conversion_error_code, f.cad_companion_dxf)}
                         </span>
                       ) : null}
                       {f.description ? <p className="mt-1 line-clamp-2 text-muted">{f.description}</p> : null}

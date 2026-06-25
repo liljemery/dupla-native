@@ -37,7 +37,6 @@ export function ProjectConfigModal({
   onClose,
   projectUuid,
   token,
-  role: _role,
   project,
   projectError,
   onProjectSaved,

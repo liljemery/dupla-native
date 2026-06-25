@@ -10,6 +10,7 @@ type TaskboardToolbarProps = {
   setBoardSearch: React.Dispatch<React.SetStateAction<string>>
   includeArchived: boolean
   setIncludeArchived: React.Dispatch<React.SetStateAction<boolean>>
+  viewAll?: boolean
 }
 
 export function TaskboardToolbar({
@@ -20,6 +21,7 @@ export function TaskboardToolbar({
   setBoardSearch,
   includeArchived,
   setIncludeArchived,
+  viewAll = false,
 }: TaskboardToolbarProps) {
   return (
     <div
@@ -66,7 +68,9 @@ export function TaskboardToolbar({
 
       <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end sm:gap-3">
         <p className="max-w-md text-xs text-muted">
-          Solo ves las tareas asignadas a tu cuenta (o creadas por ti sin asignar).
+          {viewAll
+            ? 'Ves todas las tareas del workspace. Clic en una tarjeta para ver detalle o asignar.'
+            : 'Solo ves las tareas asignadas a tu cuenta (o creadas por ti sin asignar).'}
         </p>
         <button
           type="button"

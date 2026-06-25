@@ -5,7 +5,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.config import DEMO_JWT_SECRET, Settings, get_settings
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.services.password_reset_service import PasswordResetService
 
 
@@ -37,7 +37,6 @@ async def test_request_reset_raises_503_in_production_without_smtp(monkeypatch):
         first_name="T",
         last_name="U",
         password_hash="hash",
-        role=UserRole.CONTROL,
     )
     service = PasswordResetService(session)
     service._users = MagicMock()
@@ -65,7 +64,6 @@ async def test_request_reset_sends_email_when_smtp_configured(monkeypatch):
         first_name="T",
         last_name="U",
         password_hash="hash",
-        role=UserRole.CONTROL,
     )
     service = PasswordResetService(session)
     service._users = MagicMock()

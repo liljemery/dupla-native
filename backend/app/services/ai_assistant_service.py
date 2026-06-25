@@ -10,9 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.cache.redis_client import ai_assistant_context_load, ai_assistant_context_save
 from app.config import get_settings
 from app.domain.ai_project_snapshot import build_project_snapshot_markdown
+from app.domain.ai_project_snapshot_data import load_project_snapshot_data
 from app.domain.platform_ai_context_loader import build_ai_assistant_system_prompt
 from app.models.user import User
-from app.repositories.project_repository import ProjectRepository
 from app.schemas.ai_assistant import (
     AiAssistantChatResponse,
     AiAssistantHistoryMessage,
@@ -44,13 +44,12 @@ class AiAssistantService:
         workspace_id = await self._workspace_id(user)
         project_svc = ProjectService(self._session, workspace_id)
         project = await project_svc.get_project(user, project_uuid)
-        repo = ProjectRepository(self._session)
-        file_count = await repo.count_project_files(project.id)
-        members = await project_svc.list_project_members(user, project_uuid)
+        settings = get_settings()
+        snapshot_data = await load_project_snapshot_data(self._session, project)
         return build_project_snapshot_markdown(
             project,
-            file_count=file_count,
-            member_count=len(members),
+            snapshot_data,
+            max_chars=settings.ai_assistant_snapshot_max_chars,
         )
 
     async def chat(

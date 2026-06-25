@@ -1017,7 +1017,7 @@ export function ProjectWorkspacePage() {
             />
           ) : null}
 
-          {tab === 'hallazgos' ? (
+          {viewBudget && tab === 'hallazgos' ? (
             <WorkspaceHallazgosTab
               project={project}
               projectUuid={projectUuid}

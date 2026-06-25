@@ -53,6 +53,7 @@ def _ensure_motor_on_path(root: Path) -> None:
 
 
 def _coordination_cache_root(settings: Settings) -> Path | None:
+    del settings
     raw = (os.getenv("COORDINATION_CACHE_ROOT") or "").strip()
     return Path(raw) if raw else None
 
@@ -67,26 +68,12 @@ def _payload_to_inference(payload: dict[str, Any]) -> MotorDisciplineInference:
     bucket = payload.get("discipline")
     disc = _map_bucket_to_file_discipline(bucket if isinstance(bucket, str) else None)
     snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
-    aps = payload.get("aps") if isinstance(payload.get("aps"), dict) else None
     return MotorDisciplineInference(
         discipline=disc,
         method=str(payload.get("method") or "inconclusive"),
         confidence=float(payload.get("confidence") or 0.0),
         snapshot=snapshot,
-        aps=aps,
     )
-
-
-def _apply_aps_env(env: dict[str, str], settings: Settings) -> None:
-    if settings.aps_client_id:
-        env.setdefault("CLIENT_ID", settings.aps_client_id)
-        env.setdefault("APS_CLIENT_ID", settings.aps_client_id)
-    if settings.aps_client_secret:
-        env.setdefault("CLIENT_SECRET", settings.aps_client_secret)
-        env.setdefault("APS_CLIENT_SECRET", settings.aps_client_secret)
-    if settings.aps_bucket_name:
-        env.setdefault("APS_BUCKET_NAME", settings.aps_bucket_name)
-    env.setdefault("APS_CLASSIFICATION_TIMEOUT_SECONDS", os.getenv("APS_CLASSIFICATION_TIMEOUT_SECONDS", "180"))
 
 
 def _run_infer_inprocess(
@@ -94,18 +81,16 @@ def _run_infer_inprocess(
     storage_path: Path,
     rel_posix: str | None,
     settings: Settings,
-    object_key: str | None,
     motor_root: Path,
 ) -> dict[str, Any]:
+    del settings
     _ensure_motor_on_path(motor_root)
     from coordination.scripts.infer_file_discipline import build_payload
 
-    cache_root = _coordination_cache_root(settings)
+    cache_root = _coordination_cache_root(get_settings())
     return build_payload(
         storage_path,
         rel_posix=rel_posix,
-        bucket_name=settings.aps_bucket_name or "",
-        object_key=object_key,
         cache_root=cache_root,
     )
 
@@ -115,9 +100,9 @@ def _run_infer_subprocess(
     storage_path: Path,
     rel_posix: str | None,
     settings: Settings,
-    object_key: str | None,
     motor_root: Path,
 ) -> dict[str, Any]:
+    del settings
     script = motor_root / "coordination" / "scripts" / "infer_file_discipline.py"
     if not script.is_file():
         raise FileNotFoundError(f"motor infer script not found: {script}")
@@ -126,31 +111,21 @@ def _run_infer_subprocess(
     env["PYTHONPATH"] = os.path.pathsep.join(
         part for part in (str(motor_root), env.get("PYTHONPATH", "")) if part
     )
-    _apply_aps_env(env, settings)
 
     cmd = [sys.executable, str(script), "--path", str(storage_path)]
     if rel_posix:
         cmd.extend(["--rel-posix", rel_posix])
-    cache_root = _coordination_cache_root(settings)
+    cache_root = _coordination_cache_root(get_settings())
     if cache_root is not None:
         cmd.extend(["--cache-root", str(cache_root)])
-    if settings.aps_bucket_name:
-        cmd.extend(["--bucket", settings.aps_bucket_name])
-    if object_key:
-        cmd.extend(["--object-key", object_key])
 
-    timeout_raw = env.get("APS_CLASSIFICATION_TIMEOUT_SECONDS", "180")
-    try:
-        aps_timeout = max(30, int(timeout_raw))
-    except ValueError:
-        aps_timeout = 180
     proc = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         env=env,
         check=False,
-        timeout=aps_timeout + 120,
+        timeout=300,
     )
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip()
@@ -170,6 +145,7 @@ def _run_infer(
     object_key: str | None,
     original_name: str | None = None,
 ) -> MotorDisciplineInference:
+    del object_key
     display_name = original_name or storage_path.name
     motor_root = _motor_root()
     if motor_root is not None and (motor_root / "coordination" / "scripts" / "infer_file_discipline.py").is_file():
@@ -178,7 +154,6 @@ def _run_infer(
                 storage_path=storage_path,
                 rel_posix=rel_posix,
                 settings=settings,
-                object_key=object_key,
                 motor_root=motor_root,
             )
             return _payload_to_inference(payload)
@@ -189,7 +164,6 @@ def _run_infer(
                     storage_path=storage_path,
                     rel_posix=rel_posix,
                     settings=settings,
-                    object_key=object_key,
                     motor_root=motor_root,
                 )
                 return _payload_to_inference(payload)

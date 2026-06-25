@@ -9,6 +9,8 @@ from typing import Any, Iterable
 
 from core.schemas import BudgetCandidate, QuantityTakeoff
 
+from budget.provenance import append_provenance
+
 STRONG_BC3_SCORE = 0.45
 STRONG_BC3_MARGIN = 0.05
 
@@ -735,61 +737,57 @@ def build_budget_summary(
     item_type = takeoff.item_type.lower()
     if item_type == "pres_reference_line":
         summary = str(takeoff.inputs.get("pres_summary", "") or "").strip()
-        return summary or takeoff.item_key
+        return append_provenance(summary or takeoff.item_key, takeoff)
 
-    # LLM-generated descriptions (PartidaGenerator) follow Dupla's semantic
-    # naming rules — they are project-specific and avoid raw CAD layer names
-    # like "Muro de capa CAD 'a-wall'" or "json-beam-vigas". Prefer them when
-    # available, falling back to the quantifier's takeoff_description.
     llm_summary = ""
     if candidate is not None and candidate.source == "partida_generator":
         llm_summary = candidate.summary.strip()
         if llm_summary and not _is_generic_cad_label(llm_summary):
-            return llm_summary
+            return append_provenance(llm_summary, takeoff)
 
     specific = str(takeoff.inputs.get("takeoff_description") or "").strip()
     if specific and not _is_generic_cad_label(specific):
-        return specific
+        return append_provenance(specific, takeoff)
 
     if llm_summary:
-        return llm_summary
+        return append_provenance(llm_summary, takeoff)
 
     if candidate is not None:
         candidate_summary = candidate.summary.strip()
         if candidate_summary:
-            return candidate_summary
+            return append_provenance(candidate_summary, takeoff)
     if specific:
-        return specific
+        return append_provenance(specific, takeoff)
     if item_type == "structural_area":
-        return "Superficie estructural (referencia)"
+        return append_provenance("Superficie estructural (referencia)", takeoff)
 
     if item_type.startswith(("beam_", "column_", "slab_", "structural_")):
-        return _structural_summary(takeoff)
+        return append_provenance(_structural_summary(takeoff), takeoff)
     if item_type.startswith("wall_"):
-        return _wall_summary(takeoff)
+        return append_provenance(_wall_summary(takeoff), takeoff)
     if item_type.startswith("floor_"):
-        return _floor_summary(takeoff)
+        return append_provenance(_floor_summary(takeoff), takeoff)
     if item_type.startswith("ceiling_"):
-        return _ceiling_summary(takeoff)
+        return append_provenance(_ceiling_summary(takeoff), takeoff)
     if item_type.startswith("door_"):
-        return _door_summary(takeoff)
+        return append_provenance(_door_summary(takeoff), takeoff)
     if item_type.startswith("window_"):
-        return _window_summary(takeoff)
+        return append_provenance(_window_summary(takeoff), takeoff)
     if item_type.startswith("wet_area_"):
-        return _wet_area_summary(takeoff)
+        return append_provenance(_wet_area_summary(takeoff), takeoff)
 
     if item_type == "kitchen_count":
-        return "Gabinete de cocina"
+        return append_provenance("Gabinete de cocina", takeoff)
     if item_type == "kitchen_area":
-        return "Gabinete de cocina"
+        return append_provenance("Gabinete de cocina", takeoff)
     if item_type == "stair_count":
-        return "Escalones en escalera"
+        return append_provenance("Escalones en escalera", takeoff)
     if item_type == "fixture_count":
         if takeoff.inputs.get("discipline") or takeoff.inputs.get("fixture_type"):
-            return _fixture_count_summary(takeoff)
-        return "Juego accesorios de banos"
+            return append_provenance(_fixture_count_summary(takeoff), takeoff)
+        return append_provenance("Juego accesorios de banos", takeoff)
 
-    return takeoff.item_type.replace("_", " ").strip().capitalize()
+    return append_provenance(takeoff.item_type.replace("_", " ").strip().capitalize(), takeoff)
 
 
 def _decomposition_parent_sort_key(code: str) -> tuple[int, str]:

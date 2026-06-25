@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.chat_conversation import ChatConversation, ChatConversationKind
+from app.domain.task_board_constants import DEFAULT_TASK_LIST_TITLES, task_list_uuid_for_workspace
 from app.models.task_board import TaskList
 from app.models.workflow_template import WorkflowTemplate, WorkflowTemplateStep
 from app.seed_default_workflow_template import _LEGACY_PHASE_TITLE, _legacy_step_id, _legacy_template_id, _title_to_stable_key
@@ -15,10 +16,6 @@ from app.seed_default_workflow_template import _LEGACY_PHASE_TITLE, _legacy_step
 
 def general_conversation_uuid_for_workspace(workspace_id: UUID) -> UUID:
     return uuid.uuid5(workspace_id, "dupla:general_conversation")
-
-
-def task_list_uuid_for_workspace(workspace_id: UUID, position: int) -> UUID:
-    return uuid.uuid5(workspace_id, f"dupla:task_list:{position}")
 
 
 def workflow_template_uuid_for_workspace(workspace_id: UUID) -> UUID:
@@ -44,7 +41,7 @@ async def bootstrap_workspace_resources(session: AsyncSession, workspace_id: UUI
             )
         )
 
-    for position, title in enumerate(["Por hacer", "En progreso", "Hecho"]):
+    for position, title in enumerate(DEFAULT_TASK_LIST_TITLES):
         list_id = task_list_uuid_for_workspace(workspace_id, position)
         existing_list = await session.get(TaskList, list_id)
         if existing_list is None:
