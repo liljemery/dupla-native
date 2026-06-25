@@ -1,0 +1,18 @@
+# Postgres de compose montando el volumen Docker que ya tiene la data.
+#
+# En la otra máquina:
+#   1. docker volume ls | grep dupla_pg
+#      (suele ser dupla-no-docker_dupla_pg o dupla_dupla_pg)
+#   2. Ajusta `name:` abajo si hace falta
+#   3. Para el contenedor Postgres viejo si sigue corriendo (mismo volumen = un solo Postgres):
+#      docker stop <id-o-nombre-del-postgres-viejo>
+#   4. docker compose -f docker-compose.yml -f docker-compose.existing-volume.yml up --build
+services:
+  postgres:
+    volumes:
+      - dupla_pg:/var/lib/postgresql/data
+
+volumes:
+  dupla_pg:
+    external: true
+    name: dupla-no-docker_dupla_pg

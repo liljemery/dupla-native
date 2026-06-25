@@ -55,6 +55,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        required: false
       redis:
         condition: service_healthy
       coordination-service:

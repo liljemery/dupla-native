@@ -1,0 +1,19 @@
+# Postgres ya corre fuera de este stack (contenedor previo con dupla_pg).
+# Uso:
+#   docker start a25786bc8f8b914c7c05a5c732b0d303d29b54b6e84256f6ebfe380fc7bbc834
+#   docker compose -f docker-compose.yml -f docker-compose.external-db.yml up --build
+services:
+  postgres:
+    profiles:
+      - bundled-db-only
+
+  backend:
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dupla:dupla@host.docker.internal:5432/dupla
+    depends_on: !reset
+      redis:
+        condition: service_healthy
+      coordination-service:
+        condition: service_started
