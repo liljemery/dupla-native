@@ -4,12 +4,13 @@
 #   Register-ScheduledTask -TaskName "DuplaStartup" `
 #     -Action (New-ScheduledTaskAction -Execute "powershell.exe" `
 #       -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\sroa\Documents\dupla-native\scripts\windows-compose-startup.ps1"') `
-#     -Trigger (New-ScheduledTaskTrigger -AtLogon -User "sroa" -Delay (New-TimeSpan -Seconds 90)) `
+#     -Trigger (New-ScheduledTaskTrigger -AtLogon -User "sroa") `
 #     -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -StartWhenAvailable) `
 #     -Principal (New-ScheduledTaskPrincipal -UserId "sroa" -LogonType Interactive -RunLevel Highest)
 
 $ErrorActionPreference = "Stop"
 
+$StartupDelaySeconds = 90
 $NginxDir = "C:\nginx"
 $DuplaDir = "C:\Users\sroa\Documents\dupla-native"
 $LogFile = Join-Path $DuplaDir "var\logs\windows-startup.log"
@@ -33,7 +34,8 @@ function Wait-DockerReady {
 }
 
 try {
-    Write-Log "startup begin"
+    Write-Log "startup begin (espera ${StartupDelaySeconds}s para Docker)"
+    Start-Sleep -Seconds $StartupDelaySeconds
 
     if (-not (Test-Path $NginxDir)) { throw "No existe $NginxDir" }
     Set-Location $NginxDir
