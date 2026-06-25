@@ -3,7 +3,7 @@
 #   Set-ExecutionPolicy -Scope LocalMachine RemoteSigned
 #   Register-ScheduledTask -TaskName "DuplaStartup" `
 #     -Action (New-ScheduledTaskAction -Execute "powershell.exe" `
-#       -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\Users\sroa\Documents\dupla-native\scripts\windows-compose-startup.ps1"') `
+#       -Argument '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "C:\Users\sroa\Documents\dupla-native\scripts\windows-compose-startup.ps1"') `
 #     -Trigger (New-ScheduledTaskTrigger -AtLogon -User "sroa") `
 #     -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -StartWhenAvailable) `
 #     -Principal (New-ScheduledTaskPrincipal -UserId "sroa" -LogonType Interactive -RunLevel Highest)
