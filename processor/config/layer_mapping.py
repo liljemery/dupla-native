@@ -56,6 +56,29 @@ DISCIPLINE_ALIAS_MAP: dict[str, DisciplineCode] = {
     "SD":   DisciplineCode.P,   # Storm Drain
 }
 
+STRUCTURAL_LAYER_KEYWORDS: tuple[str, ...] = (
+    "columna",
+    "columnas",
+    "column",
+    "columns",
+    "viga",
+    "vigas",
+    "beam",
+    "beams",
+    "zapata",
+    "zapatas",
+    "footing",
+    "footings",
+    "muro",
+    "muros",
+    "wall",
+    "walls",
+    "losa",
+    "losas",
+    "slab",
+    "slabs",
+)
+
 # Capas que se consideran "comunes" y se incluyen en todas las disciplinas
 COMMON_LAYERS: set[str] = {
     "0",
@@ -159,8 +182,8 @@ def classify_layer(layer_name: str) -> DisciplineCode:
         prefix = match.group(1)
         
         # Buscar en prefijos estándar (1 carácter primero)
-        if len(prefix) >= 1 and prefix[0] in DISCIPLINE_PREFIX_MAP:
-            return DISCIPLINE_PREFIX_MAP[prefix[0]]
+        if len(prefix) == 1 and prefix in DISCIPLINE_PREFIX_MAP:
+            return DISCIPLINE_PREFIX_MAP[prefix]
         
         # Buscar en aliases (prefijos multi-carácter)
         if prefix in DISCIPLINE_ALIAS_MAP:
@@ -171,6 +194,15 @@ def classify_layer(layer_name: str) -> DisciplineCode:
         if name_upper.startswith(alias):
             return DISCIPLINE_ALIAS_MAP[alias]
     
+    layer_tokens = {
+        token
+        for token in re.split(r"[^a-z0-9]+", name_upper.lower())
+        if token
+    }
+    layer_text = name_upper.lower()
+    if any(keyword in layer_tokens or keyword in layer_text for keyword in STRUCTURAL_LAYER_KEYWORDS):
+        return DisciplineCode.S
+
     return DisciplineCode.UNKNOWN
 
 

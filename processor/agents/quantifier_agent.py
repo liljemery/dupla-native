@@ -544,7 +544,51 @@ def _structural_volume_payload(
             [],
         )
 
+    if (
+        element.element_type == "footing"
+        and length_quantity is not None
+        and element.section_width_m is not None
+        and element.section_height_m is not None
+    ):
+        return (
+            element.section_width_m * length_quantity * element.section_height_m,
+            "structural_element.section_width_m * structural_element.length_m * structural_element.section_height_m",
+            {
+                **length_inputs,
+                "footing_width_m": element.section_width_m,
+                "footing_length_m": length_quantity,
+                "footing_depth_m": element.section_height_m,
+                "cross_section_shape": "rectangular",
+            },
+            [],
+        )
+
     return None, None, {}, []
+
+
+def _structural_formwork_type(element: StructuralElement) -> str | None:
+    raw = element.inputs.get("raw") if isinstance(element.inputs, dict) else {}
+    if not isinstance(raw, dict):
+        raw = {}
+    raw_type = str(raw.get("type") or "").strip().lower()
+    explicit = str(raw.get("formwork_hint") or element.inputs.get("formwork_hint") or "").strip().lower()
+    if explicit in {"ninguno", "none", "no"}:
+        return "ninguno"
+    if explicit in {"formaleta", "formwork"}:
+        return "formaleta"
+    if explicit in {"molde_bloque", "block_mold"}:
+        return "ninguno"
+    material = str(element.material_hint or "").strip().lower()
+    etype = element.element_type
+    if material == "masonry":
+        return "ninguno"
+    if raw_type == "shear_wall" or etype == "shear_wall":
+        return "formaleta_doble_cara"
+    if material == "concrete" and etype in {"beam", "column", "slab", "footing"}:
+        return "formaleta"
+    if material == "" and etype in {"beam", "column", "slab", "footing"}:
+        return "formaleta"
+    return None
 
 
 def _structural_formwork_payload(
@@ -552,6 +596,9 @@ def _structural_formwork_payload(
     length_quantity: float | None,
     length_inputs: dict[str, Any],
 ) -> tuple[float | None, str | None, dict[str, Any], list[str]]:
+    formwork_type = _structural_formwork_type(element)
+    if formwork_type == "ninguno":
+        return None, None, {}, []
     if not _structural_requires_reinforcement_hint(element):
         return None, None, {}, []
 
@@ -569,6 +616,7 @@ def _structural_formwork_payload(
                 "structural_length_total_m": length_quantity,
                 "section_width_m": element.section_width_m,
                 "section_height_m": element.section_height_m,
+                "formwork_type": formwork_type or "formaleta",
             },
             [
                 f"Beam {element.id} formwork area hint excludes the top face and includes two sides plus soffit."
@@ -590,6 +638,7 @@ def _structural_formwork_payload(
                     "structural_length_total_m": length_quantity,
                     "section_diameter_m": diameter_m,
                     "cross_section_shape": "circular",
+                    "formwork_type": formwork_type or "formaleta",
                 },
                 [],
             )
@@ -605,6 +654,7 @@ def _structural_formwork_payload(
                     "structural_length_total_m": length_quantity,
                     "section_width_m": element.section_width_m,
                     "section_height_m": element.section_height_m,
+                    "formwork_type": formwork_type or "formaleta",
                 },
                 [],
             )
@@ -613,9 +663,30 @@ def _structural_formwork_payload(
         return (
             element.area_m2,
             "structural_element.area_m2",
-            {"area_m2": element.area_m2},
+            {"area_m2": element.area_m2, "formwork_type": formwork_type or "formaleta"},
             [
                 f"Slab {element.id} formwork area hint assumes underside formwork only."
+            ],
+        )
+
+    if (
+        element.element_type == "footing"
+        and length_quantity is not None
+        and element.section_width_m is not None
+        and element.section_height_m is not None
+    ):
+        return (
+            2 * (element.section_width_m + length_quantity) * element.section_height_m,
+            "2 * (structural_element.section_width_m + structural_element.length_m) * structural_element.section_height_m",
+            {
+                **length_inputs,
+                "footing_width_m": element.section_width_m,
+                "footing_length_m": length_quantity,
+                "footing_depth_m": element.section_height_m,
+                "formwork_type": formwork_type or "formaleta",
+            },
+            [
+                f"Footing {element.id} formwork area hint includes vertical perimeter faces."
             ],
         )
 
@@ -631,10 +702,19 @@ def _circular_section_descriptor(
     explicit section_diameter_m, or when cross_section_shape is "circular"
     and a diameter-like field is available.
     """
+    if element.section_diameter_m is not None:
+        try:
+            diameter_f = float(element.section_diameter_m)
+        except (TypeError, ValueError):
+            diameter_f = None
+        if diameter_f and diameter_f > 0:
+            return diameter_f, element.cross_section_shape or "circular"
+
     raw = element.inputs.get("raw") if isinstance(element.inputs, dict) else None
     raw = raw if isinstance(raw, dict) else {}
     shape_hint = str(
-        element.inputs.get("cross_section_shape")
+        element.cross_section_shape
+        or element.inputs.get("cross_section_shape")
         or raw.get("cross_section_shape")
         or ""
     ).strip().lower()
@@ -1480,6 +1560,7 @@ def _apply_structural_defaults(element: StructuralElement) -> tuple[StructuralEl
     """Return element with filled-in defaults and a list of assumption notes."""
     assumptions: list[str] = []
     updates: dict[str, Any] = {}
+    missing_z_note = "Z/altura ausente en DWG y plano: usar cota real antes de cerrar."
 
     etype = element.element_type
 
@@ -1494,6 +1575,7 @@ def _apply_structural_defaults(element: StructuralElement) -> tuple[StructuralEl
             assumptions.append(
                 f"Beam {element.id} section height assumed at {_DEFAULT_BEAM_HEIGHT_M}m (standard rectangular beam)."
             )
+            assumptions.append(missing_z_note)
 
     elif etype == "column":
         if element.section_width_m is None:
@@ -1506,12 +1588,14 @@ def _apply_structural_defaults(element: StructuralElement) -> tuple[StructuralEl
             assumptions.append(
                 f"Column {element.id} section height assumed at {_DEFAULT_COLUMN_HEIGHT_M}m."
             )
+            assumptions.append(missing_z_note)
         if element.length_m is None and element.span_m is None:
             updates["length_m"] = _DEFAULT_COLUMN_FLOOR_HEIGHT_M * max(element.count, 1)
             assumptions.append(
                 f"Column {element.id} total length inferred from floor height "
                 f"{_DEFAULT_COLUMN_FLOOR_HEIGHT_M}m x {max(element.count, 1)} units."
             )
+            assumptions.append(missing_z_note)
 
     elif etype == "slab":
         if element.section_height_m is None:
@@ -1519,6 +1603,7 @@ def _apply_structural_defaults(element: StructuralElement) -> tuple[StructuralEl
             assumptions.append(
                 f"Slab {element.id} thickness assumed at {_DEFAULT_SLAB_THICKNESS_M}m (standard solid slab)."
             )
+            assumptions.append(missing_z_note)
 
     elif etype == "footing":
         if element.section_height_m is None:
@@ -1526,6 +1611,7 @@ def _apply_structural_defaults(element: StructuralElement) -> tuple[StructuralEl
             assumptions.append(
                 f"Footing {element.id} depth assumed at {_DEFAULT_FOOTING_THICKNESS_M}m."
             )
+            assumptions.append(missing_z_note)
 
     if not updates:
         return element, assumptions
@@ -1923,7 +2009,7 @@ def _structural_takeoffs(level: LevelInventory) -> list[QuantityTakeoff]:
                 )
 
         if (
-            element.element_type in {"beam", "column", "slab"}
+            element.element_type in {"beam", "column", "slab", "footing"}
             and _structural_requires_reinforcement_hint(element)
             and volume_quantity is not None
         ):

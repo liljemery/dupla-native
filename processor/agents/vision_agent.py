@@ -45,7 +45,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_VISION_MODEL = "gpt-5.1"
 
 # Bump when the system / user prompt structure changes; invalidates cache.
-VISION_PROMPT_VERSION = "v2-global-level"
+VISION_PROMPT_VERSION = "v3-structural-tables"
 
 try:
     from openai import OpenAI
@@ -148,6 +148,7 @@ def _vision_chat_completion(
     *,
     model: str,
     messages: list[dict[str, Any]],
+    reasoning_effort: str | None = None,
 ) -> Any:
     """Chat Completions with kwargs compatible with GPT-5.x vs GPT-4 family."""
     max_out = _vision_max_output_tokens()
@@ -156,7 +157,7 @@ def _vision_chat_completion(
             model=model,
             messages=messages,
             max_completion_tokens=max_out,
-            reasoning_effort=_vision_reasoning_effort(),
+            reasoning_effort=reasoning_effort or _vision_reasoning_effort(),
         )
     try:
         temp = float((os.getenv("OPENAI_VISION_TEMPERATURE") or "0.1").strip() or "0.1")
@@ -238,7 +239,6 @@ REGLAS OBLIGATORIAS:
 15. Si una celda de tabla está ilegible o recortada, deja el campo en null y explica en annotations_and_notes.
 
 Return ONLY valid JSON — no markdown, no explanation, no text."""
-
 _SIMPLE_SCHEMA_HINT = """{
   "plan_type": "architectural|structural|electrical|plumbing|section|elevation|detail|site|combined",
   "floor_area_m2": <number or null>,
@@ -258,6 +258,7 @@ _SIMPLE_SCHEMA_HINT = """{
      "finish_interior": "plaster|ceramic_tile|paint|none|null",
      "finish_exterior": "plaster|ceramic_tile|paint|exposed|none|null",
      "structural": true/false,
+     "is_concrete_shear_wall": true/false,
      "count_segments": <integer>}
   ],
   "doors": [
@@ -325,12 +326,15 @@ _SIMPLE_SCHEMA_HINT = """{
      "count": <integer>,
      "section_width_m": <number or null>,
      "section_height_m": <number or null>,
+     "section_diameter_m": <number or null>,
+     "cross_section_shape": "rectangular|circular|other|null",
      "length_m": <number or null>,
      "area_m2": <number or null>,
      "span_m": <number or null>,
      "material": "concrete|steel|masonry|other",
      "concrete_grade": "fc_210|fc_250|fc_280|null",
      "has_reinforcement": true/false,
+     "formwork_hint": "ninguno|formaleta|molde_bloque|null",
      "reinforcement_visible": <true si en ESTA imagen se ven barras/estribos o nota de armado; false si no>,
      "spec_source": "schedule_table|detail_callout|dimension_on_plan|legend_only|unknown",
      "schedule_row_text": "<texto literal de la fila de tabla si aplica, o null>",
@@ -528,6 +532,156 @@ def _normalize_simple_inventory_lists(simple: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _should_run_structural_table_focus(
+    cad_summary: dict[str, Any],
+    upload_discipline_id: str | None,
+) -> bool:
+    uid_raw = (upload_discipline_id or "").strip().lower()
+    uid = _UPLOAD_DISCIPLINE_ALIASES.get(uid_raw, uid_raw)
+    return uid == "estructura" or _cad_suggests_structural(cad_summary)
+
+
+def _merge_structural_focus_payload(
+    base_payload: dict[str, Any],
+    focused_payload: dict[str, Any],
+) -> dict[str, Any]:
+    if not focused_payload or focused_payload.get("parse_error"):
+        return base_payload
+    merged = _normalize_simple_inventory_lists(base_payload)
+    focused = _normalize_simple_inventory_lists(focused_payload)
+    existing_rows = merged.setdefault("structural_elements", [])
+    existing_keys = {
+        (
+            str(row.get("id") or "").strip().lower(),
+            str(row.get("type") or "").strip().lower(),
+            str(row.get("schedule_row_text") or "").strip().lower(),
+        )
+        for row in existing_rows
+        if isinstance(row, dict)
+    }
+    additions = []
+    for row in focused.get("structural_elements") or []:
+        if not isinstance(row, dict):
+            continue
+        key = (
+            str(row.get("id") or "").strip().lower(),
+            str(row.get("type") or "").strip().lower(),
+            str(row.get("schedule_row_text") or "").strip().lower(),
+        )
+        if key in existing_keys:
+            continue
+        additions.append(row)
+        existing_keys.add(key)
+    if additions:
+        existing_rows.extend(additions)
+        notes = merged.setdefault("annotations_and_notes", [])
+        notes.append({
+            "text": "structural_table_focus",
+            "interpretation": f"{len(additions)} structural schedule rows merged from high-reasoning focus pass.",
+        })
+    return merged
+
+
+def _analyze_structural_table_focus(
+    *,
+    image_path: Path,
+    image_b64: str,
+    mime: str,
+    cad_summary: dict[str, Any],
+    level_name: str,
+    model: str,
+) -> dict[str, Any]:
+    cad_hints = format_cad_facts_for_prompt(cad_summary)
+    prompt = f"""Lee SOLO cuadros, tablas y detalles estructurales visibles en esta hoja para presupuesto.
+
+Nivel: {level_name}
+
+CAD hints:
+{cad_hints}
+
+Devuelve JSON valido con esta forma minima:
+{{
+  "plan_type": "structural|detail|combined",
+  "structural_elements": [
+    {{
+      "id": "rotulo exacto C1/V1/Z1/etc",
+      "type": "column|beam|slab|footing|shear_wall|lintel|tie_beam",
+      "count": <integer>,
+      "section_width_m": <number or null>,
+      "section_height_m": <number or null>,
+      "section_diameter_m": <number or null>,
+      "cross_section_shape": "rectangular|circular|other|null",
+      "length_m": <number or null>,
+      "area_m2": <number or null>,
+      "material": "concrete|steel|masonry|other",
+      "has_reinforcement": true/false,
+      "formwork_hint": "ninguno|formaleta|molde_bloque|null",
+      "reinforcement_visible": true/false,
+      "spec_source": "schedule_table|detail_callout|dimension_on_plan|legend_only|unknown",
+      "schedule_row_text": "<texto literal de la fila de tabla si aplica, o null>",
+      "missing_detail_sheets": true/false,
+      "notes": "<evidencia breve o null>"
+    }}
+  ],
+  "annotations_and_notes": []
+}}
+
+Para zapatas usa section_width_m=B, length_m=L y section_height_m=h. No inventes acero: si el armado no es visible, reinforcement_visible=false y missing_detail_sheets=true.
+Return ONLY valid JSON."""
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": _SIMPLE_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:{mime};base64,{image_b64}",
+                        "detail": "high",
+                    },
+                },
+            ],
+        },
+    ]
+    retryable_statuses = {408, 409, 429, 500, 502, 503, 504}
+    max_retries = _vision_max_retries()
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        client, api_key = _get_client_with_key()
+        try:
+            response = _vision_chat_completion(
+                client,
+                model=model,
+                messages=messages,
+                reasoning_effort="high",
+            )
+            return _extract_json(response.choices[0].message.content or "")
+        except Exception as exc:
+            last_exc = exc
+            status_code = _exception_status_code(exc)
+            if status_code == 429:
+                _get_key_manager().mark_rate_limited(api_key)
+            is_retryable = status_code in retryable_statuses or status_code is None
+            if attempt >= max_retries or not is_retryable:
+                logger.warning("Structural table focus pass failed for %s: %s", image_path.name, exc)
+                return {"error": str(exc), "file": image_path.name}
+            delay = min(
+                20.0,
+                _vision_retry_base_seconds() * (2 ** (attempt - 1)) + random.random(),
+            )
+            logger.warning(
+                "Structural table focus retry %d/%d in %.2fs (image=%s status=%s)",
+                attempt,
+                max_retries,
+                delay,
+                image_path.name,
+                status_code or "unknown",
+            )
+            time.sleep(delay)
+    return {"error": str(last_exc), "file": image_path.name}
+
+
 def _substitute_discipline_prompt_placeholders(
     template: str,
     *,
@@ -664,6 +818,9 @@ INSTRUCCIONES DE EXTRACCIÓN EXHAUSTIVA:
 14. ANOTACIONES: Lee TODAS las notas y textos relevantes del plano. Interpreta su 
     significado para cuantificación.
 
+15. ZAPATAS: extrae B, L y h explicitos. Usa section_width_m=B, length_m=L y
+    section_height_m=h; no reemplaces B y L por solo area_m2.
+
 Devuelve este JSON EXACTO (sin texto adicional):
 {_SIMPLE_SCHEMA_HINT}"""
 
@@ -722,6 +879,7 @@ def _simple_to_level_inventory(
                     "finish_interior": w.get("finish_interior"),
                     "finish_exterior": w.get("finish_exterior"),
                     "original_material_code": raw_material,
+                    "is_concrete_shear_wall": bool(w.get("is_concrete_shear_wall")),
                 },
                 "conflict_notes": [],
                 "length_m": w.get("estimated_length_m"),
@@ -904,6 +1062,7 @@ def _simple_to_level_inventory(
                     "concrete_grade_raw": concrete_grade,
                     "spec_source": e.get("spec_source"),
                     "schedule_row_text": e.get("schedule_row_text"),
+                    "formwork_hint": e.get("formwork_hint"),
                     "reinforcement_visible": reinf_visible,
                     "missing_detail_sheets": missing_sheets,
                     "notes": e.get("notes"),
@@ -914,6 +1073,8 @@ def _simple_to_level_inventory(
                 "area_m2": e.get("area_m2"),
                 "length_m": e.get("length_m"),
                 "span_m": e.get("span_m"),
+                "cross_section_shape": e.get("cross_section_shape"),
+                "section_diameter_m": e.get("section_diameter_m"),
                 "section_width_m": e.get("section_width_m"),
                 "section_height_m": e.get("section_height_m"),
                 "material_hint": material,
@@ -1329,6 +1490,17 @@ def _analyze_plan_uncached(
         }
 
     # Step 2: Python adapter converts simple dict → full LevelInventory dict
+    if _should_run_structural_table_focus(cad_summary, upload_discipline_id):
+        focused_payload = _analyze_structural_table_focus(
+            image_path=image_path,
+            image_b64=image_b64,
+            mime=mime,
+            cad_summary=cad_summary,
+            level_name=level_name,
+            model=model,
+        )
+        simple_payload = _merge_structural_focus_payload(simple_payload, focused_payload)
+
     level_id = level_name.lower().replace(" ", "_")
     adapted = _simple_to_level_inventory(simple_payload, level_name, level_id, image_path.name)
 

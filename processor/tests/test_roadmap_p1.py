@@ -149,7 +149,13 @@ def test_steel_authority_replaces_ratio_with_despiece():
     from knowledge.schedule_authority import apply_structural_steel_authority
 
     base = [
-        _tk("column_reinforcement_kg", 999.0, key="col1:rebar", unit="kg"),
+        _tk(
+            "column_reinforcement_kg",
+            999.0,
+            key="col1:rebar",
+            unit="kg",
+            inputs={"quantity_source": "ratio_estimate"},
+        ),
         _tk("column_concrete_volume", 6.5, key="col1:conc", unit="m3"),
     ]
     schedule = {"filas": [
@@ -169,9 +175,31 @@ def test_steel_authority_replaces_ratio_with_despiece():
 def test_steel_authority_noop_without_schedule():
     from knowledge.schedule_authority import apply_structural_steel_authority
 
-    base = [_tk("column_reinforcement_kg", 999.0, key="c:r", unit="kg")]
+    base = [_tk("column_reinforcement_kg", 999.0, key="c:r", unit="kg", inputs={"quantity_source": "ratio_estimate"})]
     out = apply_structural_steel_authority(base, {}, cover_m=0.04)
     assert out == base
+
+
+def test_steel_authority_preserves_non_ratio_reinforcement_takeoff():
+    from knowledge.schedule_authority import apply_structural_steel_authority
+
+    measured = _tk("column_reinforcement_kg", 25.0, key="manual:rebar", unit="kg")
+    ratio = _tk(
+        "column_reinforcement_kg",
+        999.0,
+        key="ratio:rebar",
+        unit="kg",
+        inputs={"quantity_source": "ratio_estimate"},
+    )
+    schedule = {"filas": [
+        {"mark": "C1", "element": "columna", "section": "0.30x0.60",
+         "main_bars": "4#4", "stirrups": "", "count": 1, "length_m": 3.0},
+    ]}
+
+    out = apply_structural_steel_authority([measured, ratio], schedule, cover_m=0.04)
+
+    assert any(t.item_key == "manual:rebar" for t in out)
+    assert not any(t.item_key == "ratio:rebar" for t in out)
 
 
 def test_opening_count_authority_fills_gap_only():

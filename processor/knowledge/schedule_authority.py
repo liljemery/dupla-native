@@ -136,7 +136,18 @@ def apply_structural_steel_authority(
 
     # Drop ratio-based reinforcement takeoffs for the element types we now own.
     owned_item_types = {f"{etype}_reinforcement_kg" for etype in kg_by_type}
-    kept = [t for t in takeoffs if t.item_type not in owned_item_types]
+    def _is_owned_ratio_takeoff(t: Any) -> bool:
+        if t.item_type not in owned_item_types:
+            return False
+        inputs = getattr(t, "inputs", {}) or {}
+        trace = getattr(t, "trace", None)
+        trace_meta = getattr(trace, "metadata", {}) if trace is not None else {}
+        return (
+            str(inputs.get("quantity_source") or "").strip() == "ratio_estimate"
+            or str(trace_meta.get("quantity_source") or "").strip() == "ratio_estimate"
+        )
+
+    kept = [t for t in takeoffs if not _is_owned_ratio_takeoff(t)]
     dropped = len(takeoffs) - len(kept)
 
     level_id = takeoffs[0].level_id if takeoffs else None

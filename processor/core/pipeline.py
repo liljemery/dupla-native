@@ -267,9 +267,10 @@ def build_final_budget(
             }
         )
 
-    # Lazy-build the APUMatcher from the PricingStore so compose_budget can
-    # price lines against constructor APUs before falling back to BC3.
-    if apu_matcher is None and pricing_store is not None:
+    price_resolver = _build_price_resolver(construcosto_snapshot)
+
+    # Legacy fallback only: PriceResolver is authoritative when available.
+    if price_resolver is None and apu_matcher is None and pricing_store is not None:
         try:
             from pricing.apu_matcher import APUMatcher
 
@@ -282,7 +283,6 @@ def build_final_budget(
             logger.warning("Failed to build APUMatcher; continuing without it", exc_info=True)
             apu_matcher = None
 
-    price_resolver = _build_price_resolver(construcosto_snapshot)
     composed = compose_budget(
         context, takeoff_list, candidates_by_takeoff,
         bc3_catalog=bc3_catalog,
