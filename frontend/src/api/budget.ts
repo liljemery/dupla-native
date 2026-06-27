@@ -71,3 +71,20 @@ export async function getBudgetResult(
   if (!res.ok) return null
   return (await res.json()) as BudgetResult
 }
+
+export async function saveBudgetResult(
+  projectUuid: string,
+  token: string | null,
+  rows: BudgetResult['rows'],
+): Promise<BudgetResult> {
+  const res = await apiFetch(`/api/projects/${projectUuid}/budget/result`, {
+    method: 'PATCH',
+    token,
+    body: JSON.stringify({ rows }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(parseApiDetail(err) ?? 'Error al guardar presupuesto')
+  }
+  return (await res.json()) as BudgetResult
+}

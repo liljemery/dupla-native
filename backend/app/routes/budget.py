@@ -32,6 +32,10 @@ class BudgetJobResponse(BaseModel):
     updated_at: datetime
 
 
+class SaveBudgetResultRequest(BaseModel):
+    rows: list[dict[str, Any]]
+
+
 @router.post(
     "/{project_uuid}/budget/jobs",
     response_model=BudgetJobResponse,
@@ -110,3 +114,21 @@ async def get_budget_result(
 ) -> dict[str, Any]:
     svc = BudgetService(session, ws_ctx.workspace_id)
     return await svc.get_budget_result(current, project_uuid)
+
+
+@router.patch(
+    "/{project_uuid}/budget/result",
+    summary="Guardar presupuesto editado manualmente",
+    response_model=dict[str, Any],
+)
+async def save_budget_result(
+    project_uuid: UUID,
+    body: SaveBudgetResultRequest,
+    current: Annotated[User, Depends(require_budget_access)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> dict[str, Any]:
+    svc = BudgetService(session, ws_ctx.workspace_id)
+    result = await svc.save_budget_result(current, project_uuid, body.rows)
+    await session.commit()
+    return result

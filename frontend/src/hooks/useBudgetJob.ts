@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { enqueueBudgetJob, getBudgetResult, getLatestBudgetJob } from '../api/budget'
-import type { BudgetJob, BudgetResult } from '../types/budget'
+import { enqueueBudgetJob, getBudgetResult, getLatestBudgetJob, saveBudgetResult } from '../api/budget'
+import type { BudgetJob, BudgetResult, BudgetRow } from '../types/budget'
 
 const POLL_INTERVAL_MS = 5000
 const ACTIVE_STATUSES = new Set(['queued', 'processing'])
@@ -12,6 +12,8 @@ interface UseBudgetJobReturn {
   error: string | null
   enqueue: (opts?: { discipline?: string }) => Promise<boolean>
   refresh: () => void
+  saveRows: (rows: BudgetRow[]) => Promise<boolean>
+  setResult: (result: BudgetResult | null) => void
 }
 
 export function useBudgetJob(projectUuid: string, token: string | null): UseBudgetJobReturn {
@@ -107,5 +109,21 @@ export function useBudgetJob(projectUuid: string, token: string | null): UseBudg
     void pollOnce()
   }, [pollOnce])
 
-  return { job, result, isPolling, error, enqueue, refresh }
+  const saveRows = useCallback(
+    async (rows: BudgetRow[]) => {
+      try {
+        const saved = await saveBudgetResult(projectUuid, token, rows)
+        if (mountedRef.current) setResult(saved)
+        return true
+      } catch (e) {
+        if (mountedRef.current) {
+          setError(e instanceof Error ? e.message : 'Error al guardar presupuesto')
+        }
+        return false
+      }
+    },
+    [projectUuid, token],
+  )
+
+  return { job, result, isPolling, error, enqueue, refresh, saveRows, setResult }
 }

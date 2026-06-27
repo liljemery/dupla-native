@@ -23,6 +23,7 @@ export interface BudgetRowProvenanceMetadata {
   requiere_revision?: boolean
   source_row_indices?: number[]
   subtotal_row_index?: number
+  manual_amount?: boolean
 }
 
 export interface BudgetRow {

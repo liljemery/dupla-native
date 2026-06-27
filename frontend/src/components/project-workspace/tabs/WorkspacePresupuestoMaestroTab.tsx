@@ -5,9 +5,11 @@ import { useBudgetJob } from '../../../hooks/useBudgetJob'
 import type { BudgetRow } from '../../../types/budget'
 import type { Project } from '../../../types/project'
 import type { SubcontractQuoteRow } from '../../../types/projectWorkspace'
+import { processBudgetRows } from '../../../lib/budgetRows'
 import { PrimaryButton } from '../../PrimaryButton'
 import { WorkspaceActionButton } from '../WorkspaceActionButton'
 import { BudgetPipelinePanel, showBudgetPipelinePanel } from '../BudgetPipelinePanel'
+import { BudgetEditableTable, fmtDop } from '../BudgetEditableTable'
 
 const BUDGET_PHASE_LABELS: Record<string, string> = {
   extraction: 'Extrayendo planos y volumetría…',
@@ -19,33 +21,6 @@ function budgetPhaseMessage(job: { phase?: string | null; phase_detail?: string 
   if (job.phase_detail?.trim()) return job.phase_detail.trim()
   if (job.phase && BUDGET_PHASE_LABELS[job.phase]) return BUDGET_PHASE_LABELS[job.phase]
   return 'Analizando planos DWG, extrayendo volumetrías y generando presupuesto.'
-}
-function fmtDop(n: unknown): string {
-  const num = Number(n) || 0
-  return new Intl.NumberFormat('es-DO', {
-    style: 'currency',
-    currency: 'DOP',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num)
-}
-
-function fmtUsd(n: unknown, tcRate = 58.5): string {
-  const num = Number(n) || 0
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num / tcRate)
-}
-
-function fmtQty(q: unknown): string {
-  if (q == null || q === '') return ''
-  if (typeof q === 'string' && q.startsWith('=')) return ''
-  const num = Number(q) || 0
-  if (num === 0 && !q) return ''
-  return new Intl.NumberFormat('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num)
 }
 
 const LIQUIDACION_RATES = {
@@ -148,33 +123,6 @@ function useElapsedSeconds(startIso: string | undefined): number {
   return startIso ? elapsed : 0
 }
 
-type ProcessedBudgetRow = BudgetRow & {
-  computed_amount?: number
-  computed_unit_price?: number
-  computed_quantity?: number | string | null
-}
-
-function budgetLineProvenanceTooltip(row: ProcessedBudgetRow): string | undefined {
-  if (row.row_type !== 'line') return undefined
-  const meta = row.metadata
-  if (!meta) return undefined
-  const parts: string[] = []
-  const file = String(meta.source_file ?? '').trim()
-  if (file) parts.push(`Plano: ${file}`)
-  const level = String(meta.level_name ?? '').trim()
-  if (level) parts.push(`Nivel: ${level}`)
-  const layer = String(meta.source_layer ?? '').trim()
-  if (layer) parts.push(`Capa: ${layer}`)
-  const discipline = String(meta.source_discipline ?? '').trim()
-  if (discipline) parts.push(`Disciplina: ${discipline}`)
-  if (meta.requiere_revision) parts.push('Requiere revisión')
-  const conf = meta.confidence
-  if (typeof conf === 'number' && !Number.isNaN(conf)) {
-    parts.push(`Confianza: ${Math.round(conf * 100)}%`)
-  }
-  return parts.length > 0 ? parts.join('\n') : undefined
-}
-
 // ─── Main component ───────────────────────────────────────────────────────────
 type Props = {
   project: Project | null
@@ -219,45 +167,25 @@ export function WorkspacePresupuestoMaestroTab({
   quotes,
   onLoadAuxLists,
 }: Props) {
-  const { job, result, isPolling, error, enqueue, refresh } = useBudgetJob(projectUuid, token)
+  const { job, result, isPolling, error, enqueue, refresh, saveRows } = useBudgetJob(
+    projectUuid,
+    token,
+  )
   const [modalOpen, setModalOpen] = useState(false)
+  const [draftRows, setDraftRows] = useState<BudgetRow[]>([])
+  const [saveError, setSaveError] = useState<string | null>(null)
   const elapsed = useElapsedSeconds(
     job?.status === 'queued' || job?.status === 'processing' ? job.created_at : undefined,
   )
 
-  const processedRows = useMemo((): ProcessedBudgetRow[] => {
-    if (!result?.rows) return []
-    const newRows = result.rows.map((r) => ({ ...r })) as ProcessedBudgetRow[]
-    
-    for (const r of newRows) {
-      if (r.row_type === 'line') {
-        const qty = Number(r.quantity) || 0
-        const price = Number(r.unit_price) || 0
-        r.computed_amount = qty * price
-      }
+  useEffect(() => {
+    if (result?.rows) {
+      setDraftRows(result.rows.map((r) => ({ ...r })))
+      setSaveError(null)
     }
-    for (const r of newRows) {
-      if (r.row_type === 'subtotal') {
-        const indices = r.metadata?.source_row_indices || []
-        r.computed_amount = indices.reduce((sum: number, idx: number) => sum + (newRows[idx]?.computed_amount || 0), 0)
-        r.computed_unit_price = r.computed_amount
-        r.computed_quantity = 1
-      }
-    }
-    for (const r of newRows) {
-      if (r.row_type === 'chapter') {
-        const subIdx = r.metadata?.subtotal_row_index
-        if (typeof subIdx === 'number' && newRows[subIdx]) {
-          r.computed_amount = newRows[subIdx].computed_amount
-          r.computed_unit_price = newRows[subIdx].computed_unit_price
-          r.computed_quantity = newRows[subIdx].computed_quantity
-        } else {
-          r.computed_amount = 0
-        }
-      }
-    }
-    return newRows
   }, [result])
+
+  const processedRows = useMemo(() => processBudgetRows(draftRows), [draftRows])
 
   const direct = useMemo(
     () => processedRows.reduce((sum, r) => sum + (r.row_type === 'line' ? (r.computed_amount || 0) : 0), 0),
@@ -530,57 +458,22 @@ export function WorkspacePresupuestoMaestroTab({
           </div>
         </div>
 
-        {/* Table */}
-        <div className="mt-6 overflow-x-auto rounded-lg border border-black/10">
-          <table className="w-full min-w-[920px] border-collapse text-left text-sm">
-            <thead className="border-b border-black/10 bg-[#f8f9fb] text-[11px] font-bold uppercase tracking-wide text-muted">
-              <tr>
-                <th className="px-3 py-3">Código</th>
-                <th className="min-w-[220px] px-3 py-3">Partida</th>
-                <th className="px-3 py-3">Cantidad / UD</th>
-                <th className="px-3 py-3">P/UD (RD$)</th>
-                <th className="px-3 py-3 text-right">Total RD$</th>
-                <th className="px-3 py-3 text-right">Total USD</th>
-              </tr>
-            </thead>
-            <tbody>
-              {processedRows.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-sm text-muted">
-                    El presupuesto no contiene partidas.
-                  </td>
-                </tr>
-              ) : (
-                processedRows.map((r, i) => {
-                  const provenanceTip = budgetLineProvenanceTooltip(r)
-                  return (
-                  <tr key={`${r.code}-${i}`} className="border-b border-black/6 hover:bg-black/1.5">
-                    <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-muted">{r.code}</td>
-                    <td
-                      className="px-3 py-2.5 font-medium text-ink"
-                      title={provenanceTip}
-                    >
-                      {r.summary}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-muted">
-                      {fmtQty(r.row_type === 'chapter' || r.row_type === 'subtotal' ? r.computed_quantity : r.quantity)}{' '}
-                      {r.unit ? <span className="text-ink">{r.unit}</span> : null}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
-                      {fmtDop(r.row_type === 'line' ? r.unit_price : r.computed_unit_price)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums font-semibold text-ink">
-                      {fmtDop(r.computed_amount)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums text-muted">
-                      {fmtUsd(r.computed_amount)}
-                    </td>
-                  </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
+        {/* Table editable */}
+        <div className="mt-6">
+          <BudgetEditableTable
+            rows={draftRows}
+            onRowsChange={setDraftRows}
+            saveError={saveError}
+            onSave={async (rows) => {
+              setSaveError(null)
+              const ok = await saveRows(rows)
+              if (!ok) {
+                setSaveError('No se pudo guardar el presupuesto')
+                return false
+              }
+              return true
+            }}
+          />
         </div>
 
         <div className="mt-4 flex flex-col items-end gap-2 border-t border-black/10 pt-4">

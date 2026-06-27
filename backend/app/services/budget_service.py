@@ -9,16 +9,18 @@ Bridges the main platform to the processor microservice:
 from __future__ import annotations
 
 import logging
+import unicodedata
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 from uuid import UUID
-import uuid
-import unicodedata
 
 import httpx
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.config import get_settings
 from app.domain.budget_cad_attachments import (
@@ -351,3 +353,75 @@ class BudgetService:
                 detail="Presupuesto incompleto: ejecuta de nuevo con una disciplina",
             )
         return job.result
+
+    async def save_budget_result(
+        self,
+        user: User,
+        project_uuid: UUID,
+        rows: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        job = await self.get_latest_job(user, project_uuid)
+        if job is None or job.result is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No hay presupuesto para guardar",
+            )
+        if job.status not in ("completed", "completed_partial"):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="El presupuesto aun se esta procesando",
+            )
+        if not rows:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Se requiere al menos una fila",
+            )
+
+        normalized = [_normalize_budget_row(raw) for raw in rows]
+        result = dict(job.result)
+        result["rows"] = normalized
+        result["manually_edited"] = True
+        result["manually_edited_at"] = datetime.now(timezone.utc).isoformat()
+        job.result = result
+        if budget_result_qualifies_for_volumetry(result):
+            job.status = "completed"
+            await sync_volumetry_from_completed_job(self._session, job)
+        flag_modified(job, "result")
+        await self._session.flush()
+        return result
+
+
+def _normalize_budget_row(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cada fila debe ser un objeto",
+        )
+    row = dict(raw)
+    row_type = str(row.get("row_type") or "line")
+    row["row_type"] = row_type
+    row["code"] = str(row.get("code") or "").strip()
+    row["summary"] = str(row.get("summary") or "").strip()
+    row["unit"] = str(row.get("unit") or "").strip()
+    row["nat"] = str(row.get("nat") or "").strip()
+    try:
+        qty = float(row.get("quantity") or 0)
+    except (TypeError, ValueError):
+        qty = 0.0
+    try:
+        unit_price = float(row.get("unit_price") or 0)
+    except (TypeError, ValueError):
+        unit_price = 0.0
+    if row_type == "line":
+        row["quantity"] = qty
+        row["unit_price"] = round(unit_price, 2)
+        row["amount"] = round(qty * unit_price, 2)
+    else:
+        try:
+            amount = float(row.get("amount") or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        row["amount"] = round(amount, 2)
+    meta = row.get("metadata")
+    row["metadata"] = meta if isinstance(meta, dict) else {}
+    return row
