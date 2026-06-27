@@ -335,8 +335,54 @@ class PriceResolver:
 
         scored.sort(key=lambda item: item[0], reverse=True)
         best_score, best_apu = scored[0]
-        if best_score >= 0.20:
-            estimated_price = round(float(best_apu.total_declarado) * inflation_index, 4)
+
+        # Robust family median first: it bounds the analog so a single outlier
+        # APU (e.g. a RD$126,934 "camara desarenadora" fuzzy-matched to a door)
+        # can never become the estimate and inflate the budget total.
+        #
+        # The relational catalog alone is too sparse for some unit families
+        # (the "count"/UD family is 7 heavy civil-works APUs whose median is the
+        # RD$126,934 chamber). Enrich the pool with ConstruCosto complete APUs of
+        # the same family so the median reflects real doors/windows/fixtures.
+        family_prices: list[float] = [float(apu.total_declarado) for apu in priced_apus]
+        if self.construcosto is not None:
+            for entry in getattr(self.construcosto, "entries", []) or []:
+                if entry.source != "analisis":
+                    continue
+                price = float(entry.unit_price or 0.0)
+                if price <= 0:
+                    continue
+                entry_family = _unit_family(entry.unit)
+                if wanted_family is not None:
+                    if entry_family != wanted_family:
+                        continue
+                elif not _unit_family_compatible(unit, entry.unit):
+                    continue
+                family_prices.append(price)
+        family_prices.sort()
+        if not family_prices:
+            return None
+        midpoint = len(family_prices) // 2
+        if len(family_prices) % 2:
+            family_median = family_prices[midpoint]
+        else:
+            family_median = (family_prices[midpoint - 1] + family_prices[midpoint]) / 2.0
+
+        raw_mult = (os.getenv("DUPLA_PRICE_ESTIMATION_OUTLIER_MULT") or "4.0").strip()
+        try:
+            outlier_mult = float(raw_mult)
+        except ValueError:
+            outlier_mult = 4.0
+        if outlier_mult <= 0:
+            outlier_mult = 4.0
+        upper_bound = family_median * outlier_mult
+        lower_bound = family_median / outlier_mult if family_median > 0 else 0.0
+
+        analog_price = float(best_apu.total_declarado)
+        analog_in_band = lower_bound <= analog_price <= upper_bound
+
+        if best_score >= 0.20 and analog_in_band:
+            estimated_price = round(analog_price * inflation_index, 4)
             return PriceResolution(
                 unit_price=estimated_price,
                 currency=self.currency,
@@ -346,6 +392,7 @@ class PriceResolver:
                 score=round(float(best_score), 3),
                 estimated=True,
                 estimate_basis=(
+                    f"ESTIMADO (no es precio de catalogo); "
                     f"analog_apu:{best_apu.codigo_apu}; "
                     f"unit_family:{wanted_family or 'unknown'}; "
                     f"inflation_index:{inflation_index:g}"
@@ -356,28 +403,30 @@ class PriceResolver:
                     "analog_apu": best_apu.codigo_apu,
                     "analog_unit": best_apu.unidad,
                     "analog_chapter": best_apu.capitulo,
-                    "analog_price": float(best_apu.total_declarado),
+                    "analog_price": analog_price,
+                    "family_median": family_median,
                     "inflation_index": inflation_index,
                 },
             )
 
-        family_prices = sorted(float(apu.total_declarado) for apu in priced_apus)
-        if not family_prices:
-            return None
-        midpoint = len(family_prices) // 2
-        if len(family_prices) % 2:
-            base_price = family_prices[midpoint]
-        else:
-            base_price = (family_prices[midpoint - 1] + family_prices[midpoint]) / 2.0
+        # No trustworthy analog (weak match or outlier price): fall back to the
+        # family median. This is the reasonable estimate the user asked for —
+        # clearly flagged as NOT a catalog price, never the runaway value.
+        rejected_outlier = best_score >= 0.20 and not analog_in_band
+        estimate_reason = (
+            "analog_rejected_outlier" if rejected_outlier else "weak_analog_score"
+        )
         return PriceResolution(
-            unit_price=round(base_price * inflation_index, 4),
+            unit_price=round(family_median * inflation_index, 4),
             currency=self.currency,
             source="estimated",
             matched_description=f"Mediana historica familia {wanted_family or unit or 'unidad'}",
-            score=0.0,
+            score=round(float(best_score), 3),
             estimated=True,
             estimate_basis=(
+                f"ESTIMADO (no es precio de catalogo); "
                 f"historical_family_median:{wanted_family or 'unknown'}; "
+                f"motivo:{estimate_reason}; "
                 f"sample_size:{len(family_prices)}; "
                 f"inflation_index:{inflation_index:g}"
             ),
@@ -386,6 +435,10 @@ class PriceResolver:
                 "query": query,
                 "unit_family": wanted_family,
                 "sample_size": len(family_prices),
+                "family_median": family_median,
+                "estimate_reason": estimate_reason,
+                "rejected_analog_apu": best_apu.codigo_apu if rejected_outlier else None,
+                "rejected_analog_price": analog_price if rejected_outlier else None,
                 "inflation_index": inflation_index,
             },
         )

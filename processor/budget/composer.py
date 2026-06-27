@@ -359,6 +359,37 @@ def _budget_inclusive_flag(context: ProjectContext | None) -> bool:
     return bool(context.metadata.get("budget_inclusive", True))
 
 
+# --- Nivel 1 mitigation: DWG structural aggregates are not real quantities ----
+# The DWG/CAD path (_build_json_structural_elements) groups every entity on a
+# structural layer into ONE element and SUMS bounding-box geometry: count =
+# entity count, length = summed bbox diagonals, area = summed bbox areas. That
+# yields physically impossible quantities (e.g. a single column "area" of
+# 71,539 m2, 525 "beams", 910 "slabs") and double-counts the typed
+# column_*/beam_*/slab_* lines extracted from PDF/vision. These takeoffs keep
+# the producing element id as their item_key prefix ("json-beam-…", etc.), so
+# we exclude them from the budget by default. Re-enable for DWG-only projects
+# (no PDF) with DUPLA_BUDGET_INCLUDE_DWG_STRUCTURAL=1.
+_DWG_STRUCTURAL_KEY_PREFIXES = (
+    "json-beam-",
+    "json-column-",
+    "json-slab-",
+    "json-footing-",
+)
+
+
+def _include_dwg_structural_aggregates() -> bool:
+    return (os.getenv("DUPLA_BUDGET_INCLUDE_DWG_STRUCTURAL") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _is_dwg_structural_aggregate(item_key: str) -> bool:
+    return str(item_key or "").startswith(_DWG_STRUCTURAL_KEY_PREFIXES)
+
+
 def takeoff_budget_eligibility(
     takeoff: QuantityTakeoff,
     *,
@@ -372,6 +403,12 @@ def takeoff_budget_eligibility(
 
     if takeoff.unit.lower() == "flag":
         return False, "unit_flag"
+
+    # Nivel 1: drop DWG structural bounding-box aggregates (see note above).
+    if not _include_dwg_structural_aggregates() and _is_dwg_structural_aggregate(
+        takeoff.item_key
+    ):
+        return False, "dwg_structural_aggregate"
 
     if item_type == "pres_reference_line":
         return True, ""
