@@ -60,6 +60,13 @@ function shouldEmitErrorToast(path: string, status: number, silent?: boolean): b
   return true
 }
 
+export function apiStatusErrorMessage(status: number): string {
+  if (status === 413) {
+    return 'El servidor rechazo el archivo por tamano. Si vuelve a pasar, revisa el proxy de produccion.'
+  }
+  return `Error ${status}`
+}
+
 export async function apiFetch(
   path: string,
   init: RequestInit & { token?: string | null; silent?: boolean } = {},
@@ -88,10 +95,10 @@ export async function apiFetch(
       const detail =
         body && typeof body === 'object' && 'detail' in body
           ? String((body as { detail: unknown }).detail)
-          : `Error ${res.status}`
+          : apiStatusErrorMessage(res.status)
       emitToast(detail, res.status >= 500 ? 'error' : 'warning')
     }).catch(() => {
-      emitToast(`Error ${res.status}`, 'error')
+      emitToast(apiStatusErrorMessage(res.status), 'error')
     })
   }
 

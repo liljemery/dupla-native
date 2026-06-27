@@ -43,6 +43,7 @@ services:
       CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://frontend:80,http://app.grupodupla.com
       FRONTEND_URL: http://localhost:5173
       COORDINATION_SMOKE_MODE: "false"
+      PROJECT_FILE_MAX_MB: "0"
       DUPLA_ROOT: /motor
       PYTHONPATH: /motor:/app
       COORDINATION_CACHE_ROOT: /app/var/coord_output/cad_cache

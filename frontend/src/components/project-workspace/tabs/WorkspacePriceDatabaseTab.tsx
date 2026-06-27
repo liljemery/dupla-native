@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { FileSpreadsheet, FileText, Package, Trash2, Upload, Users } from 'lucide-react'
 
-import { apiFetch } from '../../../api/client'
+import { apiFetch, apiStatusErrorMessage } from '../../../api/client'
 import { confirmDestructive } from '../../../lib/duplaAlert'
 import { WorkspaceActionButton } from '../WorkspaceActionButton'
 
@@ -132,7 +132,7 @@ export function WorkspacePriceDatabaseTab({ projectUuid, token, flowMsg }: Works
         })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) {
-          setMsg((j as { detail?: string }).detail ?? 'No se pudo subir el archivo')
+          setMsg((j as { detail?: string }).detail ?? apiStatusErrorMessage(res.status))
           break
         }
       }

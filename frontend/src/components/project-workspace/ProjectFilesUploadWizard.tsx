@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Upload } from 'lucide-react'
 
-import { apiFetch } from '../../api/client'
+import { apiFetch, apiStatusErrorMessage } from '../../api/client'
 import {
   filterAllowedProjectFiles,
   formatAllowedProjectExtensionsHint,
@@ -187,7 +187,7 @@ export function ProjectFilesUploadWizard({
             })
             const body = (await res.json().catch(() => ({}))) as ProjectFileRow & { detail?: string }
             if (!res.ok) {
-              throw new Error(body.detail ?? 'Error al subir archivo')
+              throw new Error(body.detail ?? apiStatusErrorMessage(res.status))
             }
             return body as ProjectFileRow
           }),
