@@ -6,7 +6,6 @@ from enum import StrEnum
 class WorkflowStepBehaviorKind(StrEnum):
     """Tipo de comportamiento de un paso de plantilla (dominio + automatización libre)."""
 
-    BOOTSTRAPPING = "BOOTSTRAPPING"
     AWAITING_FILES = "AWAITING_FILES"
     ARCHITECTURE_REVIEW = "ARCHITECTURE_REVIEW"
     SPECIFICATIONS = "SPECIFICATIONS"

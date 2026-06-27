@@ -1,6 +1,5 @@
 /** Pistas por fase (resumen corto en UI). */
 export const WORKFLOW_DOC_PHASE_HINTS: Record<string, string> = {
-  BOOTSTRAPPING: 'Doc: obra creada; criterios de arranque y checklist inicial.',
   AWAITING_FILES: 'Doc: documentación cargada; pendiente completar archivos CAD/PDF.',
   FILES_INGESTED: 'Doc (legado): archivos ingresados; equivale a «esperando archivos» en flujo nuevo.',
   ARCHITECTURE_REVIEW: 'Doc: en revisión de arquitectura.',

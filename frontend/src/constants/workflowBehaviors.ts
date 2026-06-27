@@ -2,7 +2,6 @@ import { WORKFLOW_PHASE_LABELS } from './workflowPhases'
 
 /** Comportamientos de paso (alineado con backend). */
 export const WORKFLOW_BEHAVIOR_OPTIONS = [
-  { value: 'BOOTSTRAPPING', label: WORKFLOW_PHASE_LABELS.BOOTSTRAPPING },
   { value: 'AWAITING_FILES', label: WORKFLOW_PHASE_LABELS.AWAITING_FILES },
   { value: 'ARCHITECTURE_REVIEW', label: WORKFLOW_PHASE_LABELS.ARCHITECTURE_REVIEW },
   { value: 'SPECIFICATIONS', label: WORKFLOW_PHASE_LABELS.SPECIFICATIONS },

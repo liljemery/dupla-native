@@ -41,10 +41,6 @@ class ProjectPatchRequest(BaseModel):
     responsible_external_email: Optional[str] = Field(default=None, max_length=255)
 
 
-class BootstrapCriteriaReplaceRequest(BaseModel):
-    criteria: list[dict[str, Any]] = Field(default_factory=list)
-
-
 class SpecificationsReplaceRequest(BaseModel):
     document: dict[str, Any] = Field(default_factory=dict)
 

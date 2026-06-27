@@ -34,7 +34,7 @@ class Project(Base):
     workflow_phase: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
-        default=WorkflowPhase.BOOTSTRAPPING.value,
+        default=WorkflowPhase.AWAITING_FILES.value,
     )
     workflow_meta: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     project_bootstrap_criteria: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)

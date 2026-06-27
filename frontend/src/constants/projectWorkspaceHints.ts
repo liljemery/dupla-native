@@ -8,12 +8,6 @@ export type PhaseHint = {
 }
 
 export const PHASE_WORKSPACE_HINTS: Record<string, PhaseHint> = {
-  BOOTSTRAPPING: {
-    title: 'Checklist de arranque',
-    body: 'Marca los documentos obligatorios del checklist y guarda. Solo podrás avanzar cuando estén cumplidos.',
-    tabId: 'flujo',
-    cta: 'Abrir checklist de arranque',
-  },
   AWAITING_FILES: {
     title: 'Subir archivos',
     body: 'Carga planos (DWG/DXF), PDF, IFC u otros adjuntos permitidos. Con al menos un archivo cargado, puedes avanzar a revisión de arquitectura.',
@@ -62,6 +56,7 @@ export function phaseWorkspaceHintForRole(
   phase: string,
   permissions: readonly string[] | null | undefined,
 ): PhaseHint | undefined {
-  if (!canViewBudget(permissions) && isBudgetWorkflowPhase(phase)) return undefined
-  return PHASE_WORKSPACE_HINTS[phase]
+  const key = phase === 'BOOTSTRAPPING' ? 'AWAITING_FILES' : phase
+  if (!canViewBudget(permissions) && isBudgetWorkflowPhase(key)) return undefined
+  return PHASE_WORKSPACE_HINTS[key]
 }

@@ -94,7 +94,7 @@ async def list_projects(
         "responsible_external_name / responsible_external_email opcional (contacto fuera del equipo), "
         "files opcional (múltiples). "
         "Licitación (TENDER): inicia en el primer paso de la plantilla de flujo del workspace "
-        "(BOOTSTRAPPING) y requiere al menos un archivo al crear el proyecto; no puede retroceder "
+        "Licitación (TENDER) inicia en «Esperando archivos» y requiere al menos un archivo al crear el proyecto; no puede retroceder "
         "por debajo de revisión de arquitectura una vez alcanzada esa fase."
     ),
 )

@@ -70,7 +70,7 @@ async def test_project_architecture_flow(client, master_auth_headers_async: dict
     assert create.status_code == 201, create.text
     created = create.json()
     assert created["project_kind"] == "CLIENT"
-    assert created["workflow_phase"] == "BOOTSTRAPPING"
+    assert created["workflow_phase"] == "AWAITING_FILES"
     pid = created["uuid"]
     project_uuid = uuid.UUID(pid)
 
@@ -173,22 +173,8 @@ async def test_tender_project_starts_in_architecture_review_with_file(
     assert create.status_code == 201, create.text
     created = create.json()
     assert created["project_kind"] == "TENDER"
-    assert created["workflow_phase"] == "BOOTSTRAPPING"
+    assert created["workflow_phase"] == "AWAITING_FILES"
     pid = created["uuid"]
-
-    boot = await client.put(
-        f"/api/projects/{pid}/bootstrap",
-        headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={"criteria": [{"id": "a", "label": "Pliego", "required": True, "done": True}]},
-    )
-    assert boot.status_code == 200, boot.text
-
-    t1 = await client.post(
-        f"/api/projects/{pid}/transitions",
-        headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={"target_phase": "AWAITING_FILES"},
-    )
-    assert t1.status_code == 200, t1.text
 
     t2 = await client.post(
         f"/api/projects/{pid}/transitions",
@@ -219,7 +205,7 @@ async def test_exports_return_bytes(client, master_auth_headers_async: dict[str,
     )
     assert create.status_code == 201
     assert create.json()["project_kind"] == "CLIENT"
-    assert create.json()["workflow_phase"] == "BOOTSTRAPPING"
+    assert create.json()["workflow_phase"] == "AWAITING_FILES"
     pid = uuid.UUID(create.json()["uuid"])
 
     xlsx = await client.get(f"/api/projects/{pid}/exports/pliego.xlsx", headers=master_auth_headers_async)
@@ -249,20 +235,6 @@ async def test_pliego_generate_approve_and_transition_to_budget(
     )
     assert create.status_code == 201, create.text
     pid = create.json()["uuid"]
-
-    boot = await client.put(
-        f"/api/projects/{pid}/bootstrap",
-        headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={"criteria": [{"id": "a", "label": "Uno", "required": True, "done": True}]},
-    )
-    assert boot.status_code == 200, boot.text
-
-    t1 = await client.post(
-        f"/api/projects/{pid}/transitions",
-        headers={**master_auth_headers_async, "Content-Type": "application/json"},
-        json={"target_phase": "AWAITING_FILES"},
-    )
-    assert t1.status_code == 200, t1.text
 
     up = await client.post(
         f"/api/projects/{pid}/files",
@@ -325,7 +297,7 @@ async def test_pliego_generate_approve_and_transition_to_budget(
 
 
 @pytest.mark.asyncio
-async def test_upload_allowed_in_bootstrapping(client, master_auth_headers_async: dict[str, str]):
+async def test_upload_allowed_in_awaiting_files(client, master_auth_headers_async: dict[str, str]):
     create = await client.post(
         "/api/projects",
         headers=master_auth_headers_async,
@@ -347,7 +319,7 @@ async def test_upload_allowed_in_bootstrapping(client, master_auth_headers_async
 def test_upload_counts_for_budget_by_phase():
     from app.domain.workflow_phase import WorkflowPhase, upload_counts_for_budget
 
-    assert upload_counts_for_budget(WorkflowPhase.BOOTSTRAPPING) is True
+    assert upload_counts_for_budget(WorkflowPhase.AWAITING_FILES) is True
     assert upload_counts_for_budget(WorkflowPhase.BUDGETING_PIPELINE) is True
     assert upload_counts_for_budget(WorkflowPhase.MANAGEMENT_APPROVAL) is False
     assert upload_counts_for_budget(WorkflowPhase.COMPLETE) is False

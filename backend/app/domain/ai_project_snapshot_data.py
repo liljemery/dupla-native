@@ -20,7 +20,7 @@ from app.domain.ga_fo_01_arquitectura import (
     ga_fo_block_approved,
 )
 from app.domain.workflow_automation_tasks import automation_card_uuids, legacy_automation_titles
-from app.domain.workflow_phase import LINEAR_NEXT, WorkflowPhase
+from app.domain.workflow_phase import LINEAR_NEXT, WorkflowPhase, normalize_workflow_phase
 from app.models.architecture_revision import ArchitectureRevision, ArchitectureRevisionDecision
 from app.models.plan_delivery_request import PlanDeliveryRequest
 from app.models.project import Project
@@ -244,15 +244,7 @@ def compute_phase_transition_hints(project: Project, data: ProjectSnapshotData) 
             hints.append("Estás en un paso de automatización del flujo; seguí las indicaciones del paso actual.")
         return hints
 
-    if current == WorkflowPhase.BOOTSTRAPPING and target == WorkflowPhase.AWAITING_FILES:
-        if not data.bootstrap.has_criteria:
-            hints.append("Configurá el checklist de documentos requeridos en la pestaña Flujo.")
-        elif not data.bootstrap.all_required_ok:
-            missing = data.bootstrap.required_total - data.bootstrap.required_done
-            hints.append(
-                f"Faltan {missing} ítem(s) obligatorio(s) del checklist de arranque por marcar como cumplidos."
-            )
-    elif current == WorkflowPhase.AWAITING_FILES and target == WorkflowPhase.ARCHITECTURE_REVIEW:
+    if current == WorkflowPhase.AWAITING_FILES and target == WorkflowPhase.ARCHITECTURE_REVIEW:
         if data.files.total < 1:
             hints.append("Subí al menos un archivo de plano (DWG, DXF o PDF) en la pestaña Archivos.")
     elif current == WorkflowPhase.ARCHITECTURE_REVIEW and target == WorkflowPhase.SPECIFICATIONS:

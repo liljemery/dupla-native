@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from app.domain.ai_project_snapshot_data import ProjectSnapshotData
 from app.domain.project_kind import ProjectKind
-from app.domain.workflow_phase import WorkflowPhase
+from app.domain.workflow_phase import WorkflowPhase, normalize_workflow_phase
 from app.models.project import Project
 
 WORKFLOW_PHASE_ORDER: tuple[WorkflowPhase, ...] = (
-    WorkflowPhase.BOOTSTRAPPING,
     WorkflowPhase.AWAITING_FILES,
     WorkflowPhase.ARCHITECTURE_REVIEW,
     WorkflowPhase.SPECIFICATIONS,
@@ -17,7 +16,6 @@ WORKFLOW_PHASE_ORDER: tuple[WorkflowPhase, ...] = (
 )
 
 _PHASE_SECTION_LABELS: dict[WorkflowPhase, str] = {
-    WorkflowPhase.BOOTSTRAPPING: "Criterios de arranque",
     WorkflowPhase.AWAITING_FILES: "Archivos CAD",
     WorkflowPhase.ARCHITECTURE_REVIEW: "Revisión de arquitectura",
     WorkflowPhase.SPECIFICATIONS: "Pliego de condiciones",
@@ -28,7 +26,6 @@ _PHASE_SECTION_LABELS: dict[WorkflowPhase, str] = {
 }
 
 _PHASE_LABELS_ES: dict[str, str] = {
-    WorkflowPhase.BOOTSTRAPPING.value: "Criterios de arranque",
     WorkflowPhase.AWAITING_FILES.value: "Esperando archivos CAD",
     "FILES_INGESTED": "Archivos ingresados",
     WorkflowPhase.ARCHITECTURE_REVIEW.value: "Revisión de arquitectura",
@@ -99,28 +96,13 @@ def truncate_snapshot(text: str, max_chars: int) -> str:
 
 
 def _current_phase(project: Project) -> WorkflowPhase:
-    raw = project.workflow_phase or ""
-    try:
-        return WorkflowPhase(raw)
-    except ValueError:
-        return WorkflowPhase.BOOTSTRAPPING
+    return normalize_workflow_phase(project.workflow_phase)
 
 
 def _section_header(phase: WorkflowPhase, current: WorkflowPhase, index: int) -> str:
     label = _PHASE_SECTION_LABELS[phase]
     status = _STATUS_LABEL_ES[phase_status(phase, current)]
     return f"#### {index}. {label} — {status}"
-
-
-def _bootstrap_section(data: ProjectSnapshotData) -> list[str]:
-    b = data.bootstrap
-    lines = [
-        f"- Obligatorios cumplidos: {b.required_done} de {b.required_total}",
-    ]
-    if b.item_lines:
-        lines.append("- Detalle (extracto):")
-        lines.extend(b.item_lines[:8])
-    return lines
 
 
 def _files_section(data: ProjectSnapshotData) -> list[str]:
@@ -220,8 +202,6 @@ def _transversal_section(data: ProjectSnapshotData) -> list[str]:
 
 
 def _phase_body(phase: WorkflowPhase, data: ProjectSnapshotData) -> list[str]:
-    if phase == WorkflowPhase.BOOTSTRAPPING:
-        return _bootstrap_section(data)
     if phase == WorkflowPhase.AWAITING_FILES:
         return _files_section(data)
     if phase == WorkflowPhase.ARCHITECTURE_REVIEW:

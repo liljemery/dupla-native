@@ -48,7 +48,7 @@ from app.domain.workflow_template_phase import (
     effective_workflow_phase_for_step,
     workflow_phase_from_template_step_index,
 )
-from app.domain.workflow_phase import LINEAR_NEXT, LINEAR_PREV, WorkflowPhase, upload_counts_for_budget
+from app.domain.workflow_phase import LINEAR_NEXT, LINEAR_PREV, WorkflowPhase, normalize_workflow_phase, upload_counts_for_budget
 from app.domain.user_permissions import primary_role_slug
 from app.repositories.permission_repository import PermissionRepository
 from app.models.architecture_revision import ArchitectureRevision, ArchitectureRevisionDecision
@@ -89,10 +89,7 @@ class ProjectLifecycleService:
 
     @staticmethod
     def _domain_phase_for_project(project: Project) -> WorkflowPhase:
-        try:
-            return WorkflowPhase(project.workflow_phase)
-        except ValueError:
-            return WorkflowPhase.BOOTSTRAPPING
+        return normalize_workflow_phase(project.workflow_phase)
 
     async def _load_project_full(self, project_uuid: UUID) -> Optional[Project]:
         result = await self._session.execute(
@@ -120,17 +117,6 @@ class ProjectLifecycleService:
         _set_budget_pipeline(meta, bp)
         project.workflow_meta = meta
 
-    def _bootstrap_required_ok(self, project: Project) -> bool:
-        criteria = project.project_bootstrap_criteria or []
-        if not isinstance(criteria, list):
-            return False
-        for item in criteria:
-            if not isinstance(item, dict):
-                continue
-            if item.get("required") and not item.get("done"):
-                return False
-        return len(criteria) > 0
-
     async def _latest_revision(self, project_id: UUID) -> Optional[ArchitectureRevision]:
         q = (
             select(ArchitectureRevision)
@@ -154,12 +140,6 @@ class ProjectLifecycleService:
         current: WorkflowPhase,
         target: WorkflowPhase,
     ) -> None:
-        if current == WorkflowPhase.BOOTSTRAPPING and target == WorkflowPhase.AWAITING_FILES:
-            if not self._bootstrap_required_ok(project):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Completa el checklist de documentos requeridos antes de continuar",
-                )
         if current == WorkflowPhase.AWAITING_FILES and target == WorkflowPhase.ARCHITECTURE_REVIEW:
             n = await self._projects.count_project_files(project.id)
             if n < 1:
@@ -225,7 +205,7 @@ class ProjectLifecycleService:
         project: Project,
         target: WorkflowPhase,
     ) -> None:
-        current = WorkflowPhase(project.workflow_phase)
+        current = normalize_workflow_phase(project.workflow_phase)
         await self._assert_transition_guards_pair(user, project, current, target)
 
     async def _count_pending_tasks_for_project(self, project: Project) -> int:
@@ -277,8 +257,8 @@ class ProjectLifecycleService:
         await self._assert_transition_guards_pair(
             user,
             project,
-            WorkflowPhase(from_eff),
-            WorkflowPhase(to_eff),
+            normalize_workflow_phase(from_eff),
+            normalize_workflow_phase(to_eff),
         )
 
     async def _run_step_enter_actions(self, actor: User, project: Project, to_step: WorkflowTemplateStep) -> None:
@@ -436,8 +416,7 @@ class ProjectLifecycleService:
         if (
             is_backward
             and project.project_kind == ProjectKind.TENDER.value
-            and tgt_effective_phase
-            in (WorkflowPhase.BOOTSTRAPPING.value, WorkflowPhase.AWAITING_FILES.value)
+            and tgt_effective_phase == WorkflowPhase.AWAITING_FILES.value
         ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -660,29 +639,6 @@ class ProjectLifecycleService:
                 event_type="PROJECT_META_UPDATED",
                 payload=payload,
             )
-        touch_project_updated_at(project)
-        await self._session.flush()
-        return project
-
-    async def put_bootstrap_criteria(
-        self,
-        user: User,
-        project_uuid: UUID,
-        criteria: list[dict[str, Any]],
-    ) -> Project:
-        project = await self._project_svc.get_project(user, project_uuid)
-        if self._domain_phase_for_project(project) != WorkflowPhase.BOOTSTRAPPING:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="El checklist solo es editable en fase BOOTSTRAPPING",
-            )
-        project.project_bootstrap_criteria = criteria
-        await self._projects.record_event(
-            project_id=project.id,
-            actor_user_id=user.id,
-            event_type="BOOTSTRAP_UPDATED",
-            payload={"items": len(criteria)},
-        )
         touch_project_updated_at(project)
         await self._session.flush()
         return project

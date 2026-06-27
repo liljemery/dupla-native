@@ -9,7 +9,7 @@ from app.db.session import get_db
 from app.dependencies import get_current_user, get_workspace_context, require_budget_access
 from app.domain.workspace_context import WorkspaceContext
 from app.domain.file_discipline import FileIngestStatus
-from app.domain.workflow_phase import WorkflowPhase
+from app.domain.workflow_phase import WorkflowPhase, normalize_workflow_phase
 from app.models.architecture_revision import ArchitectureRevisionDecision
 from app.models.user import User
 from app.schemas.chat import ChatConversationResponse
@@ -18,7 +18,6 @@ from app.schemas.project import ProjectResponse
 from app.schemas.project_lifecycle import (
     ArchitectureRevisionCreateRequest,
     ArchitectureRevisionResponse,
-    BootstrapCriteriaReplaceRequest,
     ProjectEventResponse,
     ProjectEventsPageResponse,
     ProjectFileFolderCreateRequest,
@@ -53,13 +52,7 @@ router = APIRouter(prefix="/api/projects", tags=["projects"])
 
 
 def _parse_target_phase(raw: str) -> WorkflowPhase:
-    try:
-        return WorkflowPhase(raw.strip().upper())
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Fase de flujo no válida",
-        ) from e
+    return normalize_workflow_phase(raw.strip().upper())
 
 
 def _parse_revision_decision(raw: str) -> ArchitectureRevisionDecision:
@@ -103,20 +96,6 @@ async def post_transition(
         target,
         target_step_uuid=body.target_step_uuid,
     )
-    await session.commit()
-    return ProjectResponse.from_project(p)
-
-
-@router.put("/{project_uuid}/bootstrap", response_model=ProjectResponse, summary="Reemplazar checklist bootstrap")
-async def put_bootstrap(
-    project_uuid: UUID,
-    body: BootstrapCriteriaReplaceRequest,
-    current: Annotated[User, Depends(get_current_user)],
-    session: Annotated[AsyncSession, Depends(get_db)],
-    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
-) -> ProjectResponse:
-    svc = ProjectLifecycleService(session, ws_ctx.workspace_id)
-    p = await svc.put_bootstrap_criteria(current, project_uuid, body.criteria)
     await session.commit()
     return ProjectResponse.from_project(p)
 

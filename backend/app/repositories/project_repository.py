@@ -7,7 +7,6 @@ from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.domain.bootstrap_defaults import default_bootstrap_criteria
 from app.domain.project_default_areas import default_area_names_for_project_kind
 from app.domain.project_updated import touch_project_updated_at
 from app.models.project import Project, ProjectArchitectureData
@@ -188,8 +187,8 @@ class ProjectRepository:
         responsible_external_name: Optional[str] = None,
         responsible_external_email: Optional[str] = None,
     ) -> Project:
-        # Siempre sembramos el checklist por defecto; las transiciones solo lo exigen en fase Arranque.
-        bootstrap = default_bootstrap_criteria()
+        # ponytail: columna legacy; siempre vacía.
+        bootstrap: list = []
         pc = project_code.strip() if project_code else None
         pc = pc or None
         loc = location_text.strip() if location_text else None

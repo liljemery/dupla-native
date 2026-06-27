@@ -77,7 +77,7 @@ async def test_sync_volumetry_from_completed_job_integration(session):
         created_by=master.id,
         workspace_id=DEFAULT_WORKSPACE_UUID,
         project_kind=ProjectKind.CLIENT.value,
-        workflow_phase=WorkflowPhase.BOOTSTRAPPING.value,
+        workflow_phase=WorkflowPhase.AWAITING_FILES.value,
         workflow_template_id=tpl.id,
         current_workflow_step_id=step.id,
     )

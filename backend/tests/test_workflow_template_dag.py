@@ -12,13 +12,13 @@ def test_cycle_detected() -> None:
                 WorkflowTemplateStepInput(
                     stable_key="a",
                     title="A",
-                    behavior_kind="BOOTSTRAPPING",
+                    behavior_kind="AWAITING_FILES",
                     blocked_by_stable_key="b",
                 ),
                 WorkflowTemplateStepInput(
                     stable_key="b",
                     title="B",
-                    behavior_kind="BOOTSTRAPPING",
+                    behavior_kind="AWAITING_FILES",
                     blocked_by_stable_key="a",
                 ),
             ]
@@ -32,7 +32,7 @@ def test_linear_ok() -> None:
             WorkflowTemplateStepInput(
                 stable_key="a",
                 title="A",
-                behavior_kind="BOOTSTRAPPING",
+                behavior_kind="AWAITING_FILES",
                 blocked_by_stable_key=None,
             ),
             WorkflowTemplateStepInput(

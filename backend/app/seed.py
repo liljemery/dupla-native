@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import ProgrammingError
 
 from app.db.session import AsyncSessionLocal
-from app.domain.bootstrap_defaults import default_bootstrap_criteria
 from app.domain.project_kind import ProjectKind
 from app.domain.tutorial_project import (
     TUTORIAL_PROJECT_NAME,
@@ -186,7 +185,7 @@ async def _ensure_tutorial_project_and_task(session) -> None:
             workspace_id=DEFAULT_WORKSPACE_UUID,
             workflow_phase=initial_phase,
             workflow_meta=_seed_workflow_meta(),
-            project_bootstrap_criteria=default_bootstrap_criteria(),
+            project_bootstrap_criteria=[],
             specifications_document={},
             workflow_template_id=tpl.id,
             current_workflow_step_id=initial_step.id,
@@ -248,7 +247,7 @@ async def _ensure_tutorial_project_and_task(session) -> None:
         archived_at=None,
         created_at=now,
         project_id=TUTORIAL_PROJECT_UUID,
-        created_in_phase=WorkflowPhase.BOOTSTRAPPING.value,
+        created_in_phase=WorkflowPhase.AWAITING_FILES.value,
     )
     session.add(card)
     await session.flush()
@@ -262,7 +261,7 @@ async def _ensure_tutorial_project_and_task(session) -> None:
             "list_uuid": str(todo_list_uuid),
             "list_title": list_title,
             "assignee_uuid": None,
-            "created_in_phase": WorkflowPhase.BOOTSTRAPPING.value,
+            "created_in_phase": WorkflowPhase.AWAITING_FILES.value,
         },
     )
 

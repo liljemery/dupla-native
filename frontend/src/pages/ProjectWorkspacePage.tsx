@@ -22,7 +22,6 @@ import {
   isBusinessPliegoReady,
   parseBusinessPliegoFromSpec,
 } from '../constants/businessPliego'
-import { defaultBootstrapCriteria } from '../constants/defaultBootstrapCriteria'
 import { TUTORIAL_PROJECT_UUID } from '../constants/tutorialProject'
 import { loadAdminDirectoryUsers } from '../lib/adminUsersDirectoryCache'
 import { isValidUuidString, normalizeDirectoryUsers, type DirectoryUserRow } from '../lib/directoryUsers'
@@ -59,7 +58,7 @@ import type { ConstructionLineValue } from '../types/constructionPliego'
 import type { PlanDeliveryRow } from '../types/planDelivery'
 import type { PliegoItemState } from '../types/pliegoForm'
 import type { RevisionRow, SubcontractQuoteRow, TechnicalFindingRow } from '../types/projectWorkspace'
-import type { BootstrapCriterion, Project } from '../types/project'
+import type { Project } from '../types/project'
 import type { WorkflowTemplateDetail } from '../types/workflowTemplate'
 
 export function ProjectWorkspacePage() {
@@ -76,7 +75,6 @@ export function ProjectWorkspacePage() {
   const [flowTemplateDetail, setFlowTemplateDetail] = useState<WorkflowTemplateDetail | null>(null)
   const [projectError, setProjectError] = useState<string | null>(null)
   const [flowMsg, setFlowMsg] = useState<string | null>(null)
-  const [bootstrapDraft, setBootstrapDraft] = useState<BootstrapCriterion[]>([])
   const [specSummary, setSpecSummary] = useState('')
   const [pliegoItemStates, setPliegoItemStates] = useState<Record<string, PliegoItemState>>(() =>
     mergePliegoItemStates(undefined),
@@ -155,18 +153,9 @@ export function ProjectWorkspacePage() {
     [setSearchParams],
   )
 
-  const openBootstrapChecklist = useCallback(() => {
-    setTab('flujo')
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev)
-        next.set('tab', 'flujo')
-        next.set('focus', 'bootstrap')
-        return next
-      },
-      { replace: true },
-    )
-  }, [setSearchParams])
+  const openFlujo = useCallback(() => {
+    selectTab('flujo')
+  }, [selectTab])
 
   useEffect(() => {
     if (!canViewBudget(permissions) && isBudgetWorkspaceTab(tab)) {
@@ -215,11 +204,6 @@ export function ProjectWorkspacePage() {
     }
     const body = (await res.json()) as Project
     setProject(body)
-    const rawCrit = body.project_bootstrap_criteria ?? []
-    const needsBootstrapFallback =
-      body.workflow_phase === 'BOOTSTRAPPING' &&
-      (!Array.isArray(rawCrit) || rawCrit.length === 0)
-    setBootstrapDraft(needsBootstrapFallback ? defaultBootstrapCriteria() : rawCrit)
     const spec = body.specifications_document ?? {}
     setSpecSummary(typeof spec.summary === 'string' ? spec.summary : '')
     const ga = spec.ga_fo_01_arquitectura
@@ -555,27 +539,6 @@ export function ProjectWorkspacePage() {
     }
     setProject(j as Project)
     await loadAuxLists()
-    return true
-  }
-
-  async function saveBootstrap(): Promise<boolean> {
-    if (!token || !project) return false
-    if (project.workflow_phase !== 'BOOTSTRAPPING') {
-      setFlowMsg('El checklist de arranque solo se puede editar en la fase «Criterios de arranque».')
-      return false
-    }
-    setFlowMsg(null)
-    const res = await apiFetch(`/api/projects/${projectUuid}/bootstrap`, {
-      method: 'PUT',
-      token,
-      body: JSON.stringify({ criteria: bootstrapDraft }),
-    })
-    const j = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      setFlowMsg((j as { detail?: string }).detail ?? 'Error al guardar checklist')
-      return false
-    }
-    setProject(j as Project)
     return true
   }
 
@@ -950,8 +913,7 @@ export function ProjectWorkspacePage() {
           onAdvancePhase={advancePhase}
           onOpenChat={() => void openProjectChat()}
           onOpenTab={(id, section) => selectTab(id, section)}
-          onOpenBootstrapChecklist={openBootstrapChecklist}
-          bootstrapCriteria={bootstrapDraft}
+          onOpenFlujo={openFlujo}
           pliegoApproved={pliegoMeta.approved}
           pliegoReadyForApproval={pliegoReadyForApproval}
           canApprovePliego={canApprovePliego}
@@ -979,10 +941,7 @@ export function ProjectWorkspacePage() {
               templateStepProgress={templateStepProgress}
               orderedTemplateSteps={orderedTemplateSteps}
               flowMsg={flowMsg}
-              bootstrapDraft={bootstrapDraft}
-              setBootstrapDraft={setBootstrapDraft}
               nextPhase={nextPhase}
-              onSaveBootstrap={saveBootstrap}
               onAdvancePhase={advancePhase}
               pliegoApproved={pliegoMeta.approved}
               pliegoReadyForApproval={pliegoReadyForApproval}
@@ -1001,7 +960,7 @@ export function ProjectWorkspacePage() {
               project={project}
               projectUuid={projectUuid}
               token={token}
-              workflowPhase={project?.workflow_phase ?? 'BOOTSTRAPPING'}
+              workflowPhase={project?.workflow_phase ?? 'AWAITING_FILES'}
               flowMsg={flowMsg}
               findings={findings}
               onRefreshFindings={loadFindings}

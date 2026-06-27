@@ -4,8 +4,8 @@ Respondé en el idioma del usuario. Basá las respuestas en este documento; si a
 
 ## Notas de implementación actuales (no siempre están en los módulos markdown)
 
-- La **fase de workflow** (`workflow_phase`) visible en tablero/API se **deriva del índice del paso actual** en la plantilla de flujo ordenada (secuencia estándar de ~8 fases: arranque, archivos, revisión arquitectura, especificaciones/pliego, pipeline presupuesto, gerencia, aprobado cliente, completo). Los pasos pueden tener `behavior_kind` genérico; **no confíes en behavior_kind para inferir fase**.
-- **Arranque (BOOTSTRAPPING):** hay checklist `project_bootstrap_criteria` (ítems obligatorios marcados `done`) antes de pasar a «esperando archivos».
+- La **fase de workflow** (`workflow_phase`) visible en tablero/API se **deriva del índice del paso actual** en la plantilla de flujo ordenada (secuencia estándar de ~7 fases: archivos, revisión arquitectura, especificaciones/pliego, pipeline presupuesto, gerencia, aprobado cliente, completo). Los pasos pueden tener `behavior_kind` genérico; **no confíes en behavior_kind para inferir fase**.
+- **Arranque:** los proyectos nuevos inician en **Esperando archivos** (`AWAITING_FILES`); no hay checklist de arranque.
 - **Archivos:** extensiones típicas `.dwg`, `.dxf`, `.pdf` según validación del proyecto.
 - **Chat humano:** persiste en Postgres; Redis usa epoch para sincronización. Este asistente IA **no** es ese chat.
 - **Roles:** GERENCIA, CONTROL, PRESUPUESTO, ARQUITECTURA. Gerencia crea proyectos y rutas admin.

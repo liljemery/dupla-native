@@ -127,7 +127,7 @@ export function TutorialesReference({ activeFilter }: TutorialesReferenceProps) 
         <h3 className={h3Class}>Tablero de proyectos y fases</h3>
         <p className={pClass}>
           En vista tablero, las columnas siguen el orden del flujo (por ejemplo:{' '}
-          {WORKFLOW_PHASE_LABELS.BOOTSTRAPPING}, {WORKFLOW_PHASE_LABELS.AWAITING_FILES}, …). Solo se
+          {WORKFLOW_PHASE_LABELS.AWAITING_FILES}, {WORKFLOW_PHASE_LABELS.ARCHITECTURE_REVIEW}, …). Solo se
           permiten saltos a fases <strong>adyacentes</strong> cuando la regla del producto lo permite:
           arrastra una tarjeta de proyecto hacia la columna destino o usa los controles que muestre la
           interfaz.

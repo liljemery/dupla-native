@@ -49,7 +49,7 @@ def _empty_data(**overrides) -> ProjectSnapshotData:
     return base
 
 
-def _project(phase: str = "BOOTSTRAPPING", **kwargs) -> MagicMock:
+def _project(phase: str = "AWAITING_FILES", **kwargs) -> MagicMock:
     p = MagicMock()
     p.name = kwargs.get("name", "Obra test")
     p.client_name = kwargs.get("client_name", "Cliente")
@@ -70,26 +70,17 @@ def _project(phase: str = "BOOTSTRAPPING", **kwargs) -> MagicMock:
 
 
 def test_phase_status_current_vs_past():
-    assert phase_status(WorkflowPhase.BOOTSTRAPPING, WorkflowPhase.SPECIFICATIONS) == "completo"
+    assert phase_status(WorkflowPhase.AWAITING_FILES, WorkflowPhase.SPECIFICATIONS) == "completo"
     assert phase_status(WorkflowPhase.SPECIFICATIONS, WorkflowPhase.SPECIFICATIONS) == "en_curso"
     assert phase_status(WorkflowPhase.BUDGETING_PIPELINE, WorkflowPhase.SPECIFICATIONS) == "pendiente"
 
 
 def test_phase_status_custom_automation():
-    assert phase_status(WorkflowPhase.BOOTSTRAPPING, WorkflowPhase.CUSTOM_AUTOMATION) == "completo"
+    assert phase_status(WorkflowPhase.AWAITING_FILES, WorkflowPhase.CUSTOM_AUTOMATION) == "completo"
 
 
-def test_workflow_phase_order_has_eight_linear_phases():
-    assert len(WORKFLOW_PHASE_ORDER) == 8
-
-
-def test_bootstrap_incomplete_blocker():
-    project = _project("BOOTSTRAPPING")
-    data = _empty_data(
-        bootstrap=BootstrapSummary(required_done=1, required_total=3, all_required_ok=False, has_criteria=True),
-    )
-    hints = compute_phase_transition_hints(project, data)
-    assert any("obligatorio" in h.lower() for h in hints)
+def test_workflow_phase_order_has_seven_linear_phases():
+    assert len(WORKFLOW_PHASE_ORDER) == 7
 
 
 def test_awaiting_files_no_files_blocker():
@@ -162,18 +153,14 @@ def test_snapshot_includes_revision_and_budget_job():
 
 
 def test_snapshot_respects_max_chars():
-    project = _project("BOOTSTRAPPING")
-    long_lines = [f"- Ítem {i}, obligatorio: pendiente" for i in range(200)]
-    data = _empty_data(
-        bootstrap=BootstrapSummary(
-            required_done=0,
-            required_total=200,
-            all_required_ok=False,
-            has_criteria=True,
-            item_lines=long_lines,
-        ),
+    project = _project("AWAITING_FILES")
+    data = _empty_data(files=FilesSummary(0, 0))
+    hints = compute_phase_transition_hints(project, data)
+    md = build_project_snapshot_markdown(
+        project,
+        _empty_data(files=FilesSummary(0, 0), transition_hints=hints),
+        max_chars=1500,
     )
-    md = build_project_snapshot_markdown(project, data, max_chars=1500)
     assert len(md) <= 1500
     assert "Qué falta para avanzar" in md
 

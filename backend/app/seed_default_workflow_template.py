@@ -13,7 +13,6 @@ from app.models.workflow_template import WorkflowTemplate, WorkflowTemplateStep
 from app.models.workspace import DEFAULT_WORKSPACE_UUID
 
 _LEGACY_PHASE_TITLE: list[tuple[str, str]] = [
-    ("BOOTSTRAPPING", "Criterios de arranque"),
     ("AWAITING_FILES", "Esperando archivos CAD"),
     ("ARCHITECTURE_REVIEW", "Revisión de arquitectura"),
     ("SPECIFICATIONS", "Pliego de condiciones"),

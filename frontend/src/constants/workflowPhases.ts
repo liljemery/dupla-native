@@ -1,6 +1,5 @@
 /** Orden lineal del flujo (para indicadores visuales). */
 export const WORKFLOW_PHASE_ORDER = [
-  'BOOTSTRAPPING',
   'AWAITING_FILES',
   'ARCHITECTURE_REVIEW',
   'SPECIFICATIONS',
@@ -11,10 +10,10 @@ export const WORKFLOW_PHASE_ORDER = [
 ] as const
 
 export const WORKFLOW_PHASE_LABELS: Record<string, string> = {
-  BOOTSTRAPPING: 'Criterios de arranque',
   AWAITING_FILES: 'Esperando archivos CAD',
-  /** Legado / tareas creadas antes del cambio de flujo */
-  FILES_INGESTED: 'Archivos ingresados',
+  /** Legado */
+  BOOTSTRAPPING: 'Esperando archivos CAD',
+  FILES_INGESTED: 'Archivos ingestados',
   ARCHITECTURE_REVIEW: 'Revisión de arquitectura',
   SPECIFICATIONS: 'Pliego de condiciones',
   BUDGETING_PIPELINE: 'Presupuesto (cotización / volumetría / costo)',
@@ -26,7 +25,6 @@ export const WORKFLOW_PHASE_LABELS: Record<string, string> = {
 
 /** Siguiente fase en el flujo lineal (ISO). */
 export const NEXT_WORKFLOW_PHASE: Record<string, string | undefined> = {
-  BOOTSTRAPPING: 'AWAITING_FILES',
   AWAITING_FILES: 'ARCHITECTURE_REVIEW',
   ARCHITECTURE_REVIEW: 'SPECIFICATIONS',
   SPECIFICATIONS: 'BUDGETING_PIPELINE',
@@ -38,7 +36,6 @@ export const NEXT_WORKFLOW_PHASE: Record<string, string | undefined> = {
 
 /** Fase anterior inmediata (retroceso de un paso). */
 export const PREV_WORKFLOW_PHASE: Record<string, string | undefined> = {
-  AWAITING_FILES: 'BOOTSTRAPPING',
   ARCHITECTURE_REVIEW: 'AWAITING_FILES',
   SPECIFICATIONS: 'ARCHITECTURE_REVIEW',
   BUDGETING_PIPELINE: 'SPECIFICATIONS',
@@ -55,7 +52,8 @@ export function effectivePrevWorkflowPhase(
   projectKind: string | undefined | null,
   currentPhase: string,
 ): string | undefined {
-  const prev = PREV_WORKFLOW_PHASE[currentPhase]
+  const normalized = currentPhase === 'BOOTSTRAPPING' ? 'AWAITING_FILES' : currentPhase
+  const prev = PREV_WORKFLOW_PHASE[normalized]
   if (!prev) return undefined
   if (projectKind === 'TENDER') {
     const order = WORKFLOW_PHASE_ORDER as readonly string[]
@@ -72,7 +70,9 @@ export function isAdjacentWorkflowTransitionAllowed(
   currentPhase: string,
   targetPhase: string,
 ): boolean {
-  const next = NEXT_WORKFLOW_PHASE[currentPhase]
-  const prev = effectivePrevWorkflowPhase(projectKind, currentPhase)
-  return next === targetPhase || prev === targetPhase
+  const current = currentPhase === 'BOOTSTRAPPING' ? 'AWAITING_FILES' : currentPhase
+  const target = targetPhase === 'BOOTSTRAPPING' ? 'AWAITING_FILES' : targetPhase
+  const next = NEXT_WORKFLOW_PHASE[current]
+  const prev = effectivePrevWorkflowPhase(projectKind, current)
+  return next === target || prev === target
 }
