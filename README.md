@@ -30,6 +30,27 @@ createdb -O dupla dupla 2>/dev/null || true
 
 ## Arranque rápido
 
+### Un solo script (desde cero, sin Docker)
+
+**Linux / macOS:**
+
+```bash
+chmod +x scripts/setup-from-scratch.sh
+./scripts/setup-from-scratch.sh
+# macOS sin Postgres/Redis instalados:
+./scripts/setup-from-scratch.sh init --install-brew-deps
+```
+
+**Windows (PowerShell):**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-from-scratch.ps1
+```
+
+Detener / estado: `./scripts/setup-from-scratch.sh stop|status` o `-Action Stop|Status` en Windows.
+
+### Paso a paso (alternativa)
+
 ```bash
 ./scripts/dev.sh setup      # venvs, var/, backend/.env
 ./scripts/dev.sh bootstrap  # migraciones + seed (primera vez)

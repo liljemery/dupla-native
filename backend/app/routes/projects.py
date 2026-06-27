@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -77,10 +77,29 @@ async def list_projects(
     current: Annotated[User, Depends(get_current_user)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+    include_archived: bool = Query(False, description="Incluir proyectos archivados (solo Gerencia)"),
 ) -> list[ProjectResponse]:
     svc = ProjectService(session, ws_ctx.workspace_id)
-    rows = await svc.list_projects(current)
+    rows = await svc.list_projects(current, include_archived=include_archived)
     return [ProjectResponse.from_project(p) for p in rows]
+
+
+@router.delete(
+    "/{project_uuid}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Eliminar proyecto archivado",
+    description="Solo Gerencia. El proyecto debe estar archivado.",
+)
+async def delete_project(
+    project_uuid: UUID,
+    current: Annotated[User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_db)],
+    ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
+) -> Response:
+    svc = ProjectService(session, ws_ctx.workspace_id)
+    await svc.delete_project(current, project_uuid)
+    await session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

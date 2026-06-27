@@ -25,6 +25,7 @@ def _default_workflow_meta() -> dict[str, Any]:
             "cost_analysis_done": False,
             "budget_marked_complete": False,
             "control_review_done": False,
+            "management_review_done": False,
             "client_approved_version_label": None,
             "volumetry": {},
             "cost_analysis": {},
@@ -44,6 +45,7 @@ class ProjectRepository:
         *,
         is_master: bool,
         workspace_id: UUID,
+        include_archived: bool = False,
     ) -> list[Project]:
         stmt = (
             select(Project)
@@ -51,6 +53,10 @@ class ProjectRepository:
             .where(Project.workspace_id == workspace_id)
             .order_by(Project.updated_at.desc())
         )
+        if not include_archived:
+            stmt = stmt.where(Project.archived_at.is_(None))
+        else:
+            stmt = stmt.where(Project.archived_at.is_not(None))
         if not is_master:
             member_projects = select(ProjectMember.project_id).where(ProjectMember.user_id == user_uuid)
             stmt = stmt.where(or_(Project.created_by == user_uuid, Project.id.in_(member_projects)))
@@ -146,6 +152,7 @@ class ProjectRepository:
         is_master: bool,
         user_uuid: UUID,
         workspace_id: UUID,
+        include_archived: bool = False,
     ) -> list[Project]:
         stmt = (
             select(Project)
@@ -154,11 +161,22 @@ class ProjectRepository:
             .where(Project.workspace_id == workspace_id)
             .order_by(Project.updated_at.desc())
         )
+        if not include_archived:
+            stmt = stmt.where(Project.archived_at.is_(None))
+        else:
+            stmt = stmt.where(Project.archived_at.is_not(None))
         if not is_master:
             member_projects = select(ProjectMember.project_id).where(ProjectMember.user_id == user_uuid)
             stmt = stmt.where(or_(Project.created_by == user_uuid, Project.id.in_(member_projects)))
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def delete_project(self, project_id: UUID) -> None:
+        project = await self._session.get(Project, project_id)
+        if project is None:
+            return
+        await self._session.delete(project)
+        await self._session.flush()
 
     async def get_by_project_code(self, code: str, workspace_id: UUID) -> Optional[Project]:
         c = code.strip()

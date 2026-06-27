@@ -34,4 +34,6 @@ export type Project = {
   current_step_title?: string | null
   current_step_behavior_kind?: string | null
   current_step_icon_key?: string | null
+  /** ISO 8601 — presente si el proyecto está archivado */
+  archived_at?: string | null
 }

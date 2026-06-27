@@ -128,6 +128,7 @@ def _seed_workflow_meta() -> dict[str, Any]:
             "cost_analysis_done": False,
             "budget_marked_complete": False,
             "control_review_done": False,
+            "management_review_done": False,
             "client_approved_version_label": None,
             "volumetry": {},
             "cost_analysis": {},

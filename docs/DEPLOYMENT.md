@@ -54,8 +54,8 @@ El nginx **del host** es necesario en prod Windows para límites de subida grand
 
 | Modo | Cuándo usarlo | Orquestación |
 |------|---------------|--------------|
-| **Nativo** | Desarrollo diario en macOS/Linux | [`scripts/dev.sh`](../scripts/dev.sh) |
-| **Nativo Windows** | Dev en Windows sin Docker | [`scripts/dev_start.ps1`](../scripts/dev_start.ps1) |
+| **Nativo** | Desarrollo diario en macOS/Linux | [`scripts/setup-from-scratch.sh`](../scripts/setup-from-scratch.sh) o [`scripts/dev.sh`](../scripts/dev.sh) |
+| **Nativo Windows** | Dev en Windows sin Docker | [`scripts/setup-from-scratch.ps1`](../scripts/setup-from-scratch.ps1) |
 | **Docker Compose** | Staging, prod on-prem, entornos reproducibles | [`docker-compose.yml`](../docker-compose.yml) |
 | **Compose + Postgres externo** | Postgres ya corre fuera del stack | `docker-compose.external-db.yml` |
 | **Prod Windows** | Servidor on-prem actual (Grupo Dupla) | nginx host + Compose + tarea programada |
@@ -73,6 +73,21 @@ El nginx **del host** es necesario en prod Windows para límites de subida grand
 - Opcional: `dwg2dxf` (LibreDWG) para DWG binarios — ver [`docker/install-libredwg.sh`](../docker/install-libredwg.sh) o `brew install libredwg`
 
 ### Primera vez
+
+**Un comando (recomendado):**
+
+```bash
+./scripts/setup-from-scratch.sh
+# macOS sin infra: ./scripts/setup-from-scratch.sh init --install-brew-deps
+```
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-from-scratch.ps1
+```
+
+**Paso a paso:**
 
 ```bash
 ./scripts/dev.sh setup      # venvs, var/, backend/.env desde .env.example

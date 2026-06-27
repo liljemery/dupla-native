@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 
-import { hasElevatedAccess } from '../lib/accessPermissions'
+import { hasElevatedAccess, canArchiveProjects, canDeleteProjects } from '../lib/accessPermissions'
 import { useAuthStore } from '../store/authStore'
 import { apiFetch } from '../api/client'
 import { Card } from './Card'
@@ -30,6 +30,7 @@ type ProjectConfigModalProps = {
   membersMsg: string | null
   setMembersMsg: (v: string | null) => void
   setMemberRows: (rows: MemberRow[]) => void
+  onProjectRemoved?: () => void
 }
 
 export function ProjectConfigModal({
@@ -49,9 +50,12 @@ export function ProjectConfigModal({
   membersMsg,
   setMembersMsg,
   setMemberRows,
+  onProjectRemoved,
 }: ProjectConfigModalProps) {
   const permissions = useAuthStore((s) => s.permissions)
   const elevated = hasElevatedAccess(permissions)
+  const canArchive = canArchiveProjects(permissions)
+  const canDelete = canDeleteProjects(permissions)
   const [name, setName] = useState('')
   const [clientName, setClientName] = useState('')
   const [projectCode, setProjectCode] = useState('')
@@ -64,6 +68,11 @@ export function ProjectConfigModal({
   const [responsibleExternalEmail, setResponsibleExternalEmail] = useState('')
   const [saveBusy, setSaveBusy] = useState(false)
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
+  const [lifecycleBusy, setLifecycleBusy] = useState(false)
+  const [lifecycleMsg, setLifecycleMsg] = useState<string | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  const isArchived = Boolean(project?.archived_at)
 
   useEffect(() => {
     if (!open || !project) return
@@ -134,6 +143,43 @@ export function ProjectConfigModal({
     responsibleExternalEmail,
     onProjectSaved,
   ])
+
+  const patchArchived = useCallback(
+    async (archived: boolean) => {
+      if (!token || !projectUuid) return
+      setLifecycleBusy(true)
+      setLifecycleMsg(null)
+      const res = await apiFetch(`/api/projects/${projectUuid}`, {
+        method: 'PATCH',
+        token,
+        body: JSON.stringify({ archived }),
+      })
+      setLifecycleBusy(false)
+      if (!res.ok) {
+        setLifecycleMsg(archived ? 'No se pudo archivar' : 'No se pudo restaurar')
+        return
+      }
+      const body = (await res.json()) as Project
+      onProjectSaved(body)
+      setLifecycleMsg(archived ? 'Proyecto archivado' : 'Proyecto restaurado')
+      if (archived) onClose()
+    },
+    [token, projectUuid, onProjectSaved, onClose],
+  )
+
+  const deleteProject = useCallback(async () => {
+    if (!token || !projectUuid || !isArchived) return
+    setLifecycleBusy(true)
+    setLifecycleMsg(null)
+    const res = await apiFetch(`/api/projects/${projectUuid}`, { method: 'DELETE', token })
+    setLifecycleBusy(false)
+    if (!res.ok) {
+      setLifecycleMsg('No se pudo eliminar')
+      return
+    }
+    onProjectRemoved?.()
+    onClose()
+  }, [token, projectUuid, isArchived, onProjectRemoved, onClose])
 
   if (!open) return null
 
@@ -389,6 +435,73 @@ export function ProjectConfigModal({
                   </ul>
                 </Card>
               )}
+
+              {canArchive ? (
+                <Card className="p-4">
+                  <h3 className="text-sm font-semibold text-ink">Archivo</h3>
+                  <p className="mt-1 text-sm text-muted">
+                    {isArchived
+                      ? 'Este proyecto está archivado y no aparece en el listado principal.'
+                      : 'Archiva el proyecto para ocultarlo del listado activo. Solo Gerencia puede ver archivados.'}
+                  </p>
+                  {lifecycleMsg ? <p className="mt-2 text-sm text-primary">{lifecycleMsg}</p> : null}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {!isArchived ? (
+                      <button
+                        type="button"
+                        className="rounded-lg border border-black/15 px-4 py-2 text-sm font-semibold text-muted hover:bg-black/5"
+                        disabled={lifecycleBusy}
+                        onClick={() => void patchArchived(true)}
+                      >
+                        {lifecycleBusy ? '…' : 'Archivar proyecto'}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-primary/40 bg-primary/8 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/12"
+                          disabled={lifecycleBusy}
+                          onClick={() => void patchArchived(false)}
+                        >
+                          {lifecycleBusy ? '…' : 'Restaurar proyecto'}
+                        </button>
+                        {canDelete ? (
+                          deleteConfirm ? (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm text-red-700">¿Eliminar permanentemente?</span>
+                              <button
+                                type="button"
+                                className="rounded-lg border border-red-200 px-3 py-1.5 text-sm font-semibold text-red-700 hover:bg-red-50"
+                                disabled={lifecycleBusy}
+                                onClick={() => void deleteProject()}
+                              >
+                                Sí, eliminar
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-lg border border-black/15 px-3 py-1.5 text-sm text-muted hover:bg-black/5"
+                                disabled={lifecycleBusy}
+                                onClick={() => setDeleteConfirm(false)}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                              disabled={lifecycleBusy}
+                              onClick={() => setDeleteConfirm(true)}
+                            >
+                              Eliminar permanentemente
+                            </button>
+                          )
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </Card>
+              ) : null}
             </div>
           )}
         </div>

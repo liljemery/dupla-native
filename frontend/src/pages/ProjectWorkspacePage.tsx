@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { apiFetch } from '../api/client'
 import { ProjectConfigModal } from '../components/ProjectConfigModal'
@@ -29,6 +29,7 @@ import { projectWorkspaceTabsForRole } from '../constants/projectWorkspaceTabs'
 import { NEXT_WORKFLOW_PHASE } from '../constants/workflowPhases'
 import { downloadBlob, filenameFromContentDisposition } from '../lib/download'
 import { budgetPipeline } from '../lib/budgetPipeline'
+import { hasGerenciaRevisionSinceManagementPhase } from '../lib/managementApprovalReview'
 import {
   emptyConstructionLineValues,
   isConstructionPliegoFullyComplete,
@@ -62,6 +63,7 @@ import type { Project } from '../types/project'
 import type { WorkflowTemplateDetail } from '../types/workflowTemplate'
 
 export function ProjectWorkspacePage() {
+  const navigate = useNavigate()
   const { projectUuid = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const token = useAuthStore((s) => s.token)
@@ -512,16 +514,22 @@ export function ProjectWorkspacePage() {
         return false
       }
     }
-    if (next === 'BUDGET_APPROVED') {
+    if (next === 'MANAGEMENT_APPROVAL') {
       if (!bpDraft.control_review_done) {
-        setFlowMsg(
-          'Completa la revisión de Control en la pestaña Presupuesto (pipeline) antes de avanzar a presupuesto aprobado.',
-        )
+        setFlowMsg('Completa la revisión de Control en Presupuesto — Checklist antes de enviar a gerencia.')
         return false
       }
-      if (!clientVersion.trim()) {
+    }
+    if (next === 'BUDGET_APPROVED') {
+      if (
+        !hasGerenciaRevisionSinceManagementPhase(
+          revisions,
+          project.workflow_meta ?? {},
+          project.workflow_phase,
+        )
+      ) {
         setFlowMsg(
-          'Indica la etiqueta de versión aprobada por el cliente en Presupuesto — pipeline antes de avanzar.',
+          'Registra una revisión con rol Gerencia en la pestaña Revisiones (después de entrar en aprobación de gerencia).',
         )
         return false
       }
@@ -843,6 +851,17 @@ export function ProjectWorkspacePage() {
       : workflowPhaseLabelForRole(project.workflow_phase, permissions)
     : ''
   const nextPhase = project ? NEXT_WORKFLOW_PHASE[project.workflow_phase] : undefined
+  const gerenciaReviewDone = useMemo(
+    () =>
+      project
+        ? hasGerenciaRevisionSinceManagementPhase(
+            revisions,
+            project.workflow_meta ?? {},
+            project.workflow_phase,
+          )
+        : false,
+    [project, revisions],
+  )
   const pliegoReadyForApproval = useMemo(() => {
     const spec = project?.specifications_document
     const specObj = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : undefined
@@ -1017,6 +1036,7 @@ export function ProjectWorkspacePage() {
               section={(workspaceSection ?? 'presupuesto') as PresupuestoSectionId}
               onSectionChange={(s) => setWorkspaceSection(s)}
               flowMsg={flowMsg}
+              gerenciaReviewDone={gerenciaReviewDone}
             />
           ) : null}
 
@@ -1086,6 +1106,7 @@ export function ProjectWorkspacePage() {
         membersMsg={membersMsg}
         setMembersMsg={setMembersMsg}
         setMemberRows={setMemberRows}
+        onProjectRemoved={() => navigate('/app/projects')}
       />
     </div>
   )
