@@ -36,7 +36,7 @@ function Wait-DockerReady {
         if ($LASTEXITCODE -eq 0) { return }
         Start-Sleep -Seconds 10
     }
-    throw "Docker no respondió en ${MaxSeconds}s"
+    throw "Docker no respondio en ${MaxSeconds}s"
 }
 
 function Sync-HostNginx {
@@ -49,7 +49,7 @@ function Sync-HostNginx {
 
     $nginxExe = Join-Path $NginxDir "nginx.exe"
     & $nginxExe -t -p $NginxDir -c $NginxConfigRel
-    if ($LASTEXITCODE -ne 0) { throw "nginx -t falló" }
+    if ($LASTEXITCODE -ne 0) { throw "nginx -t fallo" }
 }
 
 function Start-OrReloadHostNginx {
@@ -77,7 +77,7 @@ try {
 
     Set-Location $DuplaDir
     docker compose up -d --build
-    if ($LASTEXITCODE -ne 0) { throw "docker compose falló con código $LASTEXITCODE" }
+    if ($LASTEXITCODE -ne 0) { throw "docker compose fallo con codigo $LASTEXITCODE" }
     Write-Log "docker compose up ok"
 }
 catch {
