@@ -16,3 +16,12 @@ def test_sanitario_maps_to_plomeria_bucket() -> None:
 def test_electrico_maps_to_electrica_bucket() -> None:
     assert discipline_bucket("electrico") == "electrica"
     assert parse_discipline("electricidad") == FileDiscipline.ELECTRICA
+
+
+def test_short_codes_map_to_buckets() -> None:
+    assert discipline_bucket("ARQ") == "arquitectura"
+    assert discipline_bucket("est") == "estructura"
+    assert discipline_bucket("ELC") == "electrica"
+    assert discipline_bucket("mec") == "mecanica"
+    assert discipline_bucket("plo") == "plomeria"
+    assert parse_discipline("ARQ") == FileDiscipline.ARQUITECTURA

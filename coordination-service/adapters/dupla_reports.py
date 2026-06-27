@@ -42,6 +42,26 @@ def _cad_entries(file_entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _runner_discipline_from_bucket(bucket: str) -> str:
+    """Motor runner discipline label (matches run_clash_analysis._discipline_from_bucket)."""
+    mapping = {
+        "arquitectura": "ARQUITECTURA",
+        "estructura": "ESTRUCTURA",
+        "electrica": "ELECTRICIDAD",
+        "mecanica": "CLIMATIZACION",
+        "plomeria": "FONTANERIA",
+    }
+    return mapping.get(str(bucket or "").strip().lower(), "ARQUITECTURA")
+
+
+def _bucket_for_filename(file_entries: list[dict[str, Any]], filename: str) -> str:
+    target = str(filename or "").strip().lower()
+    for entry in file_entries:
+        if str(entry.get("original_name") or "").strip().lower() == target:
+            return str(entry.get("discipline_bucket") or "sin_clasificar")
+    return "sin_clasificar"
+
+
 def adapt_smoke_primary(primary: dict[str, Any], file_entries: list[dict[str, Any]]) -> dict[str, Any]:
     """Rewrite smoke fixture file pairs to match the real folder inventory."""
     data = dict(primary)
@@ -55,25 +75,43 @@ def adapt_smoke_primary(primary: dict[str, Any], file_entries: list[dict[str, An
     est = by_bucket.get("estructura", [])
     elc = by_bucket.get("electrica", [])
     mec = by_bucket.get("mecanica", [])
+    plo = by_bucket.get("plomeria", [])
 
-    pair_names: list[tuple[str, str]] = []
+    pair_names: list[tuple[str, str, str, str]] = []
     if arq and est:
-        pair_names.append((arq[0], est[0]))
+        pair_names.append((arq[0], est[0], "arquitectura", "estructura"))
     if len(arq) > 1 and est:
-        pair_names.append((arq[1], est[0]))
+        pair_names.append((arq[1], est[0], "arquitectura", "estructura"))
     if arq and elc:
-        pair_names.append((arq[0], elc[0]))
+        pair_names.append((arq[0], elc[0], "arquitectura", "electrica"))
     if arq and mec:
-        pair_names.append((arq[0], mec[0]))
+        pair_names.append((arq[0], mec[0], "arquitectura", "mecanica"))
+    if arq and plo:
+        pair_names.append((arq[0], plo[0], "arquitectura", "plomeria"))
+    if est and elc:
+        pair_names.append((est[0], elc[0], "estructura", "electrica"))
     if not pair_names and len(cad) >= 2:
-        pair_names.append((str(cad[0].get("original_name")), str(cad[1].get("original_name"))))
+        a = str(cad[0].get("original_name"))
+        b = str(cad[1].get("original_name"))
+        pair_names.append(
+            (
+                a,
+                b,
+                _bucket_for_filename(file_entries, a),
+                _bucket_for_filename(file_entries, b),
+            )
+        )
 
     templates = list(data.get("incidents") or [{}])
     incidents: list[dict[str, Any]] = []
-    for idx, (file_a, file_b) in enumerate(pair_names or [("", "")], start=1):
+    for idx, (file_a, file_b, bucket_a, bucket_b) in enumerate(pair_names or [("", "", "", "")], start=1):
         template = dict(templates[min(idx - 1, len(templates) - 1)] if templates else {})
         template["incident_id"] = template.get("incident_id") or f"incident_smoke_{idx:04d}"
         template["file_pair"] = [file_a, file_b]
+        rep = dict(template.get("representative_conflict") or {})
+        rep["discipline_a"] = _runner_discipline_from_bucket(bucket_a)
+        rep["discipline_b"] = _runner_discipline_from_bucket(bucket_b)
+        template["representative_conflict"] = rep
         incidents.append(template)
 
     data["incidents"] = incidents
