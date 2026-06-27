@@ -309,6 +309,9 @@ def _invoke_runner(
     cache_root = _shared_cache_root()
     cmd.extend(["--cache-root", str(cache_root), "--max-workers", str(_max_workers())])
 
+    max_entities = int(os.getenv("COORDINATION_MAX_DWG_ENTITIES", "800"))
+    cmd.extend(["--max-dwg-entities", str(max_entities)])
+
     # For folder-driven runs, files often have mismatched dates → generate a
     # cohort manifest so the motor treats them as a single comparable set.
     cohort_manifest = _generate_cohort_manifest(inputs_dir, output_dir)

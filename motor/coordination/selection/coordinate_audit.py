@@ -352,6 +352,14 @@ def apply_coordinate_band_gating(
     return gated
 
 
+_FALLBACK_LEVEL_SOURCES = {"default_level", "page_index_fallback"}
+
+
+def _both_are_fallback_levels(left: "SourceAudit", right: "SourceAudit") -> bool:
+    """True when neither file has an explicit level assignment — don't block on mismatch."""
+    return left.level_source in _FALLBACK_LEVEL_SOURCES and right.level_source in _FALLBACK_LEVEL_SOURCES
+
+
 def build_pair_schedule(
     audits: list[SourceAudit],
     *,
@@ -401,7 +409,7 @@ def build_pair_schedule(
             elif right.audit_status in ("bbox_only", "extract_failed", "annotation_noise"):
                 scheduled = False
                 block_reason = PairScheduleStatus.BLOCKED_NO_PRIMARY_GEOMETRY
-            elif left.level_id != right.level_id:
+            elif left.level_id != right.level_id and not _both_are_fallback_levels(left, right):
                 scheduled = False
                 block_reason = PairScheduleStatus.BLOCKED_LEVEL_MISMATCH
             elif left.coordinate_band_key != right.coordinate_band_key:
@@ -475,7 +483,7 @@ def build_pair_schedule(
                 elif left.coordinate_band_key != right.coordinate_band_key:
                     scheduled = False
                     block_reason = PairScheduleStatus.BLOCKED_COORDINATE_MISMATCH
-                elif left.level_id != right.level_id:
+                elif left.level_id != right.level_id and not _both_are_fallback_levels(left, right):
                     scheduled = False
                     block_reason = PairScheduleStatus.BLOCKED_LEVEL_MISMATCH
 

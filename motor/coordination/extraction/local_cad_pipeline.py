@@ -285,8 +285,12 @@ def records_to_elements25d(
         area_mm2 = area_native * mm_factor * mm_factor
         if area_mm2 < min_area_mm2:
             continue
+        if record.polygon_coords and len(record.polygon_coords) >= 3:
+            raw_footprint = [(x * mm_factor, y * mm_factor) for x, y in record.polygon_coords]
+        else:
+            raw_footprint = _footprint_from_bounds(record.model_bounds, mm_factor)
         footprint = translate_footprint(
-            _footprint_from_bounds(record.model_bounds, mm_factor),
+            raw_footprint,
             translation_mm[0],
             translation_mm[1],
         )

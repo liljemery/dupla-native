@@ -131,6 +131,7 @@ class DxfGeometryRecord:
     block_resolution_method: str | None = None
     is_physical: bool = True
     block_name: str | None = None
+    polygon_coords: tuple[tuple[float, float], ...] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -387,6 +388,35 @@ def _cheap_entity_bounds(entity: DXFEntity) -> BoundsXY | None:
             return _valid_bounds((float(center.x) - radius, float(center.y) - radius, float(center.x) + radius, float(center.y) + radius))
     except Exception:
         return None
+    return None
+
+
+def _polygon_coords_from_entity(entity: DXFEntity) -> tuple[tuple[float, float], ...] | None:
+    """Extract actual polygon vertices for LWPOLYLINE and POLYLINE entities.
+
+    Returns None for entity types where a bbox rectangle is the best approximation.
+    """
+    dxftype = entity.dxftype()
+    try:
+        if dxftype == "LWPOLYLINE":
+            points = list(entity.get_points("xy"))
+            if len(points) < 3:
+                return None
+            coords = tuple((float(p[0]), float(p[1])) for p in points)
+            if entity.dxf.flags & 1:  # closed flag
+                return coords
+            return coords
+        if dxftype == "POLYLINE":
+            pts = [vertex.dxf.location for vertex in entity.vertices]
+            if len(pts) < 3:
+                return None
+            return tuple((float(p.x), float(p.y)) for p in pts)
+        if dxftype == "HATCH":
+            for path in entity.paths:
+                if hasattr(path, "vertices") and len(path.vertices) >= 3:
+                    return tuple((float(v[0]), float(v[1])) for v in path.vertices)
+    except Exception:
+        pass
     return None
 
 
@@ -732,6 +762,7 @@ def extract_dxf_geometry(
         layer = str(getattr(entity.dxf, "layer", "") or "")
         dxftype = entity.dxftype()
         block_name = str(entity.dxf.name) if dxftype == "INSERT" else None
+        polygon_coords = _polygon_coords_from_entity(entity) if physical else None
         records.append(
             DxfGeometryRecord(
                 handle=handle,
@@ -745,6 +776,7 @@ def extract_dxf_geometry(
                 block_resolution_method=method,
                 is_physical=physical,
                 block_name=block_name,
+                polygon_coords=polygon_coords,
             )
         )
 

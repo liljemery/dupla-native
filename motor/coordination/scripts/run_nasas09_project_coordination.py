@@ -711,6 +711,43 @@ def main() -> int:
     return 0
 
 
+def _warn_if_centroid_spread_suspicious(
+    audits: list,
+    *,
+    threshold_mm: float = 50_000.0,
+) -> None:
+    """Log a warning when eligible files in the same coordinate band have centroids
+    spread beyond threshold_mm — a signal that files may not share the same origin."""
+    from collections import defaultdict
+
+    eligible = [a for a in audits if a.audit_status == "eligible" and a.centroid_mm is not None]
+    if len(eligible) < 2:
+        return
+    by_band: dict[tuple, list] = defaultdict(list)
+    for audit in eligible:
+        if audit.coordinate_band_key is not None:
+            by_band[audit.coordinate_band_key].append(audit)
+    for band, band_audits in by_band.items():
+        if len(band_audits) < 2:
+            continue
+        xs = [a.centroid_mm[0] for a in band_audits]
+        ys = [a.centroid_mm[1] for a in band_audits]
+        spread_x = max(xs) - min(xs)
+        spread_y = max(ys) - min(ys)
+        if spread_x > threshold_mm or spread_y > threshold_mm:
+            logger.warning(
+                "Posible desajuste de coordenadas en banda %s: dispersión de centroides "
+                "%.0f mm (X) × %.0f mm (Y) — umbral: %.0f mm. "
+                "Verificar que todos los archivos compartan el mismo origen de coordenadas. "
+                "Archivos afectados: %s",
+                band,
+                spread_x,
+                spread_y,
+                threshold_mm,
+                ", ".join(a.file_name for a in band_audits),
+            )
+
+
 def _export_plan_geometry(all_elements: list[Element25D], output_path: Path) -> None:
     """Persist per-file element footprints + extents so downstream consumers can
     render a high-resolution 2D plan with accurate clash overlays.
@@ -1707,6 +1744,7 @@ def _run_fast_compare(
         candidate_audits,
         required_disciplines=include_disciplines,
     )
+    _warn_if_centroid_spread_suspicious(candidate_audits)
     overall_metrics["audit_seconds"] = round(perf_counter() - audit_start, 3)
     logger.info(
         "Fast compare audit: %d archivos auditados (%d perfilados DWG) en %.2fs",
