@@ -67,7 +67,7 @@ function computeLiquidacion(direct: number) {
 
 
 interface EnqueueModalProps {
-  onSubmit: (opts: { discipline?: string }) => void
+  onSubmit: (opts: { discipline?: string }) => Promise<boolean>
   onClose: () => void
 }
 
@@ -118,11 +118,9 @@ function EnqueueModal({ onSubmit, onClose }: EnqueueModalProps) {
           <WorkspaceActionButton
             type="button"
             id="enqueue-modal-submit"
-            onAction={() => {
-              onSubmit({ discipline })
-              return true
-            }}
+            onAction={async () => onSubmit({ discipline })}
             successLabel="Proceso iniciado"
+            errorLabel="No se pudo iniciar"
           >
             Procesar
           </WorkspaceActionButton>
@@ -240,9 +238,10 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
 
   const location = project?.location_text?.trim() || 'República Dominicana'
 
-  function handleEnqueueSubmit(opts: { discipline?: string }) {
-    setModalOpen(false)
-    void enqueue(opts)
+  async function handleEnqueueSubmit(opts: { discipline?: string }) {
+    const ok = await enqueue(opts)
+    if (ok) setModalOpen(false)
+    return ok
   }
 
   // ── No job yet (idle) ──
@@ -425,7 +424,7 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
       )}
 
       {/* Header card */}
-      <div className="rounded-xl border border-black/10 bg-white p-5 shadow-[var(--shadow-card)] sm:p-6">
+      <div className="rounded-xl border border-black/10 bg-white p-5 shadow-(--shadow-card) sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 space-y-1">
             <p className="text-[11px] font-bold uppercase tracking-wide text-primary">Grupo Dupla</p>
@@ -450,7 +449,7 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
             <button
               type="button"
               id="budget-reprocess-btn"
-              className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/[0.08] px-4 py-2 text-xs font-bold text-primary hover:bg-primary/[0.12]"
+              className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/8 px-4 py-2 text-xs font-bold text-primary hover:bg-primary/12"
               onClick={() => setModalOpen(true)}
             >
               <RefreshCw className="size-4" strokeWidth={2} aria-hidden />
@@ -483,7 +482,7 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
                 processedRows.map((r, i) => {
                   const provenanceTip = budgetLineProvenanceTooltip(r)
                   return (
-                  <tr key={`${r.code}-${i}`} className="border-b border-black/[0.06] hover:bg-black/[0.015]">
+                  <tr key={`${r.code}-${i}`} className="border-b border-black/6 hover:bg-black/1.5">
                     <td className="whitespace-nowrap px-3 py-2.5 font-mono text-xs text-muted">{r.code}</td>
                     <td
                       className="px-3 py-2.5 font-medium text-ink"

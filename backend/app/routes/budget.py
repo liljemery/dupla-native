@@ -68,7 +68,7 @@ async def enqueue_budget_job(
 
 @router.get(
     "/{project_uuid}/budget/jobs/latest",
-    response_model=BudgetJobResponse,
+    response_model=Optional[BudgetJobResponse],
     summary="Get latest budget job status (syncs from processor)",
 )
 async def get_latest_budget_job(
@@ -76,11 +76,11 @@ async def get_latest_budget_job(
     current: Annotated[User, Depends(require_budget_access)],
     session: Annotated[AsyncSession, Depends(get_db)],
     ws_ctx: Annotated[WorkspaceContext, Depends(get_workspace_context)],
-) -> BudgetJobResponse:
+) -> Optional[BudgetJobResponse]:
     svc = BudgetService(session, ws_ctx.workspace_id)
     job = await svc.get_latest_job(current, project_uuid)
     if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No budget job found for this project")
+        return None
     job = await svc.sync_job_status(job)
     await session.commit()
     return BudgetJobResponse(

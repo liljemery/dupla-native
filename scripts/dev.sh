@@ -78,19 +78,78 @@ cmd_check() {
   command -v pnpm >/dev/null || { echo "Falta pnpm (npm install -g pnpm)"; exit 1; }
   port_open 127.0.0.1 5432 || { echo "PostgreSQL no responde en 127.0.0.1:5432"; exit 1; }
   port_open 127.0.0.1 6379 || { echo "Redis no responde en 127.0.0.1:6379"; exit 1; }
+  if command -v dwg2dxf >/dev/null; then
+    echo "OK — LibreDWG (dwg2dxf) disponible"
+  else
+    echo "AVISO — dwg2dxf no encontrado (presupuesto/clash con DWG binarios)."
+    echo "        macOS: brew install libredwg   |   Linux: ./docker/install-libredwg.sh"
+    echo "        Alternativa: sube un DXF exportado desde CAD junto a cada DWG."
+  fi
+  if [[ -x "$BACKEND_DIR/.venv/bin/python" ]] \
+    && ! "$BACKEND_DIR/.venv/bin/python" -c "import ezdxf" 2>/dev/null; then
+    echo "AVISO — backend sin ezdxf. Ejecuta: ./scripts/dev.sh setup"
+  fi
   echo "OK — Postgres :5432, Redis :6379, python3, pnpm"
+}
+
+resolve_python() {
+  local profile="${1:-default}"
+  local candidate
+  if [[ "$profile" == "backend" ]]; then
+    for candidate in python3.12 python3.13; do
+      if command -v "$candidate" >/dev/null; then
+        echo "$candidate"
+        return 0
+      fi
+    done
+  else
+    for candidate in python3.12 python3.11 python3.13; do
+      if command -v "$candidate" >/dev/null; then
+        echo "$candidate"
+        return 0
+      fi
+    done
+  fi
+  command -v python3
+}
+
+venv_python_minor() {
+  "$1/.venv/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")'
+}
+
+venv_site_packages_minor() {
+  local dir="$1"
+  local sp
+  sp="$(find "$dir/.venv/lib" -maxdepth 1 -type d -name 'python3.*' 2>/dev/null | head -1)"
+  if [[ -z "$sp" ]]; then
+    echo ""
+    return
+  fi
+  basename "$sp" | sed 's/^python//'
 }
 
 ensure_venv() {
   local dir="$1"
-  if [[ ! -d "$dir/.venv" ]]; then
-    echo "==> Creando venv en $dir"
-    python3 -m venv "$dir/.venv"
-    # shellcheck disable=SC1091
-    source "$dir/.venv/bin/activate"
-    pip install -q -r "$dir/requirements.txt"
-    deactivate
+  local profile="default"
+  [[ "$dir" == *backend* ]] && profile="backend"
+  local py
+  py="$(resolve_python "$profile")"
+
+  if [[ -d "$dir/.venv" ]]; then
+    local py_ver pkg_ver
+    py_ver="$(venv_python_minor "$dir")"
+    pkg_ver="$(venv_site_packages_minor "$dir")"
+    if [[ -n "$pkg_ver" && "$py_ver" != "$pkg_ver" ]]; then
+      echo "==> Recreando venv en $dir (Python $py_ver vs site-packages $pkg_ver)"
+      rm -rf "$dir/.venv"
+    fi
   fi
+  if [[ ! -d "$dir/.venv" ]]; then
+    echo "==> Creando venv en $dir ($("$py" --version))"
+    "$py" -m venv "$dir/.venv"
+  fi
+  echo "==> Sincronizando dependencias en $dir"
+  "$dir/.venv/bin/python" -m pip install -q -r "$dir/requirements.txt"
 }
 
 cmd_setup() {

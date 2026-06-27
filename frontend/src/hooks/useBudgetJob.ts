@@ -10,7 +10,7 @@ interface UseBudgetJobReturn {
   result: BudgetResult | null
   isPolling: boolean
   error: string | null
-  enqueue: (opts?: { discipline?: string }) => Promise<void>
+  enqueue: (opts?: { discipline?: string }) => Promise<boolean>
   refresh: () => void
 }
 
@@ -89,13 +89,15 @@ export function useBudgetJob(projectUuid: string, token: string | null): UseBudg
       setError(null)
       try {
         const newJob = await enqueueBudgetJob(projectUuid, token, opts)
-        if (!mountedRef.current) return
+        if (!mountedRef.current) return false
         setJob(newJob)
         setResult(null)
         startPolling()
+        return true
       } catch (e) {
-        if (!mountedRef.current) return
+        if (!mountedRef.current) return false
         setError(e instanceof Error ? e.message : 'Error al encolar')
+        return false
       }
     },
     [projectUuid, token, startPolling],
