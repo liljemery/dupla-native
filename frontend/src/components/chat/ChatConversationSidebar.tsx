@@ -1,4 +1,5 @@
 import { Search } from 'lucide-react'
+import type { KeyboardEvent } from 'react'
 
 import {
   chatKindLabel,
@@ -22,6 +23,13 @@ function conversationInitial(c: ChatConversationSummary): string {
   const t = c.display_title.trim()
   if (!t) return '?'
   return t.charAt(0).toUpperCase()
+}
+
+function conversationRowKeyDown(e: KeyboardEvent, onSelect: () => void) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    onSelect()
+  }
 }
 
 export function ChatConversationSidebar({
@@ -80,10 +88,12 @@ export function ChatConversationSidebar({
             const when = formatRelativeChatTime(c.last_message_at)
             return (
               <li key={c.uuid}>
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelect(c.uuid)}
-                  className={`flex w-full gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+                  onKeyDown={(e) => conversationRowKeyDown(e, () => onSelect(c.uuid))}
+                  className={`flex w-full cursor-pointer gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
                     active
                       ? 'border-primary/35 bg-white shadow-md ring-1 ring-primary/15'
                       : 'border-transparent bg-transparent hover:bg-white/80'
@@ -122,7 +132,7 @@ export function ChatConversationSidebar({
                       {preview}
                     </span>
                   </span>
-                </button>
+                </div>
               </li>
             )
           })}
