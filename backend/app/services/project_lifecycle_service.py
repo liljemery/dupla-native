@@ -43,6 +43,7 @@ from app.domain.business_pliego import (
     sections_dict,
     transition_blockers_for_business_pliego,
 )
+from app.domain.ga_fo_01_arquitectura import GA_FO_SPEC_KEY, apply_ga_fo_approval, clear_ga_fo_approval
 from app.domain.management_approval_review import (
     clear_management_approval_entered,
     project_has_gerencia_review_for_current_phase,
