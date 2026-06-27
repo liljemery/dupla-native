@@ -1,4 +1,4 @@
-import { AlertCircle, Cpu, Loader2, Play, RefreshCw } from 'lucide-react'
+import { AlertCircle, Cpu, Loader2, Pencil, Play, RefreshCw } from 'lucide-react'
 import { useMemo, useEffect, useState, type ReactNode } from 'react'
 
 import { useBudgetJob } from '../../../hooks/useBudgetJob'
@@ -8,7 +8,12 @@ import type { SubcontractQuoteRow } from '../../../types/projectWorkspace'
 import { processBudgetRows } from '../../../lib/budgetRows'
 import { PrimaryButton } from '../../PrimaryButton'
 import { WorkspaceActionButton } from '../WorkspaceActionButton'
-import { BudgetPipelinePanel, showBudgetPipelinePanel } from '../BudgetPipelinePanel'
+import {
+  BudgetChecklistPanel,
+  BudgetQuotesPanel,
+  showBudgetPipelinePanel,
+} from '../BudgetPipelinePanel'
+import { BudgetSectionSwitch, type BudgetSectionId } from '../BudgetSectionSwitch'
 import { BudgetEditableTable, fmtDop } from '../BudgetEditableTable'
 
 const BUDGET_PHASE_LABELS: Record<string, string> = {
@@ -172,6 +177,8 @@ export function WorkspacePresupuestoMaestroTab({
     token,
   )
   const [modalOpen, setModalOpen] = useState(false)
+  const [section, setSection] = useState<BudgetSectionId>('presupuesto')
+  const [isEditing, setIsEditing] = useState(false)
   const [draftRows, setDraftRows] = useState<BudgetRow[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
   const elapsed = useElapsedSeconds(
@@ -210,43 +217,77 @@ export function WorkspacePresupuestoMaestroTab({
     return ok
   }
 
-  const pipelinePanel =
-    project && showBudgetPipelinePanel(project.workflow_phase) ? (
-      <BudgetPipelinePanel
-        project={project}
-        projectUuid={projectUuid}
-        token={token}
-        role={role}
-        bpDraft={bpDraft}
-        setBpDraft={setBpDraft}
-        clientVersion={clientVersion}
-        setClientVersion={setClientVersion}
-        onSaveBudgetPipeline={onSaveBudgetPipeline}
-        newQuoteTitle={newQuoteTitle}
-        setNewQuoteTitle={setNewQuoteTitle}
-        activeQuote={activeQuote}
-        setActiveQuote={setActiveQuote}
-        lineItem={lineItem}
-        setLineItem={setLineItem}
-        linePrice={linePrice}
-        setLinePrice={setLinePrice}
-        quotes={quotes}
-        onLoadAuxLists={onLoadAuxLists}
-      />
-    ) : null
+  useEffect(() => {
+    if (result?.rows && !isEditing) {
+      setDraftRows(result.rows.map((r) => ({ ...r })))
+      setSaveError(null)
+    }
+  }, [result, isEditing])
 
-  function withPipeline(body: ReactNode) {
+  function exitEditMode() {
+    setIsEditing(false)
+    setSaveError(null)
+    if (result?.rows) {
+      setDraftRows(result.rows.map((r) => ({ ...r })))
+    }
+  }
+
+  const pipelineAvailable = project ? showBudgetPipelinePanel(project.workflow_phase) : false
+
+  const pipelineSharedProps = {
+    project: project!,
+    projectUuid,
+    token,
+    role,
+    bpDraft,
+    setBpDraft,
+    clientVersion,
+    setClientVersion,
+    onSaveBudgetPipeline,
+    newQuoteTitle,
+    setNewQuoteTitle,
+    activeQuote,
+    setActiveQuote,
+    lineItem,
+    setLineItem,
+    linePrice,
+    setLinePrice,
+    quotes,
+    onLoadAuxLists,
+  }
+
+  function renderPipelineSection() {
+    if (!project) {
+      return <p className="py-12 text-center text-sm text-muted">Cargando proyecto…</p>
+    }
+    if (!pipelineAvailable) {
+      return (
+        <div className="rounded-xl border border-black/10 bg-white p-8 text-center shadow-sm">
+          <p className="text-sm text-muted">
+            Disponible cuando el proyecto entra en la fase de presupuesto interno.
+          </p>
+        </div>
+      )
+    }
+    if (section === 'cotizaciones') {
+      return <BudgetQuotesPanel {...pipelineSharedProps} />
+    }
+    return <BudgetChecklistPanel {...pipelineSharedProps} />
+  }
+
+  function withSections(body: ReactNode) {
+    const content = section === 'presupuesto' ? body : renderPipelineSection()
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto">
-        {pipelinePanel}
-        {body}
+        <BudgetSectionSwitch value={section} onChange={setSection} />
+        {content}
       </div>
     )
   }
 
   // ── No job yet (idle) ──
   if (!job && !error) {
-    return withPipeline(
+    return withSections(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -278,7 +319,7 @@ export function WorkspacePresupuestoMaestroTab({
 
   // ── Processing / queued ──
   if (job?.status === 'queued' || job?.status === 'processing') {
-    return withPipeline(
+    return withSections(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         <div className="relative flex size-20 items-center justify-center rounded-full bg-primary/10">
           <Loader2 className="size-10 animate-spin text-primary" strokeWidth={1.5} />
@@ -318,7 +359,7 @@ export function WorkspacePresupuestoMaestroTab({
 
   // ── Partial (base extraction only) ──
   if (job?.status === 'completed_partial' || (job?.status === 'completed' && !result && !isPolling)) {
-    return withPipeline(
+    return withSections(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -353,7 +394,7 @@ export function WorkspacePresupuestoMaestroTab({
 
   // ── Failed ──
   if (job?.status === 'failed' || error) {
-    return withPipeline(
+    return withSections(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -382,7 +423,7 @@ export function WorkspacePresupuestoMaestroTab({
   }
 
   if (isBaseExtractionOnly) {
-    return withPipeline(
+    return withSections(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -414,7 +455,7 @@ export function WorkspacePresupuestoMaestroTab({
   }
 
   // ── Completed — render real budget ──
-  return withPipeline(
+  return withSections(
     <div className="flex min-h-0 flex-1 flex-col gap-6 pb-10">
       {modalOpen && (
         <EnqueueModal
@@ -445,7 +486,28 @@ export function WorkspacePresupuestoMaestroTab({
               {issueDate.toLocaleDateString('es-DO', { day: 'numeric', month: 'long', year: 'numeric' })}
             </p>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {!isEditing ? (
+              <button
+                type="button"
+                id="budget-edit-btn"
+                className="inline-flex items-center justify-center rounded-lg border border-black/15 p-2 text-muted hover:bg-black/5 hover:text-ink"
+                title="Editar partidas, precios y secciones del presupuesto"
+                aria-label="Editar presupuesto"
+                onClick={() => setIsEditing(true)}
+              >
+                <Pencil className="size-4" strokeWidth={2} aria-hidden />
+              </button>
+            ) : (
+              <button
+                type="button"
+                id="budget-cancel-edit-btn"
+                className="inline-flex items-center gap-2 rounded-lg border border-black/15 px-4 py-2 text-xs font-semibold text-muted hover:bg-black/5"
+                onClick={exitEditMode}
+              >
+                Cancelar edición
+              </button>
+            )}
             <button
               type="button"
               id="budget-reprocess-btn"
@@ -464,6 +526,7 @@ export function WorkspacePresupuestoMaestroTab({
             rows={draftRows}
             onRowsChange={setDraftRows}
             saveError={saveError}
+            editing={isEditing}
             onSave={async (rows) => {
               setSaveError(null)
               const ok = await saveRows(rows)
@@ -471,6 +534,7 @@ export function WorkspacePresupuestoMaestroTab({
                 setSaveError('No se pudo guardar el presupuesto')
                 return false
               }
+              setIsEditing(false)
               return true
             }}
           />

@@ -53,9 +53,16 @@ type BudgetEditableTableProps = {
   onRowsChange: (rows: BudgetRow[]) => void
   onSave: (rows: BudgetRow[]) => Promise<boolean>
   saveError: string | null
+  editing?: boolean
 }
 
-export function BudgetEditableTable({ rows, onRowsChange, onSave, saveError }: BudgetEditableTableProps) {
+export function BudgetEditableTable({
+  rows,
+  onRowsChange,
+  onSave,
+  saveError,
+  editing = false,
+}: BudgetEditableTableProps) {
   const processed = processBudgetRows(rows)
 
   function patchRow(index: number, patch: Partial<BudgetRow>) {
@@ -102,40 +109,44 @@ export function BudgetEditableTable({ rows, onRowsChange, onSave, saveError }: B
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">Edita codigo, partida, cantidades y precios. Guarda para persistir.</p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-black/5"
-            onClick={addSection}
-          >
-            + Seccion
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-black/5"
-            onClick={addLine}
-          >
-            + Partida
-          </button>
-          <WorkspaceActionButton
-            type="button"
-            onAction={async () => onSave(rowsForSave(processed))}
-            successLabel="Presupuesto guardado"
-            errorLabel="No se pudo guardar"
-          >
-            Guardar presupuesto
-          </WorkspaceActionButton>
-        </div>
-      </div>
-      {saveError ? <p className="text-sm text-primary">{saveError}</p> : null}
+      {editing ? (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted">Edita codigo, partida, cantidades y precios. Guarda para persistir.</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-black/5"
+                onClick={addSection}
+              >
+                + Seccion
+              </button>
+              <button
+                type="button"
+                className="rounded-lg border border-black/15 px-3 py-1.5 text-xs font-semibold text-ink hover:bg-black/5"
+                onClick={addLine}
+              >
+                + Partida
+              </button>
+              <WorkspaceActionButton
+                type="button"
+                onAction={async () => onSave(rowsForSave(processed))}
+                successLabel="Presupuesto guardado"
+                errorLabel="No se pudo guardar"
+              >
+                Guardar presupuesto
+              </WorkspaceActionButton>
+            </div>
+          </div>
+          {saveError ? <p className="text-sm text-primary">{saveError}</p> : null}
+        </>
+      ) : null}
 
       <div className="overflow-x-auto rounded-lg border border-black/10">
         <table className="w-full min-w-[980px] border-collapse text-left text-sm">
           <thead className="border-b border-black/10 bg-[#f8f9fb] text-[11px] font-bold uppercase tracking-wide text-muted">
             <tr>
-              <th className="w-8 px-2 py-3" />
+              {editing ? <th className="w-8 px-2 py-3" /> : null}
               <th className="px-2 py-3">Codigo</th>
               <th className="min-w-[220px] px-2 py-3">Partida</th>
               <th className="px-2 py-3">Cantidad</th>
@@ -148,8 +159,8 @@ export function BudgetEditableTable({ rows, onRowsChange, onSave, saveError }: B
           <tbody>
             {processed.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-3 py-8 text-center text-sm text-muted">
-                  Sin partidas. Agrega una seccion o partida.
+                <td colSpan={editing ? 8 : 7} className="px-3 py-8 text-center text-sm text-muted">
+                  {editing ? 'Sin partidas. Agrega una seccion o partida.' : 'Sin partidas en el presupuesto.'}
                 </td>
               </tr>
             ) : (
@@ -161,78 +172,101 @@ export function BudgetEditableTable({ rows, onRowsChange, onSave, saveError }: B
                 const total = r.computed_amount ?? 0
                 return (
                   <tr key={`${i}-${r.code}`} className={`border-b border-black/6 ${rowClass}`}>
-                    <td className="px-1 py-1">
-                      <button
-                        type="button"
-                        className="rounded p-1 text-muted hover:bg-red-50 hover:text-red-600"
-                        title="Eliminar fila"
-                        onClick={() => removeRow(i)}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        className="du-input w-full min-w-[72px] py-1 text-xs font-mono"
-                        value={r.code}
-                        onChange={(e) => patchRow(i, { code: e.target.value })}
-                      />
-                    </td>
-                    <td className="px-1 py-1" title={provenanceTip}>
-                      <input
-                        className="du-input w-full py-1 text-sm"
-                        value={r.summary}
-                        onChange={(e) => patchRow(i, { summary: e.target.value })}
-                      />
-                    </td>
-                    <td className="px-1 py-1">
-                      {isLine ? (
-                        <input
-                          className="du-input w-24 py-1 text-sm tabular-nums"
-                          type="number"
-                          step="any"
-                          value={r.quantity ?? ''}
-                          onChange={(e) =>
-                            patchRow(i, { quantity: e.target.value === '' ? null : Number(e.target.value) })
-                          }
-                        />
-                      ) : (
-                        <span className="px-2 text-muted">{fmtQty(r.computed_quantity ?? r.quantity)}</span>
-                      )}
-                    </td>
-                    <td className="px-1 py-1">
-                      {isLine ? (
-                        <input
-                          className="du-input w-16 py-1 text-sm uppercase"
-                          value={r.unit}
-                          onChange={(e) => patchRow(i, { unit: e.target.value })}
-                        />
-                      ) : (
-                        <span className="px-2 text-muted">{r.unit || '—'}</span>
-                      )}
-                    </td>
-                    <td className="px-1 py-1">
-                      {isLine ? (
-                        <input
-                          className="du-input w-28 py-1 text-sm tabular-nums"
-                          type="number"
-                          step="any"
-                          value={r.unit_price ?? ''}
-                          onChange={(e) => patchRow(i, { unit_price: Number(e.target.value) || 0 })}
-                        />
-                      ) : (
-                        <span className="px-2 tabular-nums text-muted">{fmtDop(r.computed_unit_price)}</span>
-                      )}
-                    </td>
-                    <td className="px-1 py-1">
-                      <input
-                        className="du-input w-32 py-1 text-right text-sm tabular-nums font-semibold"
-                        type="number"
-                        step="any"
-                        value={Math.round(total * 100) / 100}
-                        onChange={(e) => patchAmount(i, e.target.value, r)}
-                      />
-                    </td>
+                    {editing ? (
+                      <td className="px-1 py-1">
+                        <button
+                          type="button"
+                          className="rounded p-1 text-muted hover:bg-red-50 hover:text-red-600"
+                          title="Eliminar fila"
+                          onClick={() => removeRow(i)}
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </td>
+                    ) : null}
+                    {editing ? (
+                      <>
+                        <td className="px-1 py-1">
+                          <input
+                            className="du-input w-full min-w-[72px] py-1 text-xs font-mono"
+                            value={r.code}
+                            onChange={(e) => patchRow(i, { code: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-1 py-1" title={provenanceTip}>
+                          <input
+                            className="du-input w-full py-1 text-sm"
+                            value={r.summary}
+                            onChange={(e) => patchRow(i, { summary: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-1 py-1">
+                          {isLine ? (
+                            <input
+                              className="du-input w-24 py-1 text-sm tabular-nums"
+                              type="number"
+                              step="any"
+                              value={r.quantity ?? ''}
+                              onChange={(e) =>
+                                patchRow(i, { quantity: e.target.value === '' ? null : Number(e.target.value) })
+                              }
+                            />
+                          ) : (
+                            <span className="px-2 text-muted">{fmtQty(r.computed_quantity ?? r.quantity)}</span>
+                          )}
+                        </td>
+                        <td className="px-1 py-1">
+                          {isLine ? (
+                            <input
+                              className="du-input w-16 py-1 text-sm uppercase"
+                              value={r.unit}
+                              onChange={(e) => patchRow(i, { unit: e.target.value })}
+                            />
+                          ) : (
+                            <span className="px-2 text-muted">{r.unit || '—'}</span>
+                          )}
+                        </td>
+                        <td className="px-1 py-1">
+                          {isLine ? (
+                            <input
+                              className="du-input w-28 py-1 text-sm tabular-nums"
+                              type="number"
+                              step="any"
+                              value={r.unit_price ?? ''}
+                              onChange={(e) => patchRow(i, { unit_price: Number(e.target.value) || 0 })}
+                            />
+                          ) : (
+                            <span className="px-2 tabular-nums text-muted">{fmtDop(r.computed_unit_price)}</span>
+                          )}
+                        </td>
+                        <td className="px-1 py-1">
+                          <input
+                            className="du-input w-32 py-1 text-right text-sm tabular-nums font-semibold"
+                            type="number"
+                            step="any"
+                            value={Math.round(total * 100) / 100}
+                            onChange={(e) => patchAmount(i, e.target.value, r)}
+                          />
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="whitespace-nowrap px-2 py-2 font-mono text-xs text-muted">{r.code || '—'}</td>
+                        <td className="px-2 py-2" title={provenanceTip}>
+                          {r.summary}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 tabular-nums text-muted">
+                          {fmtQty(r.computed_quantity ?? r.quantity)}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 uppercase text-muted">{r.unit || '—'}</td>
+                        <td className="whitespace-nowrap px-2 py-2 tabular-nums text-muted">
+                          {isLine ? fmtDop(r.unit_price) : fmtDop(r.computed_unit_price)}
+                        </td>
+                        <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums font-semibold text-ink">
+                          {fmtDop(total)}
+                        </td>
+                      </>
+                    )}
                     <td className="whitespace-nowrap px-2 py-2 text-right tabular-nums text-muted">
                       {fmtUsd(total)}
                     </td>

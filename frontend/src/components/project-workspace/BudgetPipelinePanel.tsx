@@ -8,7 +8,7 @@ import { WorkspaceActionButton } from './WorkspaceActionButton'
 
 const DEFAULT_CURRENCY = 'DOP'
 
-type BudgetPipelinePanelProps = {
+type BudgetPipelineSharedProps = {
   project: Project
   projectUuid: string
   token: string | null
@@ -43,16 +43,112 @@ function fmtLinePrice(price: unknown, currency: string): string {
   return `${num.toLocaleString('es-DO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`
 }
 
-export function BudgetPipelinePanel({
+export function BudgetChecklistPanel({
   project,
-  projectUuid,
-  token,
   role,
   bpDraft,
   setBpDraft,
   clientVersion,
   setClientVersion,
   onSaveBudgetPipeline,
+}: Pick<
+  BudgetPipelineSharedProps,
+  | 'project'
+  | 'role'
+  | 'bpDraft'
+  | 'setBpDraft'
+  | 'clientVersion'
+  | 'setClientVersion'
+  | 'onSaveBudgetPipeline'
+>) {
+  const permissions = useAuthStore((s) => s.permissions)
+  const canMarkControl = canMarkControlReview(permissions)
+  const awaitingBudgetApproval = project.workflow_phase === 'MANAGEMENT_APPROVAL'
+  const missingControlGate = awaitingBudgetApproval && !bpDraft.control_review_done
+  const missingClientVersion = awaitingBudgetApproval && !clientVersion.trim()
+
+  return (
+    <Card className="space-y-4 p-6">
+      <h3 className="text-base font-semibold text-ink">Checklist del presupuesto</h3>
+      <p className="text-sm text-muted">
+        Marca los hitos antes de enviar a gerencia. Control y versión del cliente aplican en aprobación de
+        gerencia.
+      </p>
+      {awaitingBudgetApproval && (missingControlGate || missingClientVersion) ? (
+        <div className="rounded-md border border-primary/25 bg-primary/6 px-3 py-2 text-sm text-ink">
+          Para avanzar en Flujo: marca revisión de Control y la versión aprobada por el cliente (guarda abajo).{' '}
+          {missingControlGate ? <span className="font-medium text-primary">Falta revisión de Control.</span> : null}{' '}
+          {missingClientVersion ? (
+            <span className="font-medium text-primary">Falta versión del cliente.</span>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="space-y-3 border-t border-black/10 pt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Hitos</p>
+        {(
+          [
+            ['subcontracts_done', 'Cotizaciones de subcontratación listas'],
+            ['volumetry_done', 'Volumetría completada'],
+            ['cost_analysis_done', 'Análisis de costo completado'],
+            ['budget_marked_complete', 'Presupuesto interno completado'],
+          ] as const
+        ).map(([key, label]) => {
+          const isVolumetry = key === 'volumetry_done'
+          const volumetryLocked = isVolumetry && role !== 'GERENCIA'
+          return (
+            <label key={key} className={`flex items-center gap-2 text-sm ${volumetryLocked ? 'opacity-80' : ''}`}>
+              <input
+                type="checkbox"
+                checked={!!bpDraft[key]}
+                disabled={volumetryLocked}
+                title={
+                  volumetryLocked
+                    ? 'Se marca automáticamente al completar presupuesto maestro con partidas'
+                    : undefined
+                }
+                onChange={(e) => setBpDraft((d) => ({ ...d, [key]: e.target.checked }))}
+              />
+              {label}
+              {volumetryLocked ? <span className="text-xs text-muted">(automático)</span> : null}
+            </label>
+          )
+        })}
+      </div>
+      <div className="space-y-2 border-l-2 border-primary/35 pl-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Control</p>
+        <label className={`flex items-center gap-2 text-sm ${!canMarkControl ? 'opacity-60' : ''}`}>
+          <input
+            type="checkbox"
+            disabled={!canMarkControl}
+            checked={!!bpDraft.control_review_done}
+            onChange={(e) => setBpDraft((d) => ({ ...d, control_review_done: e.target.checked }))}
+          />
+          Revisión de Control completada
+          {!canMarkControl ? <span className="text-xs text-muted">(solo Control o Gerencia)</span> : null}
+        </label>
+      </div>
+      <div className="space-y-2 border-t border-black/10 pt-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Cliente</p>
+        <label className="block text-sm text-muted">
+          Etiqueta de versión aprobada por el cliente
+          <input
+            className="du-input mt-1"
+            value={clientVersion}
+            onChange={(e) => setClientVersion(e.target.value)}
+            placeholder="ej. v2"
+          />
+        </label>
+      </div>
+      <WorkspaceActionButton type="button" onAction={onSaveBudgetPipeline} successLabel="Checklist guardado">
+        Guardar checklist
+      </WorkspaceActionButton>
+    </Card>
+  )
+}
+
+export function BudgetQuotesPanel({
+  projectUuid,
+  token,
   newQuoteTitle,
   setNewQuoteTitle,
   activeQuote,
@@ -63,170 +159,104 @@ export function BudgetPipelinePanel({
   setLinePrice,
   quotes,
   onLoadAuxLists,
-}: BudgetPipelinePanelProps) {
-  const permissions = useAuthStore((s) => s.permissions)
-  const canMarkControl = canMarkControlReview(permissions)
-  const awaitingBudgetApproval = project.workflow_phase === 'MANAGEMENT_APPROVAL'
-  const missingControlGate = awaitingBudgetApproval && !bpDraft.control_review_done
-  const missingClientVersion = awaitingBudgetApproval && !clientVersion.trim()
-
+}: Pick<
+  BudgetPipelineSharedProps,
+  | 'projectUuid'
+  | 'token'
+  | 'newQuoteTitle'
+  | 'setNewQuoteTitle'
+  | 'activeQuote'
+  | 'setActiveQuote'
+  | 'lineItem'
+  | 'setLineItem'
+  | 'linePrice'
+  | 'setLinePrice'
+  | 'quotes'
+  | 'onLoadAuxLists'
+>) {
   return (
-    <div className="space-y-6">
-      <Card className="space-y-4 p-6">
-        <h3 className="text-base font-semibold text-ink">Pipeline de presupuesto</h3>
-        <p className="text-sm text-muted">
-          Marca los hitos del presupuesto interno antes de enviar a gerencia. Control y versión del cliente aplican en
-          aprobación de gerencia.
-        </p>
-        {awaitingBudgetApproval && (missingControlGate || missingClientVersion) ? (
-          <div className="rounded-md border border-primary/25 bg-primary/6 px-3 py-2 text-sm text-ink">
-            Para avanzar en Flujo: marca revisión de Control y la versión aprobada por el cliente (guarda abajo).{' '}
-            {missingControlGate ? <span className="font-medium text-primary">Falta revisión de Control.</span> : null}{' '}
-            {missingClientVersion ? (
-              <span className="font-medium text-primary">Falta versión del cliente.</span>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="space-y-3 border-t border-black/10 pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Hitos del pipeline</p>
-          {(
-            [
-              ['subcontracts_done', 'Cotizaciones de subcontratación listas'],
-              ['volumetry_done', 'Volumetría completada'],
-              ['cost_analysis_done', 'Análisis de costo completado'],
-              ['budget_marked_complete', 'Presupuesto interno completado'],
-            ] as const
-          ).map(([key, label]) => {
-            const isVolumetry = key === 'volumetry_done'
-            const volumetryLocked = isVolumetry && role !== 'GERENCIA'
-            return (
-              <label key={key} className={`flex items-center gap-2 text-sm ${volumetryLocked ? 'opacity-80' : ''}`}>
-                <input
-                  type="checkbox"
-                  checked={!!bpDraft[key]}
-                  disabled={volumetryLocked}
-                  title={
-                    volumetryLocked
-                      ? 'Se marca automáticamente al completar presupuesto maestro con partidas'
-                      : undefined
-                  }
-                  onChange={(e) => setBpDraft((d) => ({ ...d, [key]: e.target.checked }))}
-                />
-                {label}
-                {volumetryLocked ? <span className="text-xs text-muted">(automático)</span> : null}
-              </label>
-            )
-          })}
-        </div>
-        <div className="space-y-2 border-l-2 border-primary/35 pl-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Control</p>
-          <label className={`flex items-center gap-2 text-sm ${!canMarkControl ? 'opacity-60' : ''}`}>
-            <input
-              type="checkbox"
-              disabled={!canMarkControl}
-              checked={!!bpDraft.control_review_done}
-              onChange={(e) => setBpDraft((d) => ({ ...d, control_review_done: e.target.checked }))}
-            />
-            Revisión de Control completada
-            {!canMarkControl ? <span className="text-xs text-muted">(solo Control o Gerencia)</span> : null}
-          </label>
-        </div>
-        <div className="space-y-2 border-t border-black/10 pt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Cliente</p>
-          <label className="block text-sm text-muted">
-            Etiqueta de versión aprobada por el cliente
-            <input
-              className="du-input mt-1"
-              value={clientVersion}
-              onChange={(e) => setClientVersion(e.target.value)}
-              placeholder="ej. v2"
-            />
-          </label>
-        </div>
-        <WorkspaceActionButton type="button" onAction={onSaveBudgetPipeline} successLabel="Pipeline guardado">
-          Guardar estado del pipeline
+    <Card className="space-y-4 p-6">
+      <h3 className="text-base font-semibold text-ink">Cotizaciones de subcontratación</h3>
+      <div className="flex flex-wrap gap-2">
+        <input
+          className="du-input min-w-[160px] flex-1"
+          placeholder="Título de cotización"
+          value={newQuoteTitle}
+          onChange={(e) => setNewQuoteTitle(e.target.value)}
+        />
+        <WorkspaceActionButton
+          type="button"
+          onAction={async () => {
+            if (!token) return false
+            const res = await apiFetch(`/api/projects/${projectUuid}/subcontracts`, {
+              method: 'POST',
+              token,
+              body: JSON.stringify({ title: newQuoteTitle.trim() || null }),
+            })
+            if (!res.ok) return false
+            setNewQuoteTitle('')
+            await onLoadAuxLists()
+            return true
+          }}
+          successLabel="Cotización creada"
+        >
+          Nueva cotización
         </WorkspaceActionButton>
-      </Card>
-
-      <Card className="space-y-4 p-6">
-        <h3 className="text-base font-semibold text-ink">Cotizaciones de subcontratación</h3>
-        <div className="flex flex-wrap gap-2">
-          <input
-            className="du-input min-w-[160px] flex-1"
-            placeholder="Título de cotización"
-            value={newQuoteTitle}
-            onChange={(e) => setNewQuoteTitle(e.target.value)}
-          />
-          <WorkspaceActionButton
-            type="button"
-            onAction={async () => {
-              if (!token) return false
-              const res = await apiFetch(`/api/projects/${projectUuid}/subcontracts`, {
-                method: 'POST',
-                token,
-                body: JSON.stringify({ title: newQuoteTitle.trim() || null }),
-              })
-              if (!res.ok) return false
-              setNewQuoteTitle('')
-              await onLoadAuxLists()
-              return true
-            }}
-            successLabel="Cotización creada"
-          >
-            Nueva cotización
-          </WorkspaceActionButton>
-        </div>
-        <label className="block text-sm text-muted">
-          Cotización activa para líneas
-          <select className="du-input mt-1" value={activeQuote} onChange={(e) => setActiveQuote(e.target.value)}>
-            <option value="">—</option>
-            {quotes.map((q) => (
-              <option key={q.uuid} value={q.uuid}>
-                {q.title ?? q.uuid.slice(0, 8)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <input
-            className="du-input min-w-[120px] flex-1"
-            placeholder="Ítem"
-            value={lineItem}
-            onChange={(e) => setLineItem(e.target.value)}
-          />
-          <input
-            className="du-input w-28"
-            placeholder="Precio (RD$)"
-            type="number"
-            value={linePrice}
-            onChange={(e) => setLinePrice(e.target.value)}
-          />
-          <WorkspaceActionButton
-            type="button"
-            disabled={!activeQuote}
-            onAction={async () => {
-              if (!token || !activeQuote) return false
-              const res = await apiFetch(`/api/projects/${projectUuid}/subcontracts/${activeQuote}/lines`, {
-                method: 'POST',
-                token,
-                body: JSON.stringify({
-                  item_label: lineItem.trim(),
-                  price: Number(linePrice),
-                  currency: DEFAULT_CURRENCY,
-                }),
-              })
-              if (!res.ok) return false
-              setLineItem('')
-              setLinePrice('')
-              await onLoadAuxLists()
-              return true
-            }}
-            successLabel="Línea agregada"
-          >
-            Agregar línea
-          </WorkspaceActionButton>
-        </div>
-        {quotes.map((q) => (
+      </div>
+      <label className="block text-sm text-muted">
+        Cotización activa para líneas
+        <select className="du-input mt-1" value={activeQuote} onChange={(e) => setActiveQuote(e.target.value)}>
+          <option value="">—</option>
+          {quotes.map((q) => (
+            <option key={q.uuid} value={q.uuid}>
+              {q.title ?? q.uuid.slice(0, 8)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          className="du-input min-w-[120px] flex-1"
+          placeholder="Ítem"
+          value={lineItem}
+          onChange={(e) => setLineItem(e.target.value)}
+        />
+        <input
+          className="du-input w-28"
+          placeholder="Precio (RD$)"
+          type="number"
+          value={linePrice}
+          onChange={(e) => setLinePrice(e.target.value)}
+        />
+        <WorkspaceActionButton
+          type="button"
+          disabled={!activeQuote}
+          onAction={async () => {
+            if (!token || !activeQuote) return false
+            const res = await apiFetch(`/api/projects/${projectUuid}/subcontracts/${activeQuote}/lines`, {
+              method: 'POST',
+              token,
+              body: JSON.stringify({
+                item_label: lineItem.trim(),
+                price: Number(linePrice),
+                currency: DEFAULT_CURRENCY,
+              }),
+            })
+            if (!res.ok) return false
+            setLineItem('')
+            setLinePrice('')
+            await onLoadAuxLists()
+            return true
+          }}
+          successLabel="Línea agregada"
+        >
+          Agregar línea
+        </WorkspaceActionButton>
+      </div>
+      {quotes.length === 0 ? (
+        <p className="text-sm text-muted">Aún no hay cotizaciones en este proyecto.</p>
+      ) : (
+        quotes.map((q) => (
           <div key={q.uuid} className="rounded border border-black/5 p-3 text-sm">
             <div className="font-medium">{q.title ?? 'Sin título'}</div>
             <ul className="mt-2 list-disc pl-5 text-muted">
@@ -237,9 +267,9 @@ export function BudgetPipelinePanel({
               ))}
             </ul>
           </div>
-        ))}
-      </Card>
-    </div>
+        ))
+      )}
+    </Card>
   )
 }
 
