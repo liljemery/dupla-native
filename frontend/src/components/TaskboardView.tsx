@@ -389,7 +389,7 @@ export function TaskboardView({
                 data-tour="taskboard-columns"
                 className={
                   embedded
-                    ? 'flex h-full min-h-[10rem] w-max min-w-full items-stretch gap-1.5 sm:gap-2'
+                    ? 'flex h-full min-h-40 w-max min-w-full items-stretch gap-1.5 sm:gap-2'
                     : 'flex h-full min-h-0 w-max min-w-full items-stretch gap-2 sm:gap-3 md:grid md:w-full md:min-w-0 md:gap-2 lg:gap-3'
                 }
                 style={
@@ -406,7 +406,7 @@ export function TaskboardView({
                     className={
                       embedded
                         ? 'flex h-full min-h-0 w-52 shrink-0 flex-col overflow-hidden rounded-xl border border-black/10 bg-white/35 backdrop-blur-md sm:w-56'
-                        : 'flex h-full min-h-0 w-[min(100%,17.5rem)] shrink-0 flex-col overflow-hidden rounded-xl border border-black/10 bg-white/35 backdrop-blur-md sm:w-72 md:min-w-0 md:max-w-none md:w-auto md:min-w-[17.5rem]'
+                        : 'flex h-full min-h-0 w-[min(100%,17.5rem)] shrink-0 flex-col overflow-hidden rounded-xl border border-black/10 bg-white/35 backdrop-blur-md sm:w-72 md:max-w-none md:w-auto md:min-w-70'
                     }
                     onDragOver={canEditBoard ? onDragOver : undefined}
                     onDrop={canEditBoard ? (e) => onDropOnColumn(e, list) : undefined}
@@ -505,7 +505,7 @@ export function TaskboardView({
 
                             <div className={`min-w-0 ${embedded ? 'mt-2' : 'mt-3'}`}>
                               <h4
-                                className={`line-clamp-2 break-words font-bold leading-snug text-[#1f1f1f] ${
+                                className={`line-clamp-2 wrap-break-word font-bold leading-snug text-[#1f1f1f] ${
                                   embedded ? 'text-xs' : 'text-sm'
                                 }`}
                               >
@@ -518,7 +518,7 @@ export function TaskboardView({
                               ) : null}
                               {card.description?.trim() ? (
                                 <p
-                                  className={`mt-1 break-words text-black/55 ${
+                                  className={`mt-1 wrap-break-word text-black/55 ${
                                     embedded ? 'line-clamp-3 text-[10px] leading-snug' : 'line-clamp-4 text-xs leading-snug'
                                   }`}
                                 >
@@ -576,7 +576,7 @@ export function TaskboardView({
                   <button
                     key={c.uuid}
                     type="button"
-                    className="max-w-[10rem] truncate rounded border border-black/10 bg-white px-2 py-1 text-left text-xs hover:border-primary/30"
+                    className="max-w-40 truncate rounded border border-black/10 bg-white px-2 py-1 text-left text-xs hover:border-primary/30"
                     onClick={() => setModalCard(c)}
                   >
                     {c.title}

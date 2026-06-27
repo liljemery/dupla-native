@@ -42,7 +42,7 @@ export function ChatConversationSidebar({
   onSearchQueryChange,
 }: ChatConversationSidebarProps) {
   return (
-    <aside className="flex h-full min-h-0 w-full shrink-0 flex-col bg-[#f8f9fb] lg:w-80 xl:w-[22rem]">
+    <aside className="flex h-full min-h-0 w-full shrink-0 flex-col bg-[#f8f9fb] lg:w-80 xl:w-88">
       <div className="border-b border-black/8 px-3 py-3">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Consola de mensajes</p>
         <label className="relative mt-2 block">
@@ -72,7 +72,7 @@ export function ChatConversationSidebar({
         </button>
         <button
           type="button"
-          className="flex-1 rounded-lg border border-black/12 bg-white px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-ink shadow-sm hover:bg-black/[0.03]"
+          className="flex-1 rounded-lg border border-black/12 bg-white px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-ink shadow-sm hover:bg-black/3"
           onClick={onNewGroup}
         >
           Grupo

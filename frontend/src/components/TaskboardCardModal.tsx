@@ -220,7 +220,7 @@ export function TaskboardCardModal({ token, card, assignees, readOnly, onClose, 
               <div>
                 <div className="du-label">Descripción</div>
                 {card.description?.trim() ? (
-                  <p className="mt-1 whitespace-pre-wrap break-words text-sm text-ink">{card.description}</p>
+                  <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm text-ink">{card.description}</p>
                 ) : (
                   <p className="mt-1 text-sm text-muted">Sin descripción.</p>
                 )}
@@ -264,7 +264,7 @@ export function TaskboardCardModal({ token, card, assignees, readOnly, onClose, 
                 ) : (
                   <ul className="mt-2 max-h-48 space-y-3 overflow-y-auto text-sm">
                     {comments.map((c) => (
-                      <li key={c.uuid} className="rounded-md border border-black/8 bg-black/[0.02] px-3 py-2">
+                      <li key={c.uuid} className="rounded-md border border-black/8 bg-black/2 px-3 py-2">
                         <div className="du-meta flex flex-wrap justify-between gap-2">
                           <span className="text-ink">
                             {c.author_email
@@ -404,7 +404,7 @@ export function TaskboardCardModal({ token, card, assignees, readOnly, onClose, 
                 ) : (
                   <ul className="mt-2 max-h-48 space-y-3 overflow-y-auto text-sm">
                     {comments.map((c) => (
-                      <li key={c.uuid} className="rounded-md border border-black/8 bg-black/[0.02] px-3 py-2">
+                      <li key={c.uuid} className="rounded-md border border-black/8 bg-black/2 px-3 py-2">
                         <div className="du-meta flex flex-wrap justify-between gap-2">
                           <span className="text-ink">
                             {c.author_email
@@ -462,7 +462,7 @@ export function TaskboardCardModal({ token, card, assignees, readOnly, onClose, 
               {!editing && !card.archived ? (
                 <button
                   type="button"
-                  className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm text-ink hover:bg-black/[0.04] disabled:opacity-50"
+                  className="rounded-md border border-black/15 bg-white px-3 py-2 text-sm text-ink hover:bg-black/4 disabled:opacity-50"
                   disabled={archiving || deleting}
                   onClick={() => void archiveFromView()}
                 >
@@ -471,7 +471,7 @@ export function TaskboardCardModal({ token, card, assignees, readOnly, onClose, 
               ) : null}
               <button
                 type="button"
-                className="rounded-md border border-primary/30 bg-primary/[0.06] px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
+                className="rounded-md border border-primary/30 bg-primary/6 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 disabled:opacity-50"
                 disabled={archiving || deleting || saving}
                 onClick={() => void deletePermanently()}
               >

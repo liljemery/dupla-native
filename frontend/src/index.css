@@ -53,7 +53,7 @@ body {
     @apply border-primary ring-2 ring-primary/20;
   }
   .du-input:disabled {
-    @apply cursor-not-allowed bg-black/[0.03] text-muted;
+    @apply cursor-not-allowed bg-black/3 text-muted;
   }
   .du-label {
     @apply block text-base font-medium text-ink;
@@ -71,13 +71,13 @@ body {
     @apply text-primary/85;
   }
   .du-callout {
-    @apply rounded-lg border border-primary/20 bg-primary/[0.06] px-5 py-4 text-base text-ink;
+    @apply rounded-lg border border-primary/20 bg-primary/6 px-5 py-4 text-base text-ink;
   }
   .du-pill-action {
-    @apply inline-flex items-center rounded-md border border-black/12 bg-white px-3.5 py-2 text-base font-medium text-ink shadow-sm outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-black/20 hover:bg-black/[0.02] active:bg-black/[0.04];
+    @apply inline-flex items-center rounded-md border border-black/12 bg-white px-3.5 py-2 text-base font-medium text-ink shadow-sm outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-black/20 hover:bg-black/2 active:bg-black/4;
   }
   .du-pill-action:focus-visible {
-    @apply ring-2 ring-primary/30 ring-offset-2 ring-offset-[var(--color-surface)];
+    @apply ring-2 ring-primary/30 ring-offset-2 ring-offset-surface;
   }
   .du-page-title {
     @apply text-2xl font-bold tracking-tight text-ink sm:text-[1.625rem];
@@ -89,13 +89,13 @@ body {
     @apply text-3xl font-semibold tabular-nums tracking-tight text-ink;
   }
   .du-filter-bar {
-    @apply flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-[var(--shadow-toolbar)];
+    @apply flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200/80 bg-white px-4 py-3 shadow-(--shadow-toolbar);
   }
   .du-page-toolbar {
-    @apply flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2 shadow-[var(--shadow-toolbar)];
+    @apply flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200/80 bg-white px-3 py-2 shadow-(--shadow-toolbar);
   }
   .du-page-shell {
-    @apply rounded-2xl border border-slate-200/70 bg-white p-5 shadow-[var(--shadow-elevated)] sm:p-6;
+    @apply rounded-2xl border border-slate-200/70 bg-white p-5 shadow-(--shadow-elevated) sm:p-6;
   }
   .du-cta-primary {
     @apply inline-flex items-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white shadow-[0_4px_14px_rgba(193,13,18,0.35)] outline-none transition hover:bg-primary-bright hover:shadow-[0_6px_20px_rgba(193,13,18,0.4)] focus-visible:ring-2 focus-visible:ring-primary/45 focus-visible:ring-offset-2;
@@ -113,7 +113,7 @@ body {
     @apply min-h-full bg-panel-detail text-white;
   }
   .du-invoice-inner-card {
-    @apply rounded-2xl bg-[var(--color-panel-detail-card)] p-4 backdrop-blur-sm;
+    @apply rounded-2xl bg-panel-detail-card p-4 backdrop-blur-sm;
   }
   .du-folder-tab-clip {
     clip-path: polygon(0 0, 56% 0, 66% 17%, 100% 17%, 100% 100%, 0 100%);
@@ -128,7 +128,7 @@ body {
     @apply absolute left-4 top-[6%] z-10 min-w-0 max-w-[calc(100%-2.75rem)];
   }
   .du-project-folder-card {
-    @apply relative h-[16rem] overflow-hidden rounded-[2rem] border-[3px] border-ink bg-ink outline-none;
+    @apply relative h-64 overflow-hidden rounded-4xl border-[3px] border-ink bg-ink outline-none;
     transition:
       transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
       box-shadow 0.5s cubic-bezier(0.22, 1, 0.36, 1);

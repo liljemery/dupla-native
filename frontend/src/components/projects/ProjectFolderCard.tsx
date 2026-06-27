@@ -62,7 +62,7 @@ export function ProjectFolderCard({
       }}
     >
       <div
-        className={`absolute inset-0 bg-gradient-to-br ${gradientForKind(project.project_kind)}`}
+        className={`absolute inset-0 bg-linear-to-br ${gradientForKind(project.project_kind)}`}
         aria-hidden
       />
       <div
@@ -97,7 +97,7 @@ export function ProjectFolderCard({
             >
               <button
                 type="button"
-                className="flex w-full px-3 py-2 text-left text-sm text-ink hover:bg-black/[0.04]"
+                className="flex w-full px-3 py-2 text-left text-sm text-ink hover:bg-black/4"
                 onClick={(e) => {
                   e.stopPropagation()
                   onOpen()
@@ -120,7 +120,7 @@ export function ProjectFolderCard({
           <div className="absolute bottom-3.5 left-4 right-4 space-y-1.5">
             <div className="h-1.5 overflow-hidden rounded-full bg-white/20">
               <div
-                className="h-full min-w-[0.375rem] rounded-full bg-primary-bright shadow-[0_0_8px_rgba(193,13,18,0.6)] transition-[width] duration-500 ease-out"
+                className="h-full min-w-1.5 rounded-full bg-primary-bright shadow-[0_0_8px_rgba(193,13,18,0.6)] transition-[width] duration-500 ease-out"
                 style={{ width: `${pct}%` }}
               />
             </div>

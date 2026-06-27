@@ -77,7 +77,7 @@ export function Sidebar() {
     <aside
       data-tour="sidebar-root"
       className={`flex h-full min-h-0 max-h-full shrink-0 flex-col overflow-hidden border-r border-slate-200/80 bg-white transition-[width] duration-200 ease-out ${
-        collapsed ? 'w-[4.5rem]' : 'w-56 md:w-60'
+        collapsed ? 'w-18' : 'w-56 md:w-60'
       }`}
     >
       <div
@@ -224,7 +224,7 @@ export function Sidebar() {
             ) : null}
             <button
               type="button"
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-black/12 py-2.5 text-sm font-medium text-muted transition hover:bg-black/[0.04] hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-black/12 py-2.5 text-sm font-medium text-muted transition hover:bg-black/4 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               onClick={() => logout()}
             >
               <LogOut className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -232,7 +232,7 @@ export function Sidebar() {
             </button>
             <NavLink
               to="/app/settings"
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-black/12 py-2.5 text-sm font-medium text-muted transition hover:bg-black/[0.04] hover:text-ink"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-black/12 py-2.5 text-sm font-medium text-muted transition hover:bg-black/4 hover:text-ink"
             >
               Configuración
             </NavLink>
@@ -243,7 +243,7 @@ export function Sidebar() {
       <div className="border-t border-black/10 p-2.5" data-tour="sidebar-collapse">
         <button
           type="button"
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-2.5 py-2.5 text-muted outline-none transition hover:bg-black/[0.04] hover:text-ink focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2"
+          className="flex w-full items-center justify-center gap-2 rounded-md border border-black/10 bg-white px-2.5 py-2.5 text-muted outline-none transition hover:bg-black/4 hover:text-ink focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2"
           aria-expanded={!collapsed}
           aria-label={collapsed ? 'Expandir menú lateral' : 'Contraer menú lateral'}
           onClick={() => setCollapsed((c) => !c)}

@@ -573,7 +573,7 @@ export function ProjectWorkspaceDashboard({
         </div>
       </div>
 
-      <div className="shrink-0 flex flex-col gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3 shadow-[var(--shadow-card)] sm:flex-row sm:items-center sm:justify-between">
+      <div className="shrink-0 flex flex-col gap-3 rounded-2xl border border-black/10 bg-white px-4 py-3 shadow-(--shadow-card) sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-2 text-sm">
           <span className="text-[10px] font-bold uppercase tracking-wide text-muted">Fase actual</span>
           <span className="truncate font-semibold text-ink">{phaseLabel}</span>

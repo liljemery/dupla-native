@@ -78,7 +78,7 @@ export function ProjectWorkspaceConsoleHeader({
           <div className="flex items-center gap-2">
             <Link
               to="/app/projects"
-              className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-white text-muted shadow-sm transition hover:bg-black/[0.03] hover:text-ink"
+              className="inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-black/10 bg-white text-muted shadow-sm transition hover:bg-black/3 hover:text-ink"
               aria-label="Volver a proyectos"
             >
               <ArrowLeft className="size-4" strokeWidth={2} aria-hidden />
@@ -107,7 +107,7 @@ export function ProjectWorkspaceConsoleHeader({
           </IconButton>
           <Link
             to="/app/tutoriales"
-            className="inline-flex size-10 items-center justify-center rounded-xl border border-black/10 bg-white text-muted shadow-sm transition hover:bg-black/[0.03] hover:text-ink"
+            className="inline-flex size-10 items-center justify-center rounded-xl border border-black/10 bg-white text-muted shadow-sm transition hover:bg-black/3 hover:text-ink"
             title="Ayuda y tutoriales"
             aria-label="Ayuda"
           >

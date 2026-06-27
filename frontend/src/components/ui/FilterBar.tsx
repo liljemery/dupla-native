@@ -10,7 +10,7 @@ export function FilterBar({ children, search, className = '' }: FilterBarProps) 
   return (
     <div className={`du-filter-bar ${className}`}>
       <div className="flex flex-1 flex-wrap items-center gap-2">{children}</div>
-      {search ? <div className="w-full sm:w-auto sm:min-w-[14rem] sm:max-w-xs">{search}</div> : null}
+      {search ? <div className="w-full sm:w-auto sm:min-w-56 sm:max-w-xs">{search}</div> : null}
     </div>
   )
 }
