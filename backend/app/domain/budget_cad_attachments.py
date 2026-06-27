@@ -31,6 +31,37 @@ def ingest_snapshot(row: ProjectFile) -> dict:
     return snap if isinstance(snap, dict) else {}
 
 
+def refresh_cad_gate_snapshots(files: list[ProjectFile]) -> list[ProjectFile]:
+    """Re-probe DWG conversion on disk (picks up LibreDWG installed after upload)."""
+    from app.domain.cad_upload_gate import validate_cad_upload
+
+    touched: list[ProjectFile] = []
+    for pf in files:
+        if not (pf.original_name or "").lower().endswith(".dwg"):
+            continue
+        path = Path(pf.storage_key)
+        if not path.is_file():
+            continue
+        gate = validate_cad_upload(path)
+        status = gate.get("cad_conversion_status")
+        if status is None:
+            continue
+        snap = dict(ingest_snapshot(pf))
+        snap["cad_conversion_status"] = status
+        message = gate.get("message")
+        if message:
+            snap["cad_conversion_note"] = message
+        error_code = gate.get("cad_conversion_error_code")
+        if error_code:
+            snap["cad_conversion_error_code"] = error_code
+        companion = gate.get("cad_companion_dxf")
+        if companion:
+            snap["cad_companion_dxf"] = companion
+        pf.file_ingest_snapshot = snap
+        touched.append(pf)
+    return touched
+
+
 def _trust_gate_cache(path: Path) -> bool:
     """Gate cache DXFs were validated on upload; skip re-probing ezdxf."""
     return path.is_file() and ".dxf_cache" in path.parts and path.stat().st_size > 0

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from app.domain.budget_cad_attachments import auxiliary_dxf_candidates, unusable_dwg_names
+from app.domain.budget_cad_attachments import auxiliary_dxf_candidates, refresh_cad_gate_snapshots, unusable_dwg_names
 
 
 def _motor_root() -> Path | None:
@@ -56,6 +56,24 @@ def test_auxiliary_dxf_from_gate_cache(tmp_path: Path) -> None:
     )
     found = auxiliary_dxf_candidates(dwg, tmp_path)
     assert dxf in found
+
+
+def test_refresh_cad_gate_snapshots_updates_snapshot(tmp_path: Path, monkeypatch) -> None:
+    dwg = tmp_path / "plan.dwg"
+    dwg.write_bytes(b"AC1032\x00")
+    pf = _FakeFile(original_name="plan.dwg", storage_key=str(dwg), snapshot={})
+    monkeypatch.setattr(
+        "app.domain.cad_upload_gate.validate_cad_upload",
+        lambda _path: {
+            "cad_conversion_status": "requires_dxf",
+            "cad_conversion_error_code": "TOOL_MISSING",
+            "message": "LibreDWG missing",
+        },
+    )
+    touched = refresh_cad_gate_snapshots([pf])
+    assert touched == [pf]
+    assert pf.file_ingest_snapshot["cad_conversion_status"] == "requires_dxf"
+    assert pf.file_ingest_snapshot["cad_conversion_error_code"] == "TOOL_MISSING"
 
 
 def test_unusable_dwg_without_dxf(tmp_path: Path) -> None:

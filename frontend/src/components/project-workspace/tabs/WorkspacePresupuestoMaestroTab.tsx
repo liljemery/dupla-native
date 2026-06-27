@@ -1,10 +1,11 @@
 import { AlertCircle, Cpu, Loader2, Pencil, Play, RefreshCw } from 'lucide-react'
 import { useMemo, useEffect, useState, type ReactNode } from 'react'
 
+import { apiFetch } from '../../../api/client'
 import { useBudgetJob } from '../../../hooks/useBudgetJob'
 import type { BudgetRow } from '../../../types/budget'
 import type { Project } from '../../../types/project'
-import type { SubcontractQuoteRow } from '../../../types/projectWorkspace'
+import type { ProjectFileRow, SubcontractQuoteRow } from '../../../types/projectWorkspace'
 import { processBudgetRows } from '../../../lib/budgetRows'
 import { fmtDop } from '../../../lib/budgetFormat'
 import { showBudgetPipelinePanel } from '../../../lib/budgetPipelineUi'
@@ -49,10 +50,51 @@ function computeLiquidacion(direct: number) {
   return { seguro, gastosAdmin, transporte, direccion, subAntesItbis, itbis, total: subAntesItbis + itbis }
 }
 
+type BudgetCadReadiness = {
+  dwgCount: number
+  unusableNames: string[]
+  toolMissing: boolean
+  likelyBlocked: boolean
+}
+
+function analyzeBudgetCadReadiness(files: ProjectFileRow[]): BudgetCadReadiness {
+  const budgetFiles = files.filter((f) => f.counts_for_budget)
+  const dwgs = budgetFiles.filter((f) => f.original_name.toLowerCase().endsWith('.dwg'))
+  const unusable = dwgs.filter((f) => {
+    const status = f.cad_conversion_status
+    if (
+      status !== 'requires_dxf'
+      && status !== 'requires_dxf_export'
+      && status !== 'conversion_failed'
+    ) {
+      return false
+    }
+    const stem = f.original_name.replace(/\.dwg$/i, '').toLowerCase()
+    const hasDxf = budgetFiles.some(
+      (other) =>
+        other.original_name.toLowerCase().endsWith('.dxf')
+        && other.original_name.replace(/\.dxf$/i, '').toLowerCase() === stem,
+    )
+    return !hasDxf
+  })
+  const toolMissing = unusable.some((f) => f.cad_conversion_error_code === 'TOOL_MISSING')
+  const dwgCount = dwgs.length
+  const likelyBlocked = dwgCount > 0 && unusable.length / dwgCount > 0.5
+  return {
+    dwgCount,
+    unusableNames: unusable.map((f) => f.original_name),
+    toolMissing,
+    likelyBlocked,
+  }
+}
+
 
 interface EnqueueModalProps {
   onSubmit: (opts: { discipline?: string }) => Promise<boolean>
   onClose: () => void
+  readiness: BudgetCadReadiness | null
+  readinessLoading: boolean
+  submitError: string | null
 }
 
 const DISCIPLINES = [
@@ -63,16 +105,48 @@ const DISCIPLINES = [
   { value: 'sanitario', label: 'Sanitaria' },
 ]
 
-function EnqueueModal({ onSubmit, onClose }: EnqueueModalProps) {
+function EnqueueModal({
+  onSubmit,
+  onClose,
+  readiness,
+  readinessLoading,
+  submitError,
+}: EnqueueModalProps) {
   const [discipline, setDiscipline] = useState('todas')
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl border border-black/10 bg-white p-6 shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl border border-black/10 bg-white p-6 shadow-2xl">
         <h2 className="text-base font-bold text-ink">Iniciar presupuesto con IA</h2>
         <p className="mt-1 text-sm text-muted">
           Se procesarán todos los archivos del proyecto automáticamente.
         </p>
+
+        {readinessLoading ? (
+          <p className="mt-4 text-sm text-muted">Revisando planos CAD del proyecto…</p>
+        ) : readiness?.likelyBlocked ? (
+          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+            <p className="font-semibold">Los DWG necesitan geometría DXF</p>
+            <p className="mt-1 leading-relaxed">
+              {readiness.toolMissing
+                ? 'LibreDWG no está instalado en el servidor. Instálalo (macOS: brew install libredwg) y pulsa Procesar de nuevo, o sube un DXF exportado desde CAD junto a cada DWG.'
+                : 'Exporta DXF desde CAD y súbelos en Archivos junto a cada DWG antes de procesar.'}
+            </p>
+            {readiness.unusableNames.length > 0 ? (
+              <ul className="mt-2 list-inside list-disc text-xs">
+                {readiness.unusableNames.slice(0, 4).map((name) => (
+                  <li key={name} className="truncate">{name}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+
+        {submitError ? (
+          <div className="mt-4 rounded-lg border border-primary/25 bg-primary/5 px-3 py-3 text-sm text-primary">
+            {submitError}
+          </div>
+        ) : null}
 
         <div className="mt-5 space-y-4">
           <label className="block space-y-1">
@@ -193,10 +267,39 @@ export function WorkspacePresupuestoMaestroTab({
   const [editRows, setEditRows] = useState<BudgetRow[] | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [projectFiles, setProjectFiles] = useState<ProjectFileRow[]>([])
+  const [filesLoading, setFilesLoading] = useState(false)
   const isEditing = editRows !== null
   const draftRows = isEditing ? editRows : syncedRows
   const elapsed = useElapsedSeconds(
     job?.status === 'queued' || job?.status === 'processing' ? job.created_at : undefined,
+  )
+
+  useEffect(() => {
+    if (!modalOpen || !token) return
+    let cancelled = false
+    void (async () => {
+      setFilesLoading(true)
+      const res = await apiFetch(`/api/projects/${projectUuid}/files`, { token, silent: true })
+      if (cancelled) return
+      if (res.ok) {
+        const body = (await res.json()) as { items?: ProjectFileRow[] } | ProjectFileRow[]
+        const items = Array.isArray(body) ? body : body.items ?? []
+        setProjectFiles(items)
+      } else {
+        setProjectFiles([])
+      }
+      setFilesLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [modalOpen, projectUuid, token])
+
+  const readiness = useMemo(
+    () => (projectFiles.length > 0 ? analyzeBudgetCadReadiness(projectFiles) : null),
+    [projectFiles],
   )
 
   const processedRows = useMemo(() => processBudgetRows(draftRows), [draftRows])
@@ -219,9 +322,20 @@ export function WorkspacePresupuestoMaestroTab({
   const location = project?.location_text?.trim() || 'República Dominicana'
 
   async function handleEnqueueSubmit(opts: { discipline?: string }) {
-    const ok = await enqueue(opts)
-    if (ok) setModalOpen(false)
-    return ok
+    setSubmitError(null)
+    const result = await enqueue(opts)
+    if (!result.ok) {
+      setSubmitError(result.error)
+      return false
+    }
+    setModalOpen(false)
+    setSubmitError(null)
+    return true
+  }
+
+  function openEnqueueModal() {
+    setSubmitError(null)
+    setModalOpen(true)
   }
 
   function startEditing() {
@@ -302,6 +416,9 @@ export function WorkspacePresupuestoMaestroTab({
           <EnqueueModal
             onSubmit={handleEnqueueSubmit}
             onClose={() => setModalOpen(false)}
+            readiness={readiness}
+            readinessLoading={filesLoading}
+            submitError={submitError}
           />
         )}
         <div className="flex size-20 items-center justify-center rounded-full bg-primary/10">
@@ -317,7 +434,7 @@ export function WorkspacePresupuestoMaestroTab({
           id="start-budget-btn"
           type="button"
           className="gap-2 px-6 py-3 text-sm font-bold"
-          onClick={() => setModalOpen(true)}
+          onClick={openEnqueueModal}
         >
           <Play className="size-4" strokeWidth={2.5} aria-hidden />
           Iniciar presupuesto
@@ -374,6 +491,9 @@ export function WorkspacePresupuestoMaestroTab({
           <EnqueueModal
             onSubmit={handleEnqueueSubmit}
             onClose={() => setModalOpen(false)}
+            readiness={readiness}
+            readinessLoading={filesLoading}
+            submitError={submitError}
           />
         )}
         <div className="flex size-20 items-center justify-center rounded-full bg-primary/10">
@@ -392,7 +512,7 @@ export function WorkspacePresupuestoMaestroTab({
           id="retry-budget-partial-btn"
           type="button"
           className="gap-2 px-6 py-3 text-sm font-bold"
-          onClick={() => setModalOpen(true)}
+          onClick={openEnqueueModal}
         >
           <RefreshCw className="size-4" strokeWidth={2.5} aria-hidden />
           Re-procesar con disciplina
@@ -409,6 +529,9 @@ export function WorkspacePresupuestoMaestroTab({
           <EnqueueModal
             onSubmit={handleEnqueueSubmit}
             onClose={() => setModalOpen(false)}
+            readiness={readiness}
+            readinessLoading={filesLoading}
+            submitError={submitError}
           />
         )}
         <div className="flex size-20 items-center justify-center rounded-full bg-red-500/10">
@@ -422,7 +545,7 @@ export function WorkspacePresupuestoMaestroTab({
           id="retry-budget-btn"
           type="button"
           className="gap-2 px-6 py-3 text-sm font-bold"
-          onClick={() => setModalOpen(true)}
+          onClick={openEnqueueModal}
         >
           <RefreshCw className="size-4" strokeWidth={2.5} aria-hidden />
           Re-procesar
@@ -438,6 +561,9 @@ export function WorkspacePresupuestoMaestroTab({
           <EnqueueModal
             onSubmit={handleEnqueueSubmit}
             onClose={() => setModalOpen(false)}
+            readiness={readiness}
+            readinessLoading={filesLoading}
+            submitError={submitError}
           />
         )}
         <div className="flex size-20 items-center justify-center rounded-full bg-primary/10">
@@ -454,7 +580,7 @@ export function WorkspacePresupuestoMaestroTab({
           id="base-extraction-reprocess-btn"
           type="button"
           className="gap-2 px-6 py-3 text-sm font-bold"
-          onClick={() => setModalOpen(true)}
+          onClick={openEnqueueModal}
         >
           <RefreshCw className="size-4" strokeWidth={2.5} aria-hidden />
           Generar presupuesto
@@ -470,6 +596,9 @@ export function WorkspacePresupuestoMaestroTab({
         <EnqueueModal
           onSubmit={handleEnqueueSubmit}
           onClose={() => setModalOpen(false)}
+          readiness={readiness}
+          readinessLoading={filesLoading}
+          submitError={submitError}
         />
       )}
 
@@ -521,7 +650,7 @@ export function WorkspacePresupuestoMaestroTab({
               type="button"
               id="budget-reprocess-btn"
               className="inline-flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/8 px-4 py-2 text-xs font-bold text-primary hover:bg-primary/12"
-              onClick={() => setModalOpen(true)}
+              onClick={openEnqueueModal}
             >
               <RefreshCw className="size-4" strokeWidth={2} aria-hidden />
               Re-procesar

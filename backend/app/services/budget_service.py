@@ -27,6 +27,8 @@ from app.domain.budget_cad_attachments import (
     ReadableCache,
     auxiliary_dxf_candidates,
     budget_dxf_stems,
+    ingest_snapshot,
+    refresh_cad_gate_snapshots,
     unusable_dwg_names,
 )
 from app.domain.budget_pipeline_meta import (
@@ -189,19 +191,32 @@ class BudgetService:
 
         upload_root = Path(get_settings().upload_root)
         readable_cache: ReadableCache = {}
+        if refresh_cad_gate_snapshots(budget_files):
+            await self._session.flush()
         dxf_stems_in_budget = budget_dxf_stems(budget_files)
         unusable = unusable_dwg_names(budget_files, upload_root, readable_cache=readable_cache)
         dwg_count = sum(1 for pf in budget_files if (pf.original_name or "").lower().endswith(".dwg"))
         if dwg_count and len(unusable) / dwg_count > 0.5:
             sample = ", ".join(unusable[:8])
             more = f" (+{len(unusable) - 8} más)" if len(unusable) > 8 else ""
+            tool_missing = any(
+                str(ingest_snapshot(pf).get("cad_conversion_error_code") or "") == "TOOL_MISSING"
+                for pf in budget_files
+                if (pf.original_name or "").lower().endswith(".dwg")
+            )
+            detail = (
+                "La mayoría de los DWG no tienen geometría usable para presupuesto. "
+                "Exporta DXF desde CAD y súbelos junto a cada DWG. "
+                f"Archivos sin DXF: {sample}{more}"
+            )
+            if tool_missing:
+                detail += (
+                    " En desarrollo local instala LibreDWG (macOS: brew install libredwg) "
+                    "y vuelve a pulsar Procesar, o sube los DXF manualmente."
+                )
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    "La mayoría de los DWG no tienen geometría usable para presupuesto. "
-                    "Exporta DXF desde CAD y súbelos junto a cada DWG. "
-                    f"Archivos sin DXF: {sample}{more}"
-                ),
+                detail=detail,
             )
 
         multipart_files: list[tuple[str, tuple[str, bytes, str]]] = []
