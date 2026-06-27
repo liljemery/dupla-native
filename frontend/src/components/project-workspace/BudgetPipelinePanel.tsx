@@ -1,5 +1,8 @@
 import { apiFetch } from '../../api/client'
-import { canMarkControlReview } from '../../lib/accessPermissions'
+import {
+  canMarkControlReview,
+  canMarkManagementReview,
+} from '../../lib/accessPermissions'
 import { useAuthStore } from '../../store/authStore'
 import type { SubcontractQuoteRow } from '../../types/projectWorkspace'
 import type { Project } from '../../types/project'
@@ -63,24 +66,23 @@ export function BudgetChecklistPanel({
 >) {
   const permissions = useAuthStore((s) => s.permissions)
   const canMarkControl = canMarkControlReview(permissions)
-  const awaitingBudgetApproval = project.workflow_phase === 'MANAGEMENT_APPROVAL'
-  const missingControlGate = awaitingBudgetApproval && !bpDraft.control_review_done
-  const missingClientVersion = awaitingBudgetApproval && !clientVersion.trim()
+  const canMarkGerencia = canMarkManagementReview(permissions)
+  const phase = project.workflow_phase
+  const awaitingGerencia = phase === 'MANAGEMENT_APPROVAL'
+  const afterGerencia = phase === 'BUDGET_APPROVED' || phase === 'COMPLETE'
+  const missingGerenciaGate = awaitingGerencia && !bpDraft.management_review_done
 
   return (
     <Card className="space-y-4 p-6">
       <h3 className="text-base font-semibold text-ink">Checklist del presupuesto</h3>
       <p className="text-sm text-muted">
-        Marca los hitos antes de enviar a gerencia. Control y versión del cliente aplican en aprobación de
-        gerencia.
+        Marca los hitos del pipeline antes de enviar a gerencia. Control valida antes del envío; Gerencia aprueba en
+        la fase «Aprobación de gerencia».
       </p>
-      {awaitingBudgetApproval && (missingControlGate || missingClientVersion) ? (
+      {missingGerenciaGate ? (
         <div className="rounded-md border border-primary/25 bg-primary/6 px-3 py-2 text-sm text-ink">
-          Para avanzar en Flujo: marca revisión de Control y la versión aprobada por el cliente (guarda abajo).{' '}
-          {missingControlGate ? <span className="font-medium text-primary">Falta revisión de Control.</span> : null}{' '}
-          {missingClientVersion ? (
-            <span className="font-medium text-primary">Falta versión del cliente.</span>
-          ) : null}
+          Para avanzar en Flujo: marca la aprobación de Gerencia abajo y guarda el checklist.{' '}
+          <span className="font-medium text-primary">Falta revisión de Gerencia.</span>
         </div>
       ) : null}
       <div className="space-y-3 border-t border-black/10 pt-4">
@@ -127,18 +129,38 @@ export function BudgetChecklistPanel({
           {!canMarkControl ? <span className="text-xs text-muted">(solo Control o Gerencia)</span> : null}
         </label>
       </div>
-      <div className="space-y-2 border-t border-black/10 pt-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">Cliente</p>
-        <label className="block text-sm text-muted">
-          Etiqueta de versión aprobada por el cliente
-          <input
-            className="du-input mt-1"
-            value={clientVersion}
-            onChange={(e) => setClientVersion(e.target.value)}
-            placeholder="ej. v2"
-          />
-        </label>
-      </div>
+      {(awaitingGerencia || afterGerencia || phase === 'BUDGETING_PIPELINE') ? (
+        <div className="space-y-2 border-l-2 border-primary/35 pl-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Gerencia</p>
+          <label className={`flex items-center gap-2 text-sm ${!canMarkGerencia ? 'opacity-60' : ''}`}>
+            <input
+              type="checkbox"
+              disabled={!canMarkGerencia || phase === 'BUDGETING_PIPELINE'}
+              checked={!!bpDraft.management_review_done}
+              onChange={(e) => setBpDraft((d) => ({ ...d, management_review_done: e.target.checked }))}
+            />
+            Aprobación de Gerencia completada
+            {!canMarkGerencia ? <span className="text-xs text-muted">(solo Gerencia)</span> : null}
+            {phase === 'BUDGETING_PIPELINE' ? (
+              <span className="text-xs text-muted">(disponible en aprobación de gerencia)</span>
+            ) : null}
+          </label>
+        </div>
+      ) : null}
+      {afterGerencia ? (
+        <div className="space-y-2 border-t border-black/10 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Cliente (opcional)</p>
+          <label className="block text-sm text-muted">
+            Etiqueta de versión aprobada por el cliente
+            <input
+              className="du-input mt-1"
+              value={clientVersion}
+              onChange={(e) => setClientVersion(e.target.value)}
+              placeholder="ej. v2"
+            />
+          </label>
+        </div>
+      ) : null}
       <WorkspaceActionButton type="button" onAction={onSaveBudgetPipeline} successLabel="Checklist guardado">
         Guardar checklist
       </WorkspaceActionButton>

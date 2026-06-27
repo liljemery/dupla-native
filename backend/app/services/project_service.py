@@ -38,17 +38,30 @@ class ProjectService:
                 detail="User does not have access to the Architecture module",
             )
 
-    async def list_projects(self, user: User) -> list[Project]:
+    async def list_projects(self, user: User, *, include_archived: bool = False) -> list[Project]:
         await self.ensure_architecture_access(user)
+        if include_archived and not await self._perm_svc.has(user, "projects.view_archived"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo Gerencia puede listar proyectos archivados",
+            )
         is_master = await self._perm_svc.has(user, "projects.view_all")
         return await self._projects.list_for_user(
             user.id,
             is_master=is_master,
             workspace_id=self._workspace_id,
+            include_archived=include_archived,
         )
 
-    async def list_projects_for_template(self, user: User, template_uuid: UUID) -> list[Project]:
+    async def list_projects_for_template(
+        self, user: User, template_uuid: UUID, *, include_archived: bool = False
+    ) -> list[Project]:
         await self.ensure_architecture_access(user)
+        if include_archived and not await self._perm_svc.has(user, "projects.view_archived"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo Gerencia puede listar proyectos archivados",
+            )
         tpl = await self._workflow_templates.get_template_by_uuid(template_uuid, self._workspace_id)
         if tpl is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plantilla no encontrada")
@@ -58,6 +71,7 @@ class ProjectService:
             is_master=is_master,
             user_uuid=user.id,
             workspace_id=self._workspace_id,
+            include_archived=include_archived,
         )
 
     async def create_project(
@@ -189,11 +203,27 @@ class ProjectService:
         project = await self._projects.get_by_uuid(project_uuid)
         if project is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
+        if project.archived_at is not None and not await self._perm_svc.has(user, "projects.view_archived"):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
         if not await self._projects.user_has_access_to_project(
             user, project, self._workspace_id, view_all=await self._perm_svc.has(user, "projects.view_all")
         ):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Project not found")
         return project
+
+    async def delete_project(self, user: User, project_uuid: UUID) -> None:
+        if not await self._perm_svc.has(user, "projects.delete"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Solo Gerencia puede eliminar proyectos archivados",
+            )
+        project = await self.get_project(user, project_uuid)
+        if project.archived_at is None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Solo se pueden eliminar proyectos archivados",
+            )
+        await self._projects.delete_project(project.id)
 
     async def list_project_members(self, user: User, project_uuid: UUID) -> list[tuple[UUID, str, str, str]]:
         project = await self.get_project(user, project_uuid)

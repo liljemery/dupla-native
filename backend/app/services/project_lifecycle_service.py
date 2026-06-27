@@ -174,29 +174,19 @@ class ProjectLifecycleService:
                 and bp.get("volumetry_done")
                 and bp.get("cost_analysis_done")
                 and bp.get("budget_marked_complete")
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Completa el pipeline de presupuesto antes de enviar a gerencia",
-                )
-        if current == WorkflowPhase.MANAGEMENT_APPROVAL and target == WorkflowPhase.BUDGET_APPROVED:
-            await self._sync_subcontracts_flag(project)
-            meta = dict(project.workflow_meta or {})
-            bp = _budget_pipeline(meta)
-            if not (
-                bp.get("subcontracts_done")
-                and bp.get("volumetry_done")
-                and bp.get("cost_analysis_done")
-                and bp.get("budget_marked_complete")
-                and (bp.get("client_approved_version_label") or "").strip()
                 and bp.get("control_review_done")
             ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "Completa el pipeline de presupuesto, la versión aprobada por el cliente "
-                        "y la revisión de Control"
-                    ),
+                    detail="Completa el pipeline de presupuesto y la revisión de Control antes de enviar a gerencia",
+                )
+        if current == WorkflowPhase.MANAGEMENT_APPROVAL and target == WorkflowPhase.BUDGET_APPROVED:
+            meta = dict(project.workflow_meta or {})
+            bp = _budget_pipeline(meta)
+            if not bp.get("management_review_done"):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Se requiere la aprobación de Gerencia en el checklist de presupuesto",
                 )
 
     async def _assert_transition_guards(
@@ -339,6 +329,11 @@ class ProjectLifecycleService:
         target_step_uuid: Optional[UUID] = None,
     ) -> Project:
         project = await self._project_svc.get_project(user, project_uuid)
+        if project.archived_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="No se puede cambiar la fase de un proyecto archivado",
+            )
         if project.current_workflow_step is None:
             await self._session.refresh(project, ["current_workflow_step"])
 
@@ -632,6 +627,32 @@ class ProjectLifecycleService:
                 nxt = s or None
             payload["responsible_external_email"] = {"from": prev, "to": nxt}
             project.responsible_external_email = nxt
+        if "archived" in patch and patch["archived"] is not None:
+            if not await self._perm_svc.has(user, "projects.archive"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Solo Gerencia puede archivar o restaurar proyectos",
+                )
+            want_archived = bool(patch["archived"])
+            was_archived = project.archived_at is not None
+            if want_archived and not was_archived:
+                project.archived_at = datetime.now(timezone.utc)
+                payload["archived"] = True
+                await self._projects.record_event(
+                    project_id=project.id,
+                    actor_user_id=user.id,
+                    event_type="PROJECT_ARCHIVED",
+                    payload={},
+                )
+            elif not want_archived and was_archived:
+                project.archived_at = None
+                payload["archived"] = False
+                await self._projects.record_event(
+                    project_id=project.id,
+                    actor_user_id=user.id,
+                    event_type="PROJECT_RESTORED",
+                    payload={},
+                )
         if payload:
             await self._projects.record_event(
                 project_id=project.id,
@@ -825,6 +846,14 @@ class ProjectLifecycleService:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Solo Control, Gerencia o Líder de equipo pueden marcar la revisión de Control",
+                    )
+            wants_mgmt = bool(incoming.get("management_review_done"))
+            had_mgmt = bool(bp_old.get("management_review_done"))
+            if wants_mgmt and not had_mgmt:
+                if not await self._perm_svc.has(user, "lifecycle.management_review"):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Solo Gerencia puede marcar la aprobación de gerencia",
                     )
             bp = dict(bp_old)
             bp.update(incoming)

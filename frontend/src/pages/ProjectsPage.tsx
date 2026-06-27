@@ -22,7 +22,7 @@ import type { WorkflowTemplateDetail } from '../types/workflowTemplate'
 
 const PROJECTS_VIEW_FLOW_STORAGE_KEY = 'dupla.projects.viewWorkflowTemplateUuid'
 import { projectDashboardBucket, type DashboardStatusFilter } from '../lib/projectDashboardBuckets'
-import { hasElevatedAccess } from '../lib/accessPermissions'
+import { hasElevatedAccess, canViewArchivedProjects } from '../lib/accessPermissions'
 import { useAuthStore } from '../store/authStore'
 import type { ProjectKindValue } from '../constants/projectKind'
 import type { DirectoryUserRow } from '../lib/directoryUsers'
@@ -44,6 +44,7 @@ export function ProjectsPage() {
   const token = useAuthStore((s) => s.token)
   const permissions = useAuthStore((s) => s.permissions)
   const elevated = hasElevatedAccess(permissions)
+  const canViewArchived = canViewArchivedProjects(permissions)
   const userUuid = useAuthStore((s) => s.userUuid)
   const [projects, setProjects] = useState<Project[]>([])
   const [name, setName] = useState('Nuevo proyecto')
@@ -77,6 +78,12 @@ export function ProjectsPage() {
   const [viewFlowUuid, setViewFlowUuid] = useState<string | null>(readStoredViewFlowUuid)
   const [boardTemplate, setBoardTemplate] = useState<WorkflowTemplateDetail | null>(null)
   const [projectsSettingsOpen, setProjectsSettingsOpen] = useState(false)
+  const [includeArchived, setIncludeArchived] = useState(false)
+
+  const projectsListUrl = useCallback(() => {
+    const qs = includeArchived ? '?include_archived=true' : ''
+    return `/api/projects${qs}`
+  }, [includeArchived])
 
   const filteredProjects = useMemo(() => {
     const q = projectSearch.trim().toLowerCase()
@@ -132,7 +139,7 @@ export function ProjectsPage() {
         }
         setViewFlowUuid(null)
         setBoardTemplate(null)
-        const fallback = await apiFetch('/api/projects', { token })
+        const fallback = await apiFetch(projectsListUrl(), { token })
         if (!fallback.ok) {
           setProjectsLoadError('No se pudieron cargar proyectos')
           return
@@ -145,14 +152,14 @@ export function ProjectsPage() {
       setBoardTemplate((await tRes.json()) as WorkflowTemplateDetail)
       return
     }
-    const res = await apiFetch('/api/projects', { token })
+    const res = await apiFetch(projectsListUrl(), { token })
     if (!res.ok) {
       setProjectsLoadError('No se pudieron cargar proyectos')
       return
     }
     setProjects((await res.json()) as Project[])
     setBoardTemplate(null)
-  }, [token, viewFlowUuid])
+  }, [token, viewFlowUuid, projectsListUrl])
 
   useEffect(() => {
     let cancelled = false
@@ -486,6 +493,16 @@ export function ProjectsPage() {
                 ? 'Columnas por fase. Arrastra una tarjeta a la columna de al lado cuando la aplicación lo permita.'
                 : 'Vista en columnas por fase del proceso.'}
           </p>
+        ) : null}
+        {canViewArchived ? (
+          <label className="mt-4 flex items-center gap-2 text-sm text-muted">
+            <input
+              type="checkbox"
+              checked={includeArchived}
+              onChange={(e) => setIncludeArchived(e.target.checked)}
+            />
+            Ver proyectos archivados
+          </label>
         ) : null}
       </div>
 

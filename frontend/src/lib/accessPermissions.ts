@@ -70,6 +70,22 @@ export function canMarkControlReview(permissions: readonly string[] | null | und
   return hasPermission(permissions, 'lifecycle.control_review')
 }
 
+export function canMarkManagementReview(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'lifecycle.management_review')
+}
+
+export function canArchiveProjects(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'projects.archive')
+}
+
+export function canViewArchivedProjects(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'projects.view_archived')
+}
+
+export function canDeleteProjects(permissions: readonly string[] | null | undefined): boolean {
+  return hasPermission(permissions, 'projects.delete')
+}
+
 export function canApproveSpecifications(permissions: readonly string[] | null | undefined): boolean {
   return hasPermission(permissions, 'lifecycle.approve_specs')
 }

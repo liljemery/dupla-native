@@ -39,6 +39,7 @@ class ProjectPatchRequest(BaseModel):
     responsible_user_uuid: Optional[UUID] = None
     responsible_external_name: Optional[str] = Field(default=None, max_length=255)
     responsible_external_email: Optional[str] = Field(default=None, max_length=255)
+    archived: Optional[bool] = None
 
 
 class SpecificationsReplaceRequest(BaseModel):

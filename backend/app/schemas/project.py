@@ -35,6 +35,7 @@ class ProjectResponse(BaseModel):
     current_step_title: Optional[str] = None
     current_step_behavior_kind: Optional[str] = None
     current_step_icon_key: Optional[str] = None
+    archived_at: Optional[datetime] = None
 
     @classmethod
     def from_project(cls, project: Project) -> ProjectResponse:
@@ -68,6 +69,7 @@ class ProjectResponse(BaseModel):
             current_step_title=cur_step.title if cur_step is not None else None,
             current_step_behavior_kind=cur_step.behavior_kind if cur_step is not None else None,
             current_step_icon_key=cur_step.icon_key if cur_step is not None else None,
+            archived_at=project.archived_at,
         )
 
 

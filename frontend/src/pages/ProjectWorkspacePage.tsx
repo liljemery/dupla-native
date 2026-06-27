@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 
 import { apiFetch } from '../api/client'
 import { ProjectConfigModal } from '../components/ProjectConfigModal'
@@ -62,6 +62,7 @@ import type { Project } from '../types/project'
 import type { WorkflowTemplateDetail } from '../types/workflowTemplate'
 
 export function ProjectWorkspacePage() {
+  const navigate = useNavigate()
   const { projectUuid = '' } = useParams()
   const [searchParams, setSearchParams] = useSearchParams()
   const token = useAuthStore((s) => s.token)
@@ -512,17 +513,15 @@ export function ProjectWorkspacePage() {
         return false
       }
     }
-    if (next === 'BUDGET_APPROVED') {
+    if (next === 'MANAGEMENT_APPROVAL') {
       if (!bpDraft.control_review_done) {
-        setFlowMsg(
-          'Completa la revisión de Control en la pestaña Presupuesto (pipeline) antes de avanzar a presupuesto aprobado.',
-        )
+        setFlowMsg('Completa la revisión de Control en Presupuesto — Checklist antes de enviar a gerencia.')
         return false
       }
-      if (!clientVersion.trim()) {
-        setFlowMsg(
-          'Indica la etiqueta de versión aprobada por el cliente en Presupuesto — pipeline antes de avanzar.',
-        )
+    }
+    if (next === 'BUDGET_APPROVED') {
+      if (!bpDraft.management_review_done) {
+        setFlowMsg('Marca la aprobación de Gerencia en Presupuesto — Checklist antes de avanzar.')
         return false
       }
     }
@@ -1086,6 +1085,7 @@ export function ProjectWorkspacePage() {
         membersMsg={membersMsg}
         setMembersMsg={setMembersMsg}
         setMemberRows={setMemberRows}
+        onProjectRemoved={() => navigate('/app/projects')}
       />
     </div>
   )

@@ -261,37 +261,28 @@ def compute_phase_transition_hints(project: Project, data: ProjectSnapshotData) 
             hints.append(data.pliego.blocker_message)
     elif current == WorkflowPhase.BUDGETING_PIPELINE and target == WorkflowPhase.MANAGEMENT_APPROVAL:
         bp = data.budget_pipeline
-        pending_labels: list[str] = []
-        if not bp.get("subcontracts_done"):
-            pending_labels.append("cotizaciones de subcontratación")
-        if not bp.get("volumetry_done"):
-            pending_labels.append("volumetría")
-        if not bp.get("cost_analysis_done"):
-            pending_labels.append("análisis de costo")
-        if not bp.get("budget_marked_complete"):
-            pending_labels.append("presupuesto interno marcado como listo")
-        if pending_labels:
-            hints.append(
-                "Completa el pipeline de presupuesto en la pestaña Presupuesto: "
-                + ", ".join(pending_labels)
-                + "."
-            )
+        if not bp.get("control_review_done"):
+            hints.append("Marca la revisión de Control en Presupuesto — Checklist antes de enviar a gerencia.")
+        else:
+            pending_labels: list[str] = []
+            if not bp.get("subcontracts_done"):
+                pending_labels.append("cotizaciones de subcontratación")
+            if not bp.get("volumetry_done"):
+                pending_labels.append("volumetría")
+            if not bp.get("cost_analysis_done"):
+                pending_labels.append("análisis de costo")
+            if not bp.get("budget_marked_complete"):
+                pending_labels.append("presupuesto interno marcado como listo")
+            if pending_labels:
+                hints.append(
+                    "Completa el pipeline de presupuesto en la pestaña Presupuesto: "
+                    + ", ".join(pending_labels)
+                    + "."
+                )
     elif current == WorkflowPhase.MANAGEMENT_APPROVAL and target == WorkflowPhase.BUDGET_APPROVED:
         bp = data.budget_pipeline
-        extra: list[str] = []
-        if not bp.get("control_review_done"):
-            extra.append("revisión de Control")
-        if not (bp.get("client_approved_version_label") or "").strip():
-            extra.append("versión aprobada por el cliente (etiqueta)")
-        if extra:
-            hints.append("Falta: " + " y ".join(extra) + ".")
-        elif not (
-            bp.get("subcontracts_done")
-            and bp.get("volumetry_done")
-            and bp.get("cost_analysis_done")
-            and bp.get("budget_marked_complete")
-        ):
-            hints.append("Completa el pipeline de presupuesto antes de cerrar la aprobación de gerencia.")
+        if not bp.get("management_review_done"):
+            hints.append("Marca la aprobación de Gerencia en Presupuesto — Checklist.")
 
     if not hints:
         hints.append("No hay bloqueos conocidos para avanzar al siguiente paso del flujo.")

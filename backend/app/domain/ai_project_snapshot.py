@@ -169,15 +169,9 @@ def _budget_section(data: ProjectSnapshotData) -> list[str]:
 
 def _management_section(data: ProjectSnapshotData) -> list[str]:
     bp = data.budget_pipeline
-    lines = [
-        f"- Revisión de Control: {'sí' if bp.get('control_review_done') else 'no'}",
+    return [
+        f"- Aprobación de Gerencia: {'sí' if bp.get('management_review_done') else 'no'}",
     ]
-    vers = bp.get("client_approved_version_label")
-    if isinstance(vers, str) and vers.strip():
-        lines.append(f"- Versión cliente: {vers.strip()}")
-    else:
-        lines.append("- Versión cliente: sin etiqueta")
-    return lines
 
 
 def _transversal_section(data: ProjectSnapshotData) -> list[str]:
