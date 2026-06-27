@@ -328,7 +328,7 @@ export function WorkspaceHallazgosTab({
     return () => {
       cancelled = true
     }
-  }, [token, projectUuid, project?.workflow_meta?.coordination_last_folder_uuid])
+  }, [token, projectUuid, project?.workflow_meta])
 
   useEffect(() => {
     if (!token || !projectUuid || foldersLoading) return

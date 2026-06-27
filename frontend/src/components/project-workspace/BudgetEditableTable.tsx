@@ -7,27 +7,8 @@ import {
   rowsForSave,
   type ProcessedBudgetRow,
 } from '../../lib/budgetRows'
+import { fmtDop, fmtUsd } from '../../lib/budgetFormat'
 import { WorkspaceActionButton } from './WorkspaceActionButton'
-
-function fmtDop(n: unknown): string {
-  const num = Number(n) || 0
-  return new Intl.NumberFormat('es-DO', {
-    style: 'currency',
-    currency: 'DOP',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num)
-}
-
-function fmtUsd(n: unknown, tcRate = 58.5): string {
-  const num = Number(n) || 0
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(num / tcRate)
-}
 
 function fmtQty(q: unknown): string {
   if (q == null || q === '') return ''
@@ -280,5 +261,3 @@ export function BudgetEditableTable({
     </div>
   )
 }
-
-export { fmtDop, fmtUsd }

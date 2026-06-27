@@ -6,16 +6,17 @@ import type { BudgetRow } from '../../../types/budget'
 import type { Project } from '../../../types/project'
 import type { SubcontractQuoteRow } from '../../../types/projectWorkspace'
 import { processBudgetRows } from '../../../lib/budgetRows'
+import { fmtDop } from '../../../lib/budgetFormat'
+import { showBudgetPipelinePanel } from '../../../lib/budgetPipelineUi'
 import { PrimaryButton } from '../../PrimaryButton'
 import { WorkspaceActionButton } from '../WorkspaceActionButton'
 import {
   BudgetChecklistPanel,
   BudgetQuotesPanel,
-  showBudgetPipelinePanel,
 } from '../BudgetPipelinePanel'
 import { BudgetSectionSwitch, type BudgetSectionId } from '../BudgetSectionSwitch'
 import { WorkspacePriceDatabaseTab } from './WorkspacePriceDatabaseTab'
-import { BudgetEditableTable, fmtDop } from '../BudgetEditableTable'
+import { BudgetEditableTable } from '../BudgetEditableTable'
 
 const BUDGET_PHASE_LABELS: Record<string, string> = {
   extraction: 'Extrayendo planos y volumetría…',
@@ -183,20 +184,18 @@ export function WorkspacePresupuestoMaestroTab({
     projectUuid,
     token,
   )
-  const [modalOpen, setModalOpen] = useState(false)
-  const [isEditing, setIsEditing] = useState(false)
-  const [draftRows, setDraftRows] = useState<BudgetRow[]>([])
+  const syncedRows = useMemo(
+    () => result?.rows?.map((r) => ({ ...r })) ?? [],
+    [result?.rows],
+  )
+  const [editRows, setEditRows] = useState<BudgetRow[] | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [modalOpen, setModalOpen] = useState(false)
+  const isEditing = editRows !== null
+  const draftRows = isEditing ? editRows : syncedRows
   const elapsed = useElapsedSeconds(
     job?.status === 'queued' || job?.status === 'processing' ? job.created_at : undefined,
   )
-
-  useEffect(() => {
-    if (result?.rows) {
-      setDraftRows(result.rows.map((r) => ({ ...r })))
-      setSaveError(null)
-    }
-  }, [result])
 
   const processedRows = useMemo(() => processBudgetRows(draftRows), [draftRows])
 
@@ -223,19 +222,14 @@ export function WorkspacePresupuestoMaestroTab({
     return ok
   }
 
-  useEffect(() => {
-    if (result?.rows && !isEditing) {
-      setDraftRows(result.rows.map((r) => ({ ...r })))
-      setSaveError(null)
-    }
-  }, [result, isEditing])
+  function startEditing() {
+    setEditRows(syncedRows.map((r) => ({ ...r })))
+    setSaveError(null)
+  }
 
   function exitEditMode() {
-    setIsEditing(false)
+    setEditRows(null)
     setSaveError(null)
-    if (result?.rows) {
-      setDraftRows(result.rows.map((r) => ({ ...r })))
-    }
   }
 
   const pipelineAvailable = project ? showBudgetPipelinePanel(project.workflow_phase) : false
@@ -507,7 +501,7 @@ export function WorkspacePresupuestoMaestroTab({
                 className="inline-flex items-center justify-center rounded-lg border border-black/15 p-2 text-muted hover:bg-black/5 hover:text-ink"
                 title="Editar partidas, precios y secciones del presupuesto"
                 aria-label="Editar presupuesto"
-                onClick={() => setIsEditing(true)}
+                onClick={startEditing}
               >
                 <Pencil className="size-4" strokeWidth={2} aria-hidden />
               </button>
@@ -537,7 +531,7 @@ export function WorkspacePresupuestoMaestroTab({
         <div className="mt-6">
           <BudgetEditableTable
             rows={draftRows}
-            onRowsChange={setDraftRows}
+            onRowsChange={setEditRows}
             saveError={saveError}
             editing={isEditing}
             onSave={async (rows) => {
@@ -547,7 +541,7 @@ export function WorkspacePresupuestoMaestroTab({
                 setSaveError('No se pudo guardar el presupuesto')
                 return false
               }
-              setIsEditing(false)
+              setEditRows(null)
               return true
             }}
           />

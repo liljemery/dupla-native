@@ -272,7 +272,3 @@ export function BudgetQuotesPanel({
     </Card>
   )
 }
-
-export function showBudgetPipelinePanel(phase: string | undefined): boolean {
-  return !!phase && ['BUDGETING_PIPELINE', 'MANAGEMENT_APPROVAL', 'BUDGET_APPROVED', 'COMPLETE'].includes(phase)
-}
