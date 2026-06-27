@@ -119,16 +119,16 @@ body {
     clip-path: polygon(0 0, 56% 0, 66% 17%, 100% 17%, 100% 100%, 0 100%);
   }
   .du-folder-card-title {
-    @apply truncate text-base font-bold leading-tight tracking-tight text-white;
+    @apply line-clamp-2 text-base font-bold leading-tight tracking-tight text-white drop-shadow-md;
   }
   .du-folder-card-subtitle {
-    @apply mt-0.5 truncate text-sm font-normal leading-snug text-white/45;
+    @apply mt-0.5 line-clamp-1 text-sm font-normal leading-snug text-white/70 drop-shadow-sm;
   }
   .du-folder-card-heading {
-    @apply relative z-20 min-w-0 max-w-[calc(100%-2.75rem)] pt-3 pl-4;
+    @apply absolute left-4 top-7 z-20 min-w-0 max-w-[calc(100%-5.5rem)] pr-1;
   }
   .du-project-folder-card {
-    @apply relative h-64 overflow-hidden rounded-4xl border-[3px] border-ink bg-ink outline-none;
+    @apply relative isolate h-64 overflow-hidden rounded-4xl border-[3px] border-ink bg-ink outline-none;
     transition:
       transform 0.5s cubic-bezier(0.22, 1, 0.36, 1),
       box-shadow 0.5s cubic-bezier(0.22, 1, 0.36, 1);
