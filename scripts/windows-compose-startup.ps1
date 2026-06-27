@@ -1,4 +1,6 @@
-# Arranque en Windows: nginx + docker compose (dupla-native).
+# Arranque en Windows: nginx host + docker compose.
+# Sincroniza deploy/nginx-host.conf → C:\nginx\conf\nginx.conf en cada arranque.
+#
 # Registrar una vez (PowerShell como administrador):
 #   Set-ExecutionPolicy -Scope LocalMachine RemoteSigned
 #   Register-ScheduledTask -TaskName "DuplaStartup" `
@@ -12,7 +14,9 @@ $ErrorActionPreference = "Stop"
 
 $StartupDelaySeconds = 90
 $NginxDir = "C:\nginx"
-$DuplaDir = "C:\Users\sroa\Documents\dupla-native"
+$DuplaDir = Split-Path $PSScriptRoot -Parent
+$HostNginxConf = Join-Path $DuplaDir "deploy\nginx-host.conf"
+$TargetNginxConf = Join-Path $NginxDir "conf\nginx.conf"
 $LogFile = Join-Path $DuplaDir "var\logs\windows-startup.log"
 
 function Write-Log([string]$Message) {
@@ -33,19 +37,38 @@ function Wait-DockerReady {
     throw "Docker no respondió en ${MaxSeconds}s"
 }
 
+function Sync-HostNginx {
+    if (-not (Test-Path $HostNginxConf)) { throw "No existe $HostNginxConf" }
+    $confDir = Split-Path $TargetNginxConf -Parent
+    if (-not (Test-Path $confDir)) { New-Item -ItemType Directory -Force -Path $confDir | Out-Null }
+    Copy-Item -Path $HostNginxConf -Destination $TargetNginxConf -Force
+    Write-Log "nginx conf sincronizado desde deploy/nginx-host.conf"
+
+    $nginxExe = Join-Path $NginxDir "nginx.exe"
+    & $nginxExe -t -p $NginxDir
+    if ($LASTEXITCODE -ne 0) { throw "nginx -t falló" }
+}
+
+function Start-OrReloadHostNginx {
+    $nginxExe = Join-Path $NginxDir "nginx.exe"
+    $nginxProc = Get-Process -Name nginx -ErrorAction SilentlyContinue
+    if ($nginxProc) {
+        & $nginxExe -s reload -p $NginxDir
+        if ($LASTEXITCODE -ne 0) { throw "nginx -s reload falló" }
+        Write-Log "nginx recargado"
+    } else {
+        Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -WindowStyle Hidden
+        Write-Log "nginx iniciado"
+    }
+}
+
 try {
     Write-Log "startup begin (espera ${StartupDelaySeconds}s para Docker)"
     Start-Sleep -Seconds $StartupDelaySeconds
 
     if (-not (Test-Path $NginxDir)) { throw "No existe $NginxDir" }
-    Set-Location $NginxDir
-    $nginxProc = Get-Process -Name nginx -ErrorAction SilentlyContinue
-    if ($nginxProc) {
-        Write-Log "nginx ya en ejecución"
-    } else {
-        Start-Process -FilePath (Join-Path $NginxDir "nginx.exe") -WorkingDirectory $NginxDir -WindowStyle Hidden
-        Write-Log "nginx iniciado"
-    }
+    Sync-HostNginx
+    Start-OrReloadHostNginx
 
     if (-not (Test-Path $DuplaDir)) { throw "No existe $DuplaDir" }
     Wait-DockerReady
