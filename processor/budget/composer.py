@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import warnings
 from dataclasses import dataclass, field
 from collections import Counter
 from typing import Any, Iterable, Mapping
@@ -56,6 +57,8 @@ _QUANTITY_SOURCE_LABELS: dict[str, str] = {
     "cota": "Cota OCR",
 }
 
+_PRELIMINARY_QUANTITY_SOURCES = {"default_estimate", "ratio_estimate", "mixed_measurement"}
+
 
 def _quantity_source_display(takeoff: QuantityTakeoff) -> str:
     """Human-readable quantity provenance for Excel (B2)."""
@@ -74,6 +77,26 @@ def _quantity_source_display(takeoff: QuantityTakeoff) -> str:
     if key == "ratio_estimate" and note:
         return f"{label}: {str(note).strip()}"
     return label
+
+
+def _quantity_source_key(takeoff: QuantityTakeoff) -> str:
+    meta = takeoff.trace.metadata
+    raw = meta.get("quantity_source")
+    if raw is None:
+        raw = takeoff.inputs.get("quantity_source")
+    return str(raw or "").strip()
+
+
+def _is_preliminary_takeoff(takeoff: QuantityTakeoff, *, price_estimated: bool = False) -> bool:
+    if price_estimated:
+        return True
+    if bool(getattr(takeoff, "requiere_revision", False)):
+        return True
+    return _quantity_source_key(takeoff) in _PRELIMINARY_QUANTITY_SOURCES
+
+
+def _budget_status_label(is_preliminary: bool) -> str:
+    return "PRELIMINAR" if is_preliminary else "EN_FIRME"
 
 
 def _bc3_catalog_code_set(bc3_catalog: dict[str, Any]) -> set[str]:
@@ -200,9 +223,12 @@ def _extract_unit_price(
     *,
     fallback_bc3_code: str | None = None,
     construcosto_snapshot: Any | None = None,
+    price_resolver: Any | None = None,
+    item_type: str = "",
+    inputs: Mapping[str, Any] | None = None,
     summary: str = "",
     unit: str = "",
-) -> tuple[float | None, str]:
+) -> tuple[float | None, str, Any | None]:
     """Resolve unit price: ConstruCosto (APU → materiales → equipos → mano de obra) then BC3; never BC3-first.
 
     Unit-family guard: a kg-takeoff (rebar) will not accept an m3-priced match
@@ -244,7 +270,7 @@ def _extract_unit_price(
                     match.score,
                     match.entry.description[:60],
                 )
-                return float(match.unit_price), label
+                return float(match.unit_price), label, None
 
     if candidate is not None and bc3_catalog and candidate.bc3_code:
         concept = bc3_catalog.get("concepts_by_code", {}).get(candidate.bc3_code, {})
@@ -253,7 +279,7 @@ def _extract_unit_price(
             try:
                 p = float(price)
                 if p > 0:
-                    return p, _bc3_fallback_price_label(concept)
+                    return p, _bc3_fallback_price_label(concept), None
             except (TypeError, ValueError):
                 pass
 
@@ -264,11 +290,25 @@ def _extract_unit_price(
             try:
                 p = float(price)
                 if p > 0:
-                    return p, _bc3_fallback_price_label(concept)
+                    return p, _bc3_fallback_price_label(concept), None
             except (TypeError, ValueError):
                 pass
 
-    return None, "PRECIO_PENDIENTE"
+    if price_resolver is not None and hasattr(price_resolver, "_estimate_price"):
+        try:
+            estimated = price_resolver._estimate_price(
+                item_type,
+                inputs or {},
+                unit=unit_s,
+                description=summary_s,
+            )
+        except Exception:
+            logger.warning("Price estimator failed for %s", item_type, exc_info=True)
+            estimated = None
+        if estimated is not None and estimated.unit_price is not None:
+            return float(estimated.unit_price), "PRECIO_ESTIMADO", estimated
+
+    return None, "PRECIO_PENDIENTE", None
 
 
 @dataclass
@@ -663,6 +703,20 @@ def compose_budget_rows(
     takeoff_list = list(takeoffs)
     derived_from_keys, concrete_volume_prefixes = budget_filter_sets(takeoff_list)
     inclusive = _budget_inclusive_flag(context)
+    if apu_matcher is not None:
+        warnings.warn(
+            "compose_budget_rows(apu_matcher=...) is deprecated; PriceResolver is the "
+            "authoritative pricing engine and APUMatcher is used only if no resolver is available.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+    if price_resolver is None:
+        try:
+            from pricing.resolver import build_default_resolver
+
+            price_resolver = build_default_resolver()
+        except Exception:
+            logger.debug("PriceResolver auto-build unavailable; keeping legacy price fallback", exc_info=True)
 
     raw_allowed = context.metadata.get("allowed_item_types") if context.metadata else None
     allowed_item_types: set[str] | None = set(raw_allowed) if raw_allowed else None
@@ -793,6 +847,8 @@ def compose_budget_rows(
         resolved_price: float | None
         price_source: str
         source_type: str
+        price_estimated = False
+        estimate_basis: str | None = None
         apu_match: Any | None = None   # stays None on the resolver path; used later in candidate_code
 
         if price_resolver is not None:
@@ -805,8 +861,14 @@ def compose_budget_rows(
             resolved_price = res.unit_price
             price_source = res.source
             source_type = res.source   # relational_apu | construcosto | excluded | pending
+            price_estimated = bool(getattr(res, "estimated", False))
+            estimate_basis = getattr(res, "estimate_basis", None)
             line_metadata["price_resolution"] = res.to_dict()
             line_metadata["price_currency"] = res.currency
+            if price_estimated:
+                line_metadata["price_estimated"] = True
+                line_metadata["estimate_basis"] = estimate_basis
+                line_metadata["requiere_revision"] = True
             if res.apu_code:
                 line_code = res.apu_code
                 deterministic_bc3_code = res.apu_code
@@ -878,19 +940,35 @@ def compose_budget_rows(
                     for c in apu_match.components
                 ]
             else:
-                resolved_price, price_source = _extract_unit_price(
+                resolved_price, price_source, estimated_resolution = _extract_unit_price(
                     prepared.candidate,
                     bc3_catalog,
                     fallback_bc3_code=deterministic_bc3_code,
                     construcosto_snapshot=construcosto_snapshot,
+                    price_resolver=price_resolver,
+                    item_type=prepared.takeoff.item_type,
+                    inputs=prepared.takeoff.inputs,
                     summary=prepared.summary,
                     unit=prepared.takeoff.unit,
                 )
-                source_type = "bc3_catalog"
+                if estimated_resolution is not None:
+                    source_type = "estimated"
+                    price_estimated = True
+                    estimate_basis = getattr(estimated_resolution, "estimate_basis", None)
+                    line_metadata["price_resolution"] = estimated_resolution.to_dict()
+                    line_metadata["price_estimated"] = True
+                    line_metadata["estimate_basis"] = estimate_basis
+                    line_metadata["requiere_revision"] = True
+                    if getattr(estimated_resolution, "apu_code", None):
+                        line_metadata["apu_code"] = estimated_resolution.apu_code
+                else:
+                    source_type = "bc3_catalog"
 
             primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "USD").strip() or "USD"
             if source_type == "constructor_apu":
                 line_metadata["price_currency"] = primary_currency
+            elif source_type in {"construcosto", "estimated"}:
+                line_metadata["price_currency"] = "DOP"
             elif resolved_price is not None:
                 line_metadata["price_currency"] = "?"
                 line_metadata["price_currency_uncertain"] = True
@@ -901,6 +979,11 @@ def compose_budget_rows(
         line_metadata["source_type"] = source_type
         prepared.takeoff.trace.metadata["source_type"] = source_type
         line_metadata["quantity_source_display"] = _quantity_source_display(prepared.takeoff)
+        preliminary = _is_preliminary_takeoff(prepared.takeoff, price_estimated=price_estimated)
+        if preliminary:
+            line_metadata["requiere_revision"] = True
+        line_metadata["is_preliminary"] = preliminary
+        line_metadata["budget_status"] = _budget_status_label(preliminary)
         line_metadata["bc3_origin"] = _line_bc3_origin(
             prepared.candidate, bc3_catalog or {}, line_code
         )
@@ -921,6 +1004,11 @@ def compose_budget_rows(
             line_metadata["waste_fraction"] = waste_fraction
             line_metadata["waste_formula_note"] = waste_note
 
+        line_assumptions = list(prepared.takeoff.assumptions)
+        if price_estimated and estimate_basis:
+            line_assumptions.append(f"Precio estimado: {estimate_basis}. Requiere validacion del presupuestista.")
+        line_assumptions = list(dict.fromkeys(line_assumptions))
+
         budget_line = BudgetLine(
             line_id=f"BLINE-{line_index:04d}",
             takeoff_key=prepared.takeoff.item_key,
@@ -938,7 +1026,7 @@ def compose_budget_rows(
             ),
             candidate_score=prepared.candidate.score if prepared.candidate else None,
             source_refs=list(prepared.takeoff.source_refs),
-            assumptions=list(prepared.takeoff.assumptions),
+            assumptions=line_assumptions,
             metadata=line_metadata,
         )
         lines.append(budget_line)

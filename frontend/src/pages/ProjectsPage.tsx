@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 
-import { apiFetch } from '../api/client'
+import { apiFetch, apiStatusErrorMessage } from '../api/client'
 import { CreateProjectModal } from '../components/projects/CreateProjectModal'
 import { NotificationsBell } from '../components/NotificationsBell'
 import { WorkspaceContextSelect } from '../components/WorkspaceContextSelect'
@@ -277,7 +277,7 @@ export function ProjectsPage() {
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
-        setCreateError((j as { detail?: string }).detail ?? 'No se pudo crear el proyecto')
+        setCreateError((j as { detail?: string }).detail ?? apiStatusErrorMessage(res.status))
         return
       }
       setFeedback('Proyecto creado. Ábrelo en la tabla o en el tablero, o crea otro.')

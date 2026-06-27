@@ -55,6 +55,10 @@ scripts/spike_f2d/offline/
 
 .cursor/
 
+# Entregables comerciales / costo por uso (generados localmente, no subir a GitHub)
+docs/entregables/
+scripts/gen_respuesta_costo_pdf.py
+
 # APS Design Automation build artifacts
 processor/aps_integration/DuplaExtractor.bundle/
 processor/aps_integration/DuplaExtractor.zip

@@ -118,7 +118,7 @@ export function NotificationsBell({ token, className }: NotificationsBellProps) 
                 <li key={n.uuid}>
                   <button
                     type="button"
-                    className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-black/[0.03] ${
+                    className={`flex w-full gap-3 px-4 py-3 text-left transition hover:bg-black/3 ${
                       n.read_at ? 'opacity-75' : ''
                     }`}
                     onClick={() => void markRead(n.uuid)}

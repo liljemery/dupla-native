@@ -23,7 +23,7 @@ from app.services.workspace_bootstrap_service import bootstrap_workspace_resourc
 from app.models.module import Module
 from app.models.project import Project, ProjectArchitectureData
 from app.models.task_board import TaskCard, TaskList
-from app.models.user import User, UserRole
+from app.models.user import User, UserModule, UserRole
 from app.repositories.permission_repository import PermissionRepository
 from app.repositories.project_repository import ProjectRepository
 from app.repositories.workspace_repository import WorkspaceRepository
@@ -128,11 +128,11 @@ def _seed_workflow_meta() -> dict[str, Any]:
             "volumetry_done": False,
             "cost_analysis_done": False,
             "budget_marked_complete": False,
+            "control_review_done": False,
             "client_approved_version_label": None,
             "volumetry": {},
             "cost_analysis": {},
             "budget_versions": [],
-        
         }
     }
 

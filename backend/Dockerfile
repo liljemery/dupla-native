@@ -10,8 +10,7 @@ RUN chmod +x /tmp/install-libredwg.sh \
   && rm /tmp/install-libredwg.sh
 
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt \
-  && pip install --no-cache-dir pymupdf ezdxf shapely requests
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ .
 COPY motor/ /motor/

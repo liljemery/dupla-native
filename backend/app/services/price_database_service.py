@@ -17,6 +17,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.config import Settings, get_settings
 from app.domain.price_database_uploads import sanitize_price_db_filename, validate_price_db_extension
 from app.domain.project_updated import touch_project_updated_at
+from app.domain.upload_storage import write_upload_to_path
 from app.models.project import Project
 from app.models.project_price_database_file import ProjectPriceDatabaseFile
 from app.models.user import User
@@ -45,16 +46,19 @@ class PriceDatabaseService:
         project = await self._get_project(user, project_uuid)
         safe_name = sanitize_price_db_filename(upload.filename or "file")
         validate_price_db_extension(safe_name)
-        raw = await upload.read()
-        if not raw:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archivo vacío")
 
         root = Path(self._settings.upload_root)
         dest_dir = root / str(project.id) / "price_db"
-        dest_dir.mkdir(parents=True, exist_ok=True)
         fid = uuid.uuid4()
-        storage_key = str(dest_dir / f"{fid}_{safe_name}")
-        Path(storage_key).write_bytes(raw)
+        storage_path = dest_dir / f"{fid}_{safe_name}"
+        file_size = await write_upload_to_path(upload, storage_path)
+        if file_size == 0:
+            try:
+                storage_path.unlink()
+            except OSError:
+                pass
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Archivo vacío")
+        storage_key = str(storage_path)
 
         row = ProjectPriceDatabaseFile(
             id=fid,
@@ -62,7 +66,7 @@ class PriceDatabaseService:
             storage_key=storage_key,
             original_name=upload.filename or "file",
             mime=upload.content_type,
-            file_size_bytes=len(raw),
+            file_size_bytes=file_size,
             status="processing",
             price_category=None,
             is_active=False,

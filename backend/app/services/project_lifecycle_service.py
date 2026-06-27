@@ -21,6 +21,7 @@ from app.domain.project_kind import ProjectKind
 from app.domain.project_updated import touch_project_updated_at
 from app.domain.project_uploads import sanitize_project_original_filename, validate_project_file_extension
 from app.domain.cad_upload_gate import validate_cad_upload
+from app.domain.upload_storage import write_upload_to_path
 from app.domain.workflow_automation_tasks import (
     append_automation_card_uuid,
     automation_card_uuids,
@@ -1006,23 +1007,23 @@ class ProjectLifecycleService:
         project = await self._project_svc.get_project(user, project_uuid)
         wf = self._domain_phase_for_project(project)
         counts_for_budget = upload_counts_for_budget(wf)
-        raw = await upload.read()
-        max_bytes = self._settings.project_file_max_mb * 1024 * 1024
-        if len(raw) > max_bytes:
-            raise HTTPException(
-                status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                detail=f"Archivo demasiado grande (máx. {self._settings.project_file_max_mb} MB)",
-            )
         fid = uuid.uuid4()
         root = Path(self._settings.upload_root)
         dest_dir = root / str(self._workspace_id) / str(project.id)
-        dest_dir.mkdir(parents=True, exist_ok=True)
         safe_name = sanitize_project_original_filename(upload.filename or "file")
         validate_project_file_extension(safe_name)
-        storage_key = str(dest_dir / f"{fid}_{safe_name}")
-        Path(storage_key).write_bytes(raw)
+        storage_path = dest_dir / f"{fid}_{safe_name}"
+        max_mb = int(self._settings.project_file_max_mb or 0)
+        max_bytes = max_mb * 1024 * 1024 if max_mb > 0 else None
+        await write_upload_to_path(
+            upload,
+            storage_path,
+            max_bytes=max_bytes,
+            max_label=f"{max_mb} MB" if max_bytes is not None else None,
+        )
+        storage_key = str(storage_path)
 
-        cad_gate = validate_cad_upload(Path(storage_key))
+        cad_gate = validate_cad_upload(storage_path)
 
         resolved_folder_id: Optional[UUID] = None
         if folder_uuid is not None:

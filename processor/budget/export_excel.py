@@ -32,6 +32,7 @@ HEADERS = (
     "Supuestos",
     "Código APU",
     "Desglose APU",
+    "Estado",
 )
 REVIEW_FILL = PatternFill("solid", fgColor="FCE4D6")
 PENDING_FILL = PatternFill("solid", fgColor="FFFF00")
@@ -211,6 +212,7 @@ def export_budget_workbook(
         apu_code = ""
         apu_desglose = ""
         plano_origen = ""
+        budget_status = ""
         needs_review = False
         if row.row_type == "line":
             price_source = str(row.metadata.get("price_source") or "")
@@ -218,6 +220,7 @@ def export_budget_workbook(
             bc3_origin = str(row.metadata.get("bc3_origin") or "")
             candidate_source = str(row.metadata.get("candidate_source") or "")
             plano_origen = str(row.metadata.get("source_file") or "")
+            budget_status = str(row.metadata.get("budget_status") or "")
             needs_review = bool(row.metadata.get("requiere_revision"))
             requiere_revision_text = "Sí" if needs_review else "No"
             raw_conf = row.metadata.get("confidence")
@@ -250,6 +253,7 @@ def export_budget_workbook(
             assumptions_text,
             apu_code,
             apu_desglose,
+            budget_status,
         )
         for column_index, value in enumerate(values, start=1):
             cell = worksheet.cell(row=target_row, column=column_index)
@@ -266,7 +270,7 @@ def export_budget_workbook(
         elif row.row_type == "subtotal":
             row_fill = SUBTOTAL_FILL
             row_font = Font(bold=True)
-        elif row.row_type == "line" and needs_review:
+        elif row.row_type == "line" and (needs_review or budget_status == "PRELIMINAR"):
             row_fill = REVIEW_FILL
 
         for column_index in range(1, len(HEADERS) + 1):
@@ -298,6 +302,7 @@ def export_budget_workbook(
     worksheet.column_dimensions["O"].width = 36
     worksheet.column_dimensions["P"].width = 18
     worksheet.column_dimensions["Q"].width = 48
+    worksheet.column_dimensions["R"].width = 16
 
     if quality_report:
         _append_quality_sheet(workbook, quality_report)

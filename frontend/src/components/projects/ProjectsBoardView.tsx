@@ -165,12 +165,12 @@ export function ProjectsBoardView({
                 return (
                   <div
                     key={col.id}
-                    className="flex h-full min-h-0 w-[11rem] shrink-0 flex-col rounded-xl border border-black/8 bg-surface-elevated shadow-[var(--shadow-card)] sm:w-[12rem]"
+                    className="flex h-full min-h-0 w-44 shrink-0 flex-col rounded-xl border border-black/8 bg-surface-elevated shadow-(--shadow-card) sm:w-48"
                     onDragOver={onDragOverBoard}
                     onDrop={(e) => onDropOnPhaseColumn(e, col.id)}
                   >
                     <div
-                      className="flex min-h-[5.5rem] shrink-0 flex-col items-center justify-center gap-1.5 rounded-t-xl border-b border-white/20 bg-primary px-2 py-3 text-center text-white shadow-sm sm:min-h-24"
+                      className="flex min-h-22 shrink-0 flex-col items-center justify-center gap-1.5 rounded-t-xl border-b border-white/20 bg-primary px-2 py-3 text-center text-white shadow-sm sm:min-h-24"
                       title={col.title}
                     >
                       <ColumnHeaderGlyph
@@ -230,7 +230,7 @@ export function ProjectsBoardView({
                                   <span>Progreso</span>
                                   <span className="tabular-nums text-ink">{pct}%</span>
                                 </div>
-                                <div className="h-1.5 overflow-hidden rounded-full bg-black/[0.06]">
+                                <div className="h-1.5 overflow-hidden rounded-full bg-black/6">
                                   <div
                                     className="h-full rounded-full bg-primary transition-[width] duration-300"
                                     style={{ width: `${pct}%` }}
@@ -248,7 +248,7 @@ export function ProjectsBoardView({
                                     )}
                                   </span>
                                 </div>
-                                <div className="flex items-start gap-1 border-t border-black/[0.06] pt-1">
+                                <div className="flex items-start gap-1 border-t border-black/6 pt-1">
                                   <span className="du-meta w-9 shrink-0 text-[10px] sm:text-xs">Act.</span>
                                   <time
                                     className="min-w-0 flex-1 text-[10px] tabular-nums leading-snug text-ink sm:text-xs"
@@ -258,10 +258,10 @@ export function ProjectsBoardView({
                                   </time>
                                 </div>
                               </div>
-                              <div className="mt-1.5 flex items-start justify-between gap-1 border-t border-black/[0.05] pt-1">
+                              <div className="mt-1.5 flex items-start justify-between gap-1 border-t border-black/5 pt-1">
                                 <div className="flex min-w-0 flex-wrap items-center gap-1">
                                   {!canMovePhase ? (
-                                    <span className="rounded bg-black/[0.05] px-1 py-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted sm:text-xs">
+                                    <span className="rounded bg-black/5 px-1 py-0.5 text-[10px] font-semibold uppercase leading-tight tracking-wide text-muted sm:text-xs">
                                       Fin flujo
                                     </span>
                                   ) : (

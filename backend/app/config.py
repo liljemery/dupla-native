@@ -95,12 +95,11 @@ class Settings(BaseSettings):
     project_file_max_mb: Annotated[
         int,
         Field(
-            default=200,
-            ge=1,
-            le=2048,
-            description="Tamaño máximo por archivo de proyecto (MB). CAD/BIM suele superar 50 MB.",
+            default=0,
+            ge=0,
+            description="Tamano maximo por archivo de proyecto (MB). 0 desactiva el limite de la app.",
         ),
-    ] = 200
+    ] = 0
     openai_api_key: Annotated[
         Optional[str],
         Field(default=None, description="API key OpenAI: clasificación de archivos y Dupla Assistant (léela desde backend/.env)."),

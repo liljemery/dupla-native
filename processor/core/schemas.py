@@ -176,6 +176,8 @@ class StructuralElement(InventoryEntity):
     area_m2: float | None = None
     volume_m3: float | None = None
     material_hint: str | None = None
+    cross_section_shape: str | None = None
+    section_diameter_m: float | None = None
     section_width_m: float | None = None
     section_height_m: float | None = None
     span_m: float | None = None
@@ -239,6 +241,12 @@ class QuantityTrace(ModelBase):
 
 @dataclass(kw_only=True)
 class QuantityTakeoff(ModelBase):
+    """Deterministic quantity result.
+
+    Common ``inputs`` trace keys include ``quantity_source``, ``formwork_type``,
+    ``price_estimated`` and ``estimate_basis``. Price keys may be populated by
+    the budget composer/resolver metadata rather than by the original takeoff.
+    """
     item_key: str
     item_type: str
     level_id: str | None = None

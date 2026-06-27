@@ -1,4 +1,4 @@
-import { ImageIcon, Send, X, Zap } from 'lucide-react'
+import { Bot, ImageIcon, Send, X, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
@@ -108,7 +108,7 @@ export function DuplaAssistantChat() {
   if (!token) return null
 
   return (
-    <div className="pointer-events-none fixed bottom-0 right-0 z-[100] flex flex-col items-end p-4 sm:p-5">
+    <div className="pointer-events-none fixed bottom-0 right-0 z-100 flex flex-col items-end p-4 sm:p-5">
       {open ? (
         <div
           className="pointer-events-auto mb-3 flex max-h-[min(520px,calc(100dvh-8rem))] w-[min(400px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-black/15 bg-[#f4f4f5] shadow-xl"
@@ -137,7 +137,7 @@ export function DuplaAssistantChat() {
                 {line.role === 'assistant' ? (
                   <AssistantChatMarkdown content={line.content} />
                 ) : (
-                  <span className="whitespace-pre-wrap break-words">{line.content}</span>
+                  <span className="whitespace-pre-wrap wrap-break-word">{line.content}</span>
                 )}
               </div>
             ))}
@@ -208,7 +208,7 @@ export function DuplaAssistantChat() {
             aria-label="Abrir Dupla Assistant"
             onClick={() => setOpen(true)}
           >
-            <Zap className="h-7 w-7 text-amber-300" />
+            <Bot className="h-6 w-6 text-white" strokeWidth={2} aria-hidden />
           </button>
         )}
       </div>

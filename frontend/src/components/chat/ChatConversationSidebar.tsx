@@ -1,4 +1,5 @@
 import { Search } from 'lucide-react'
+import type { KeyboardEvent } from 'react'
 
 import {
   chatKindLabel,
@@ -24,6 +25,16 @@ function conversationInitial(c: ChatConversationSummary): string {
   return t.charAt(0).toUpperCase()
 }
 
+function conversationRowKeyDown(e: KeyboardEvent, onSelect: () => void) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault()
+    onSelect()
+  }
+}
+
+const sidebarSecondaryButtonClassName =
+  'flex-1 rounded-lg border border-black/12 bg-white px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-ink shadow-sm transition-colors hover:bg-black/3'
+
 export function ChatConversationSidebar({
   conversations,
   activeConversationUuid,
@@ -34,7 +45,7 @@ export function ChatConversationSidebar({
   onSearchQueryChange,
 }: ChatConversationSidebarProps) {
   return (
-    <aside className="flex h-full min-h-0 w-full shrink-0 flex-col bg-[#f8f9fb] lg:w-80 xl:w-[22rem]">
+    <aside className="flex h-full min-h-0 w-full shrink-0 flex-col bg-[#f8f9fb] lg:w-80 xl:w-88">
       <div className="border-b border-black/8 px-3 py-3">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">Consola de mensajes</p>
         <label className="relative mt-2 block">
@@ -64,7 +75,7 @@ export function ChatConversationSidebar({
         </button>
         <button
           type="button"
-          className="flex-1 rounded-lg border border-black/12 bg-white px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-ink shadow-sm hover:bg-black/[0.03]"
+          className={sidebarSecondaryButtonClassName}
           onClick={onNewGroup}
         >
           Grupo
@@ -80,10 +91,12 @@ export function ChatConversationSidebar({
             const when = formatRelativeChatTime(c.last_message_at)
             return (
               <li key={c.uuid}>
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelect(c.uuid)}
-                  className={`flex w-full gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
+                  onKeyDown={(e) => conversationRowKeyDown(e, () => onSelect(c.uuid))}
+                  className={`flex w-full cursor-pointer gap-3 rounded-xl border px-3 py-2.5 text-left transition ${
                     active
                       ? 'border-primary/35 bg-white shadow-md ring-1 ring-primary/15'
                       : 'border-transparent bg-transparent hover:bg-white/80'
@@ -122,7 +135,7 @@ export function ChatConversationSidebar({
                       {preview}
                     </span>
                   </span>
-                </button>
+                </div>
               </li>
             )
           })}

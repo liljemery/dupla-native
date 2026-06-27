@@ -20,7 +20,7 @@ from core.schemas import BudgetRow, ProjectContext
 logger = logging.getLogger("dupla.consolidator")
 
 # Reuse styling constants from the single-sheet exporter
-HEADERS = ("Codigo", "Nat", "Ud", "Resumen", "CanPres", "PrPres", "ImpPres")
+HEADERS = ("Codigo", "Nat", "Ud", "Resumen", "CanPres", "PrPres", "ImpPres", "Estado")
 THIN_SIDE = Side(style="thin", color="BFBFBF")
 ALL_BORDER = Border(left=THIN_SIDE, right=THIN_SIDE, top=THIN_SIDE, bottom=THIN_SIDE)
 HEADER_FILL = PatternFill("solid", fgColor="D9E1F2")
@@ -116,13 +116,14 @@ def _write_discipline_sheet(
             row.summary, 
             row.metadata.get("excel_quantity_formula", row.quantity), 
             row.metadata.get("excel_unit_price_formula", row.unit_price), 
-            row.metadata.get("excel_amount_formula", row.amount)
+            row.metadata.get("excel_amount_formula", row.amount),
+            row.metadata.get("budget_status", "") if row.row_type == "line" else "",
         )
         for col_idx, value in enumerate(values, start=1):
             cell = ws.cell(row=target_row, column=col_idx)
             cell.value = value
             cell.border = ALL_BORDER
-            if col_idx >= 5:
+            if 5 <= col_idx <= 7:
                 cell.number_format = "#,##0.00"
 
         row_fill = None
@@ -135,11 +136,11 @@ def _write_discipline_sheet(
             row_font = Font(bold=True)
             last_subtotal_row = target_row
 
-        for col_idx in range(1, 8):
+    for col_idx in range(1, len(HEADERS) + 1):
             cell = ws.cell(row=target_row, column=col_idx)
             cell.font = row_font
             cell.alignment = Alignment(
-                horizontal="left" if col_idx <= 4 else "right",
+                horizontal="left" if col_idx <= 4 or col_idx == 8 else "right",
                 vertical="center",
             )
             if row_fill is not None:
@@ -153,6 +154,7 @@ def _write_discipline_sheet(
     ws.column_dimensions["E"].width = 14
     ws.column_dimensions["F"].width = 14
     ws.column_dimensions["G"].width = 16
+    ws.column_dimensions["H"].width = 16
 
     return last_subtotal_row
 
@@ -177,7 +179,13 @@ def _write_summary_sheet(
     ws["A3"] = f"Generado: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     ws["A3"].font = Font(size=9, italic=True, color="666666")
 
-    summary_headers = ("Disciplina", "Subtotal RD$", "% del Total", "Observaciones")
+    summary_headers = (
+        "Disciplina",
+        "Subtotal en firme RD$",
+        "Subtotal con estimados RD$",
+        "% del Total",
+        "Observaciones",
+    )
     for col_idx, header in enumerate(summary_headers, start=1):
         cell = ws.cell(row=5, column=col_idx, value=header)
         cell.font = SUMMARY_FONT
@@ -190,18 +198,24 @@ def _write_summary_sheet(
         row_num = data_start + i
         ws.cell(row=row_num, column=1, value=display_name).border = ALL_BORDER
 
-        amount_cell = ws.cell(row=row_num, column=2)
+        firm_cell = ws.cell(row=row_num, column=2)
+        estimated_cell = ws.cell(row=row_num, column=3)
         if subtotal_row is not None:
-            amount_cell.value = f"='{sheet_name}'!G{subtotal_row}"
+            safe_sheet = sheet_name.replace("'", "''")
+            firm_cell.value = f'=SUMIF(\'{safe_sheet}\'!H:H,"EN_FIRME",\'{safe_sheet}\'!G:G)'
+            estimated_cell.value = f"='{safe_sheet}'!G{subtotal_row}"
         else:
-            amount_cell.value = 0
-        amount_cell.number_format = "#,##0.00"
-        amount_cell.border = ALL_BORDER
+            firm_cell.value = 0
+            estimated_cell.value = 0
+        firm_cell.number_format = "#,##0.00"
+        firm_cell.border = ALL_BORDER
+        estimated_cell.number_format = "#,##0.00"
+        estimated_cell.border = ALL_BORDER
 
-        pct_cell = ws.cell(row=row_num, column=3)
+        pct_cell = ws.cell(row=row_num, column=4)
         pct_cell.border = ALL_BORDER
 
-        obs_cell = ws.cell(row=row_num, column=4)
+        obs_cell = ws.cell(row=row_num, column=5)
         if subtotal_row is None:
             obs_cell.value = "Sin partidas"
         obs_cell.border = ALL_BORDER
@@ -211,15 +225,16 @@ def _write_summary_sheet(
     ws.cell(row=total_row, column=1).fill = TOTAL_FILL
     ws.cell(row=total_row, column=1).border = ALL_BORDER
 
-    total_cell = ws.cell(row=total_row, column=2)
-    sum_range = f"B{data_start}:B{total_row - 1}"
-    total_cell.value = f"=SUM({sum_range})"
-    total_cell.font = TOTAL_FONT
-    total_cell.fill = TOTAL_FILL
-    total_cell.number_format = "#,##0.00"
-    total_cell.border = ALL_BORDER
+    for col_idx, col_letter in ((2, "B"), (3, "C")):
+        total_cell = ws.cell(row=total_row, column=col_idx)
+        sum_range = f"{col_letter}{data_start}:{col_letter}{total_row - 1}"
+        total_cell.value = f"=SUM({sum_range})"
+        total_cell.font = TOTAL_FONT
+        total_cell.fill = TOTAL_FILL
+        total_cell.number_format = "#,##0.00"
+        total_cell.border = ALL_BORDER
 
-    for col_idx in range(3, 5):
+    for col_idx in range(4, 6):
         cell = ws.cell(row=total_row, column=col_idx)
         cell.fill = TOTAL_FILL
         cell.border = ALL_BORDER
@@ -227,14 +242,15 @@ def _write_summary_sheet(
     # Percentage formulas
     for i in range(len(discipline_refs)):
         row_num = data_start + i
-        pct_cell = ws.cell(row=row_num, column=3)
-        pct_cell.value = f"=IF(B{total_row}=0,0,B{row_num}/B{total_row})"
+        pct_cell = ws.cell(row=row_num, column=4)
+        pct_cell.value = f"=IF(C{total_row}=0,0,C{row_num}/C{total_row})"
         pct_cell.number_format = "0.0%"
 
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 20
-    ws.column_dimensions["C"].width = 15
-    ws.column_dimensions["D"].width = 25
+    ws.column_dimensions["C"].width = 24
+    ws.column_dimensions["D"].width = 15
+    ws.column_dimensions["E"].width = 25
 
 
 def _save_workbook(workbook: Workbook, output: Path, *, max_fallback: int = 20) -> Path:
