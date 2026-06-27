@@ -1,6 +1,6 @@
 """Proyectos archivados + permisos de gerencia; revisión de gerencia en pipeline.
 
-Revision ID: 047_project_archive_management_review
+Revision ID: 047_project_archive_review
 Revises: 046_remove_bootstrap_checklist
 """
 
@@ -13,7 +13,7 @@ from alembic import op
 
 from app.domain.permission_catalog import DEFAULT_ROLE_PERMISSIONS, PERMISSION_CATALOG
 
-revision: str = "047_project_archive_management_review"
+revision: str = "047_project_archive_review"
 down_revision: Union[str, None] = "046_remove_bootstrap_checklist"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
