@@ -8,6 +8,10 @@ export type CoordinationFolderOption = {
   name: string
   path: string
   parent_uuid: string | null
+  cad_count?: number
+  discipline_count?: number
+  sin_clasificar?: number
+  ready?: boolean
 }
 
 export type CoordinationInventory = {

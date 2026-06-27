@@ -28,7 +28,13 @@ from app.models.project_clash_job import ProjectClashJob
 from app.models.project_file import ProjectFile
 from app.models.project_file_folder import ProjectFileFolder
 from app.models.user import User
-from app.services.folder_path_parts import folder_path_parts
+from app.services.folder_path_parts import (
+    build_folder_children_map,
+    build_folder_path_index,
+    descendant_folder_ids,
+    folder_path_parts,
+    format_folder_path,
+)
 from app.services.project_service import ProjectService
 
 logger = logging.getLogger(__name__)
@@ -127,19 +133,53 @@ class ClashService:
         return await folder_path_parts(self._session, project_id, folder_id)
 
     async def _descendant_folder_ids(self, project_id: UUID, root_folder_id: UUID) -> set[UUID]:
-        all_folders = await self._all_folders(project_id)
-        children: dict[UUID | None, list[UUID]] = {}
-        for fo in all_folders:
-            children.setdefault(fo.parent_id, []).append(fo.id)
-        out: set[UUID] = set()
-        stack = [root_folder_id]
-        while stack:
-            fid = stack.pop()
-            if fid in out:
-                continue
-            out.add(fid)
-            stack.extend(children.get(fid, []))
-        return out
+        folders = await self._all_folders(project_id)
+        children = build_folder_children_map(folders)
+        return descendant_folder_ids(root_folder_id, children)
+
+    async def _coordination_tree(
+        self,
+        project_id: UUID,
+    ) -> tuple[
+        list[ProjectFileFolder],
+        dict[UUID | None, list[UUID]],
+        dict[UUID, list[str]],
+        list[ProjectFile],
+    ]:
+        folders = await self._all_folders(project_id)
+        children = build_folder_children_map(folders)
+        paths = build_folder_path_index(folders)
+        result = await self._session.execute(
+            select(ProjectFile)
+            .where(ProjectFile.project_id == project_id)
+            .order_by(ProjectFile.created_at.asc())
+        )
+        cad_files = [pf for pf in result.scalars() if _is_cad_filename(pf.original_name or "")]
+        return folders, children, paths, cad_files
+
+    @staticmethod
+    def _cad_stats_for_tree(
+        folder_id: UUID,
+        *,
+        children: dict[UUID | None, list[UUID]],
+        cad_files: list[ProjectFile],
+    ) -> tuple[int, int, bool, int]:
+        tree_ids = descendant_folder_ids(folder_id, children)
+        in_tree = [pf for pf in cad_files if pf.folder_id in tree_ids]
+        buckets = {
+            discipline_bucket(pf.discipline)
+            for pf in in_tree
+            if discipline_bucket(pf.discipline) != "sin_clasificar"
+        }
+        unclassified = sum(1 for pf in in_tree if discipline_bucket(pf.discipline) == "sin_clasificar")
+        missing_disk = sum(1 for pf in in_tree if not Path(pf.storage_key).is_file())
+        ready = (
+            len(in_tree) > 0
+            and len(buckets) >= 2
+            and unclassified == 0
+            and missing_disk == 0
+        )
+        return len(in_tree), len(buckets), ready, unclassified
 
     async def _require_folder(self, project_id: UUID, folder_uuid: UUID) -> ProjectFileFolder:
         row = await self._session.get(ProjectFileFolder, folder_uuid)
@@ -154,13 +194,38 @@ class ClashService:
 
     async def list_coordination_folders(self, user: User, project_uuid: UUID) -> list[dict[str, Any]]:
         project = await self._project_svc.get_project(user, project_uuid)
-        folders = await self._all_folders(project.id)
+        folders, children, paths, cad_files = await self._coordination_tree(project.id)
         out: list[dict[str, Any]] = []
         for fo in folders:
-            parts = await self._folder_path_parts(project.id, fo.id)
-            path = "Raíz / " + " / ".join(parts) if parts else fo.name
-            out.append({"uuid": str(fo.id), "name": fo.name, "path": path, "parent_uuid": str(fo.parent_id) if fo.parent_id else None})
-        out.sort(key=lambda x: x["path"])
+            cad_count, discipline_count, ready, sin_clasificar = self._cad_stats_for_tree(
+                fo.id,
+                children=children,
+                cad_files=cad_files,
+            )
+            if cad_count == 0:
+                continue
+            path = format_folder_path(paths.get(fo.id, []), leaf_name=fo.name)
+            out.append(
+                {
+                    "uuid": str(fo.id),
+                    "name": fo.name,
+                    "path": path,
+                    "parent_uuid": str(fo.parent_id) if fo.parent_id else None,
+                    "cad_count": cad_count,
+                    "discipline_count": discipline_count,
+                    "sin_clasificar": sin_clasificar,
+                    "ready": ready,
+                }
+            )
+
+        def _sort_key(row: dict[str, Any]) -> tuple[int, int, str]:
+            return (
+                0 if row.get("ready") else 1,
+                0 if int(row.get("discipline_count") or 0) >= 2 else 1,
+                str(row.get("path") or ""),
+            )
+
+        out.sort(key=_sort_key)
         return out
 
     async def _cad_files_in_folders(
@@ -180,6 +245,55 @@ class ClashService:
         )
         rows = list(result.scalars().all())
         return [pf for pf in rows if _is_cad_filename(pf.original_name or "")]
+
+    async def _count_non_cad_files_in_folders(
+        self,
+        project_id: UUID,
+        folder_ids: set[UUID],
+    ) -> int:
+        if not folder_ids:
+            return 0
+        result = await self._session.execute(
+            select(ProjectFile).where(
+                ProjectFile.project_id == project_id,
+                ProjectFile.folder_id.in_(folder_ids),
+            )
+        )
+        rows = list(result.scalars().all())
+        return sum(1 for pf in rows if not _is_cad_filename(pf.original_name or ""))
+
+    async def _parent_folder_coordination_hint(
+        self,
+        project_id: UUID,
+        folder_uuid: UUID,
+        *,
+        children: dict[UUID | None, list[UUID]] | None = None,
+        paths: dict[UUID, list[str]] | None = None,
+        cad_files: list[ProjectFile] | None = None,
+    ) -> str | None:
+        folder = await self._session.get(ProjectFileFolder, folder_uuid)
+        if folder is None or folder.parent_id is None:
+            return None
+        parent = await self._session.get(ProjectFileFolder, folder.parent_id)
+        if parent is None:
+            return None
+        if children is None or paths is None or cad_files is None:
+            _, children, paths, cad_files = await self._coordination_tree(project_id)
+        parent_ids = descendant_folder_ids(parent.id, children)
+        parent_disc_count = len(
+            {
+                discipline_bucket(pf.discipline)
+                for pf in cad_files
+                if pf.folder_id in parent_ids and discipline_bucket(pf.discipline) != "sin_clasificar"
+            }
+        )
+        if parent_disc_count < 2:
+            return None
+        path_display = format_folder_path(paths.get(parent.id, []), leaf_name=parent.name)
+        return (
+            f"La subcarpeta «{folder.name}» solo agrupa una disciplina CAD. "
+            f"Selecciona la carpeta padre «{path_display}» para comparar todas las disciplinas."
+        )
 
     def _file_inventory_row(self, pf: ProjectFile, folder_path: str) -> dict[str, Any]:
         disk_exists = Path(pf.storage_key).is_file()
@@ -203,25 +317,34 @@ class ClashService:
 
         folder_info: dict[str, Any] | None = None
         cad_files: list[ProjectFile] = []
+        children: dict[UUID | None, list[UUID]] = {}
+        paths: dict[UUID, list[str]] = {}
 
         if folder_uuid is None:
             blockers.append("Selecciona una carpeta fuente con planos CAD (ej. TEST_01).")
         else:
+            _, children, paths, all_cad = await self._coordination_tree(project.id)
             folder = await self._require_folder(project.id, folder_uuid)
-            parts = await self._folder_path_parts(project.id, folder.id)
-            path_display = "Raíz / " + " / ".join(parts) if parts else folder.name
+            path_display = format_folder_path(paths.get(folder.id, []), leaf_name=folder.name)
             folder_info = {"uuid": str(folder.id), "name": folder.name, "path": path_display}
-            folder_ids = await self._descendant_folder_ids(project.id, folder.id)
-            cad_files = await self._cad_files_in_folders(project.id, folder_ids)
+            folder_ids = descendant_folder_ids(folder.id, children)
+            cad_files = [pf for pf in all_cad if pf.folder_id in folder_ids]
             if not cad_files:
-                blockers.append(f"La carpeta «{folder.name}» no contiene archivos .dwg/.dxf.")
+                other_count = await self._count_non_cad_files_in_folders(project.id, folder_ids)
+                if other_count > 0:
+                    blockers.append(
+                        f"La carpeta «{folder.name}» tiene {other_count} archivo(s) (PDF, etc.) "
+                        "pero el análisis de clashes requiere planos .dwg/.dxf."
+                    )
+                else:
+                    blockers.append(f"La carpeta «{folder.name}» no contiene archivos .dwg/.dxf.")
 
         files_by_discipline: dict[str, list[dict[str, Any]]] = {k: [] for k in DISCIPLINE_BUCKETS}
         folder_path = folder_info["path"] if folder_info else ""
         for pf in cad_files:
             bucket = discipline_bucket(pf.discipline)
-            rel_parts = await self._folder_path_parts(project.id, pf.folder_id)
-            file_folder_path = "Raíz / " + " / ".join(rel_parts) if rel_parts else folder_path
+            rel_parts = paths.get(pf.folder_id, []) if pf.folder_id else []
+            file_folder_path = format_folder_path(rel_parts) if rel_parts else folder_path
             files_by_discipline[bucket].append(self._file_inventory_row(pf, file_folder_path))
             if bucket == "sin_clasificar":
                 blockers.append(f"«{pf.original_name}» no tiene disciplina (etiquétalo en Archivos).")
@@ -249,9 +372,19 @@ class ClashService:
         if cad_files and classified_count == 0:
             blockers.append("Etiqueta cada DWG con su disciplina en Archivos (ARQ, EST, ELC, etc.).")
         elif cad_files and len(discipline_lines) < 2:
-            blockers.append(
-                "Se necesitan planos de al menos dos disciplinas distintas para comparar clashes entre ellas."
+            parent_hint = await self._parent_folder_coordination_hint(
+                project.id,
+                folder_uuid,
+                children=children,
+                paths=paths,
+                cad_files=all_cad,
             )
+            if parent_hint:
+                blockers.append(parent_hint)
+            else:
+                blockers.append(
+                    "Se necesitan planos de al menos dos disciplinas distintas para comparar clashes entre ellas."
+                )
 
         unique_blockers = list(dict.fromkeys(blockers))
         ready = (

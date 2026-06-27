@@ -60,6 +60,22 @@ BUCKET_TO_RUNNER: dict[str, str] = {
 
 
 DISCIPLINE_ALIASES: dict[str, str] = {
+    # Abreviaturas habituales en obra / UI
+    "arq": "arquitectura",
+    "est": "estructura",
+    "elc": "electrica",
+    "elec": "electrica",
+    "mec": "mecanica",
+    "plo": "plomeria",
+    "san": "plomeria",
+    "arquitectonicos": "arquitectura",
+    "arquitectónico": "arquitectura",
+    "arquitectonicas": "arquitectura",
+    "arquitectónicas": "arquitectura",
+    "tecnico": "estructura",
+    "técnico": "estructura",
+    "tecnicos": "estructura",
+    "técnicos": "estructura",
     "fontaneria": "plomeria",
     "fontanería": "plomeria",
     "sanitario": "plomeria",

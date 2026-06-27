@@ -22,6 +22,7 @@ import {
   downloadClashTechnicalPdf,
   getCoordinationFolders,
   getCoordinationInventory,
+  type CoordinationFolderOption,
   type CoordinationInventory,
 } from '../../../api/structuralAnalysis'
 import { ClashWorkflowPanel } from '../../clash-workflow/ClashWorkflowPanel'
@@ -255,6 +256,19 @@ function DocumentRow({
   )
 }
 
+function folderOptionLabel(folder: CoordinationFolderOption): string {
+  const parts: string[] = [folder.path]
+  if (folder.ready) {
+    parts.push('listo')
+  } else if (typeof folder.cad_count === 'number' && folder.cad_count > 0) {
+    parts.push(`${folder.cad_count} CAD`)
+    if (typeof folder.discipline_count === 'number' && folder.discipline_count > 0) {
+      parts.push(`${folder.discipline_count} disc.`)
+    }
+  }
+  return parts.join(' · ')
+}
+
 export function WorkspaceHallazgosTab({
   project,
   projectUuid,
@@ -275,36 +289,65 @@ export function WorkspaceHallazgosTab({
     | null
   >(null)
   const [pdfError, setPdfError] = useState<string | null>(null)
-  const [folderOptions, setFolderOptions] = useState<Array<{ uuid: string; path: string }>>([])
+  const [folderOptions, setFolderOptions] = useState<CoordinationFolderOption[]>([])
+  const [foldersLoading, setFoldersLoading] = useState(true)
   const [selectedFolderUuid, setSelectedFolderUuid] = useState<string>('')
   const [inventory, setInventory] = useState<CoordinationInventory | null>(null)
   const [inventoryLoading, setInventoryLoading] = useState(false)
   const [inventoryError, setInventoryError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!token || !projectUuid) return
+    if (!token || !projectUuid) {
+      setFoldersLoading(false)
+      return
+    }
+    let cancelled = false
+    setFoldersLoading(true)
     void (async () => {
       const folders = await getCoordinationFolders(projectUuid, token)
-      setFolderOptions(folders.map((f) => ({ uuid: f.uuid, path: f.path })))
+      if (cancelled) return
+      setFolderOptions(folders)
       const last = (project?.workflow_meta as Record<string, unknown> | undefined)?.coordination_last_folder_uuid
-      if (typeof last === 'string' && last && folders.some((f) => f.uuid === last)) {
-        setSelectedFolderUuid(last)
-      } else if (folders.length === 1) {
-        setSelectedFolderUuid(folders[0].uuid)
+      const lastFolder = typeof last === 'string' ? folders.find((f) => f.uuid === last) : undefined
+      if (lastFolder?.ready) {
+        setSelectedFolderUuid(lastFolder.uuid)
+      } else {
+        const readyFolder = folders.find((f) => f.ready)
+        if (readyFolder) {
+          setSelectedFolderUuid(readyFolder.uuid)
+        } else if (lastFolder) {
+          setSelectedFolderUuid(lastFolder.uuid)
+        } else if (folders.length === 1) {
+          setSelectedFolderUuid(folders[0].uuid)
+        } else {
+          setSelectedFolderUuid('')
+        }
       }
+      setFoldersLoading(false)
     })()
-  }, [token, projectUuid, project?.workflow_meta])
+    return () => {
+      cancelled = true
+    }
+  }, [token, projectUuid, project?.workflow_meta?.coordination_last_folder_uuid])
 
   useEffect(() => {
-    if (!token || !projectUuid) return
+    if (!token || !projectUuid || foldersLoading) return
+    if (!selectedFolderUuid) {
+      setInventory(null)
+      setInventoryError(null)
+      setInventoryLoading(false)
+      return
+    }
+    let cancelled = false
     setInventoryLoading(true)
     setInventoryError(null)
     void (async () => {
       const result = await getCoordinationInventory(
         projectUuid,
         token,
-        selectedFolderUuid || null,
+        selectedFolderUuid,
       )
+      if (cancelled) return
       if (result.ok) {
         setInventory(result.data)
       } else {
@@ -313,7 +356,10 @@ export function WorkspaceHallazgosTab({
       }
       setInventoryLoading(false)
     })()
-  }, [token, projectUuid, selectedFolderUuid])
+    return () => {
+      cancelled = true
+    }
+  }, [token, projectUuid, selectedFolderUuid, foldersLoading])
 
   const canRunAnalysis = Boolean(
     token &&
@@ -451,9 +497,10 @@ export function WorkspaceHallazgosTab({
       <Card className="border-primary/20 bg-primary/4 p-4">
         <h3 className="text-sm font-semibold text-ink">Información de coordinación</h3>
         <p className="mt-1 text-xs text-muted">
-          Proyecto «{projectDisplayName}». Elige la carpeta de entrega (ej. TEST_01): se analizarán todos los .dwg
-          dentro de ella y subcarpetas, agrupados por la etiqueta de disciplina de cada archivo en Archivos (ARQ, EST,
-          ELC, etc.).
+          Proyecto «{projectDisplayName}». Elige la carpeta de entrega (ej. PLANOS RECIBIDOS): se
+          analizarán todos los .dwg/.dxf dentro de ella y subcarpetas. Tras clasificar, los archivos
+          se organizan en subcarpetas por disciplina; usa la carpeta raíz de entrega, no una
+          subcarpeta aislada (ARQ, EST, ELC, etc.).
         </p>
         <div className="mt-3">
           <label htmlFor="coord-folder" className="text-xs font-medium uppercase tracking-wide text-muted">
@@ -463,17 +510,28 @@ export function WorkspaceHallazgosTab({
             id="coord-folder"
             className="du-input mt-1 w-full max-w-xl"
             value={selectedFolderUuid}
+            disabled={foldersLoading}
             onChange={(e) => setSelectedFolderUuid(e.target.value)}
           >
-            <option value="">— Seleccionar carpeta —</option>
-            {folderOptions.map((f) => (
-              <option key={f.uuid} value={f.uuid}>
-                {f.path}
-              </option>
-            ))}
+            {foldersLoading ? (
+              <option value="">Cargando carpetas con CAD…</option>
+            ) : folderOptions.length === 0 ? (
+              <option value="">— Sin carpetas con planos CAD —</option>
+            ) : (
+              <>
+                <option value="">— Seleccionar carpeta —</option>
+                {folderOptions.map((f) => (
+                  <option key={f.uuid} value={f.uuid}>
+                    {folderOptionLabel(f)}
+                  </option>
+                ))}
+              </>
+            )}
           </select>
         </div>
-        {inventoryLoading ? (
+        {foldersLoading ? (
+          <p className="mt-3 text-sm text-muted">Buscando carpetas con planos CAD…</p>
+        ) : inventoryLoading ? (
           <p className="mt-3 text-sm text-muted">Cargando inventario…</p>
         ) : inventoryError ? (
           <p className="mt-3 text-sm text-primary" role="alert">
