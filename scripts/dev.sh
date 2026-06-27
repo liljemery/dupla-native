@@ -270,6 +270,20 @@ stop_pid_tree() {
   kill -KILL "$pid" 2>/dev/null || true
 }
 
+free_port() {
+  local port="$1"
+  local pids
+  pids="$(lsof -ti:"$port" 2>/dev/null || true)"
+  if [[ -n "$pids" ]]; then
+    echo "Liberando puerto $port (pids huérfanos: $pids)"
+    # shellcheck disable=SC2086
+    kill -TERM $pids 2>/dev/null || true
+    sleep 0.3
+    # shellcheck disable=SC2086
+    kill -KILL $pids 2>/dev/null || true
+  fi
+}
+
 cmd_stop() {
   local name pid
   for name in frontend backend processor processor-worker coordination coordination-worker; do
@@ -279,6 +293,9 @@ cmd_stop() {
       stop_pid_tree "$pid"
     fi
     rm -f "$PID_DIR/$name.pid"
+  done
+  for port in 5173 8000 8001 8002; do
+    free_port "$port"
   done
   echo "OK — servicios detenidos"
 }
@@ -324,10 +341,10 @@ cmd_start() {
   launch_detached processor-worker bash -c "cd '$PROCESSOR_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && exec python worker.py"
 
   echo "==> Arrancando coordination API :8002"
-  launch_detached coordination bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/cad_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python -m uvicorn main:app --reload --host 0.0.0.0 --port 8002"
+  launch_detached coordination bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_SMOKE_MODE='${COORDINATION_SMOKE_MODE:-false}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/cad_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python -m uvicorn main:app --reload --host 0.0.0.0 --port 8002"
 
   echo "==> Arrancando coordination-worker"
-  launch_detached coordination-worker bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/cad_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python worker.py"
+  launch_detached coordination-worker bash -c "cd '$COORD_DIR' && source .venv/bin/activate && export REDIS_URL='${REDIS_URL:-redis://127.0.0.1:6379/0}' && export COORDINATION_SMOKE_MODE='${COORDINATION_SMOKE_MODE:-false}' && export COORDINATION_OUTPUT_ROOT='${COORDINATION_OUTPUT_ROOT:-$VAR_DIR/coord_outputs}' && export COORDINATION_CACHE_ROOT='${COORDINATION_CACHE_ROOT:-$VAR_DIR/coord_outputs/cad_cache}' && export COORDINATION_MAX_WORKERS='${COORDINATION_MAX_WORKERS:-6}' && export DUPLA_ROOT='${DUPLA_ROOT:-$ROOT/motor}' && export NASAS09_DOWNLOADS='${NASAS09_DOWNLOADS:-}' && mkdir -p \"\$COORDINATION_OUTPUT_ROOT\" \"\$COORDINATION_CACHE_ROOT\" && exec python worker.py"
 
   echo "==> Arrancando frontend :5173"
   launch_detached frontend bash -c "cd '$FRONTEND_DIR' && exec pnpm dev --host 127.0.0.1 --port 5173"

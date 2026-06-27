@@ -41,8 +41,10 @@ from coordination.extraction.from_dwg_accore import (
     load_accore_payload_via_accore,
     profile_accore_payload,
 )
+from aps_integration.aps_auth import get_aps_token
 from coordination.extraction.companion_pdf import resolve_companion_pdf
 from coordination.extraction.cad_cache import file_cache_key, load_cached_json
+from coordination.extraction.from_dwg_aps import extract_elements_from_dwg_via_aps
 from coordination.extraction.local_cad_pipeline import (
     LOCAL_EXTRACTOR,
     extract_dxf_records,
@@ -539,6 +541,11 @@ def main() -> int:
     parser.add_argument("--skip-dwg", action="store_true", help="Omitir archivos CAD (.dwg/.dxf).")
     parser.add_argument("--skip-pdf", action="store_true", help="Omitir PDF.")
     parser.add_argument(
+        "--dwg-via-aps",
+        action="store_true",
+        help="Extraer DWG binarios vía Autodesk APS antes de usar fallbacks locales.",
+    )
+    parser.add_argument(
         "--include-images",
         action="store_true",
         help="Incluir imagenes raster como fuentes de baja confianza.",
@@ -820,18 +827,51 @@ def _extract_path_elements(
     else:
         level_resolution = SimpleNamespace(level_id=file_level_id, source=file_level_source)
     if suffix in {".dwg", ".dxf"}:
-        local_elements = extract_elements_from_local_cad(
-            path,
-            discipline,
-            level_id=level_resolution.level_id,
-            translation_mm=translation_mm,
-            coordination_issue_key=issue_key,
-            max_entities=args.max_dwg_entities,
-            min_area_mm2=args.min_dwg_area_mm2,
-            cache_root=cache_root,
-            work_dir=cache_root / "dxf_work",
-            level_doc=doc,
-        )
+        if suffix == ".dwg" and args.dwg_via_aps:
+            try:
+                aps_elements = extract_elements_from_dwg_via_aps(
+                    path,
+                    discipline,
+                    level_id=level_resolution.level_id,
+                    translation_mm=translation_mm,
+                    token=get_aps_token(),
+                    bucket_name=os.getenv("APS_BUCKET_NAME") or os.getenv("APS_BUCKET_KEY") or "dupla-coordination",
+                    coordination_issue_key=issue_key,
+                    max_entities=args.max_dwg_entities,
+                    min_area_m2=max(args.min_dwg_area_mm2 / 1_000_000.0, 0.01),
+                    cache_root=cache_root / "aps",
+                    level_doc=doc,
+                )
+            except Exception:
+                logger.exception("APS DWG extraction failed for %s; falling back to local/PDF", path)
+                aps_elements = []
+            if aps_elements:
+                return _tag_elements(
+                    aps_elements,
+                    issue_key=issue_key,
+                    file_name=path.name,
+                    geometry_source="dwg_aps",
+                    geometry_quality="medium",
+                    level_assignment_source=level_resolution.source,
+                    sheet_name=path.stem,
+                )
+
+        try:
+            local_elements = extract_elements_from_local_cad(
+                path,
+                discipline,
+                level_id=level_resolution.level_id,
+                translation_mm=translation_mm,
+                coordination_issue_key=issue_key,
+                max_entities=args.max_dwg_entities,
+                min_area_mm2=args.min_dwg_area_mm2,
+                cache_root=cache_root,
+                work_dir=cache_root / "dxf_work",
+                level_doc=doc,
+            )
+        except Exception:
+            logger.exception("Local CAD extraction failed for %s; trying secondary fallbacks", path)
+            local_elements = []
         if local_elements:
             return _tag_elements(
                 local_elements,

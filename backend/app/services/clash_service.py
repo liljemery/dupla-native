@@ -115,6 +115,10 @@ def _is_cad_filename(name: str) -> bool:
     return lower.endswith(".dwg") or lower.endswith(".dxf")
 
 
+def _is_pdf_filename(name: str) -> bool:
+    return (name or "").lower().endswith(".pdf")
+
+
 class ClashService:
     def __init__(self, session: AsyncSession, workspace_id: UUID) -> None:
         self._session = session
@@ -245,6 +249,24 @@ class ClashService:
         )
         rows = list(result.scalars().all())
         return [pf for pf in rows if _is_cad_filename(pf.original_name or "")]
+
+    async def _pdf_files_in_folders(
+        self,
+        project_id: UUID,
+        folder_ids: set[UUID],
+    ) -> list[ProjectFile]:
+        if not folder_ids:
+            return []
+        result = await self._session.execute(
+            select(ProjectFile)
+            .where(
+                ProjectFile.project_id == project_id,
+                ProjectFile.folder_id.in_(folder_ids),
+            )
+            .order_by(ProjectFile.created_at.asc())
+        )
+        rows = list(result.scalars().all())
+        return [pf for pf in rows if _is_pdf_filename(pf.original_name or "")]
 
     async def _count_non_cad_files_in_folders(
         self,
@@ -427,10 +449,13 @@ class ClashService:
         parts = await self._folder_path_parts(project.id, folder.id)
         folder_path = "Raíz / " + " / ".join(parts) if parts else folder.name
 
+        pdf_files = await self._pdf_files_in_folders(project.id, folder_ids)
+        payload_files = [*cad_files, *pdf_files]
+
         metadata: list[dict[str, Any]] = []
         multipart: list[tuple[str, tuple[str, bytes, str]]] = []
 
-        for pf in cad_files:
+        for pf in payload_files:
             disk_path = Path(pf.storage_key)
             if not disk_path.exists():
                 raise HTTPException(
@@ -445,6 +470,7 @@ class ClashService:
                     "discipline": pf.discipline,
                     "discipline_bucket": discipline_bucket(pf.discipline),
                     "folder_path": folder_path,
+                    "companion_only": not _is_cad_filename(pf.original_name or ""),
                 }
             )
 
@@ -500,7 +526,8 @@ class ClashService:
         run_sequence = await self._resolve_run_sequence(project.id, folder_uuid, cad_fingerprint)
 
         # Validate same rules as inventory pre-flight
-        buckets = {m["discipline_bucket"] for m in file_metadata}
+        cad_metadata = [m for m in file_metadata if _is_cad_filename(str(m.get("original_name") or ""))]
+        buckets = {m["discipline_bucket"] for m in cad_metadata}
         classified = buckets & CLASSIFIED_BUCKETS
         if "sin_clasificar" in buckets:
             raise HTTPException(

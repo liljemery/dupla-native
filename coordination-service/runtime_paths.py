@@ -38,4 +38,6 @@ def load_project_env() -> None:
     load_dotenv()
     backend_env = repo_root() / "backend" / ".env"
     if backend_env.is_file():
-        load_dotenv(backend_env, override=False)
+        # backend/.env is the source of truth for coordination (APS, smoke mode, paths).
+        # override=True so a stale shell COORDINATION_SMOKE_MODE=true cannot win over .env false.
+        load_dotenv(backend_env, override=True)

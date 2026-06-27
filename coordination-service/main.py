@@ -61,9 +61,12 @@ async def enqueue_clash_analysis(
         uploads_dir.mkdir(parents=True, exist_ok=True)
 
         file_entries: list[dict] = []
+        cad_entry_count = 0
         for uf in files:
             name_lower = (uf.filename or "").lower()
-            if not (name_lower.endswith(".dwg") or name_lower.endswith(".dxf")):
+            is_cad = name_lower.endswith((".dwg", ".dxf"))
+            is_pdf = name_lower.endswith(".pdf")
+            if not (is_cad or is_pdf):
                 await uf.read()  # drain to avoid connection issues
                 continue
             original_name = uf.filename or "upload.dwg"
@@ -72,6 +75,8 @@ async def enqueue_clash_analysis(
             safe_name = Path(original_name).name
             dest = uploads_dir / safe_name
             dest.write_bytes(await uf.read())
+            if is_cad:
+                cad_entry_count += 1
 
             file_entries.append(
                 {
@@ -83,7 +88,7 @@ async def enqueue_clash_analysis(
                 }
             )
 
-        if not file_entries:
+        if cad_entry_count <= 0:
             raise HTTPException(status_code=422, detail="No .dwg or .dxf file found in uploaded files")
 
         slug = (profile_slug or "folder").strip() or "folder"
