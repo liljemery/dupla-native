@@ -1,22 +1,33 @@
-# Sincroniza deploy/nginx-host.conf → C:\nginx\conf\nginx.conf y recarga nginx.
-# Ejecutar desde la raíz del repo (dupla-native):
+# Sincroniza deploy/nginx-host.conf al nginx de Windows y reinicia.
+#   cd C:\Users\sroa\Documents\dupla-native
 #   powershell -ExecutionPolicy Bypass -File scripts\sync-nginx-host.ps1
+#
+# Luego rebuild frontend:
+#   docker compose up -d --build
 
 $ErrorActionPreference = "Stop"
 
 $NginxDir = "C:\nginx"
 $DuplaDir = Split-Path $PSScriptRoot -Parent
-$HostNginxConf = Join-Path $DuplaDir "deploy\nginx-host.conf"
-$TargetNginxConf = Join-Path $NginxDir "conf\nginx.conf"
+$Source = Join-Path $DuplaDir "deploy\nginx-host.conf"
 $nginxExe = Join-Path $NginxDir "nginx.exe"
+$ConfigRel = "conf\nginx.conf"
 
-if (-not (Test-Path $HostNginxConf)) { throw "No existe $HostNginxConf" }
+if (-not (Test-Path $Source)) { throw "No existe $Source — haz git pull primero." }
 if (-not (Test-Path $nginxExe)) { throw "No existe $nginxExe" }
 
-Copy-Item -Path $HostNginxConf -Destination $TargetNginxConf -Force
-Write-Host "Copiado -> $TargetNginxConf"
+$targets = @(
+    (Join-Path $NginxDir $ConfigRel),
+    (Join-Path $NginxDir "nginx.conf")
+)
+foreach ($target in $targets) {
+    $dir = Split-Path $target -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    Copy-Item -Path $Source -Destination $target -Force
+    Write-Host "Copiado -> $target"
+}
 
-& $nginxExe -t -p $NginxDir
+& $nginxExe -t -p $NginxDir -c $ConfigRel
 if ($LASTEXITCODE -ne 0) { throw "nginx -t falló" }
 
 $nginxProc = Get-Process -Name nginx -ErrorAction SilentlyContinue
@@ -24,11 +35,19 @@ if ($nginxProc) {
     & $nginxExe -s stop -p $NginxDir
     Start-Sleep -Seconds 2
 }
-Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -WindowStyle Hidden
-Write-Host "nginx reiniciado"
+Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -ArgumentList @("-p", $NginxDir, "-c", $ConfigRel) -WindowStyle Hidden
+Start-Sleep -Seconds 1
+Write-Host "nginx reiniciado (-p $NginxDir -c $ConfigRel)"
 
+$dump = & $nginxExe -T -p $NginxDir -c $ConfigRel 2>&1 | Out-String
 Write-Host "`n--- client_max_body_size activo ---"
-& $nginxExe -T -p $NginxDir 2>&1 | Select-String "client_max_body_size"
+($dump -split "`n") | Select-String "client_max_body_size"
 
-Write-Host "`n--- location /api/ ---"
-& $nginxExe -T -p $NginxDir 2>&1 | Select-String -Pattern "location /api/|proxy_pass.*8000" -Context 0,3
+if ($dump -notmatch "2048m") {
+    throw "nginx sigue sin 2048m. Comprueba DuplaStartup / otro nginx en PATH."
+}
+if ($dump -notmatch "location /api/") {
+    throw "nginx no tiene location /api/ — /api sigue yendo al contenedor :5173."
+}
+
+Write-Host "`nOK. Rebuild frontend: docker compose up -d --build"

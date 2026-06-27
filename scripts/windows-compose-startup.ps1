@@ -17,6 +17,8 @@ $NginxDir = "C:\nginx"
 $DuplaDir = Split-Path $PSScriptRoot -Parent
 $HostNginxConf = Join-Path $DuplaDir "deploy\nginx-host.conf"
 $TargetNginxConf = Join-Path $NginxDir "conf\nginx.conf"
+$TargetNginxRootConf = Join-Path $NginxDir "nginx.conf"
+$NginxConfigRel = "conf\nginx.conf"
 $LogFile = Join-Path $DuplaDir "var\logs\windows-startup.log"
 
 function Write-Log([string]$Message) {
@@ -42,10 +44,11 @@ function Sync-HostNginx {
     $confDir = Split-Path $TargetNginxConf -Parent
     if (-not (Test-Path $confDir)) { New-Item -ItemType Directory -Force -Path $confDir | Out-Null }
     Copy-Item -Path $HostNginxConf -Destination $TargetNginxConf -Force
-    Write-Log "nginx conf sincronizado desde deploy/nginx-host.conf"
+    Copy-Item -Path $HostNginxConf -Destination $TargetNginxRootConf -Force
+    Write-Log "nginx conf sincronizado (conf/nginx.conf y nginx.conf)"
 
     $nginxExe = Join-Path $NginxDir "nginx.exe"
-    & $nginxExe -t -p $NginxDir
+    & $nginxExe -t -p $NginxDir -c $NginxConfigRel
     if ($LASTEXITCODE -ne 0) { throw "nginx -t falló" }
 }
 
@@ -56,7 +59,7 @@ function Start-OrReloadHostNginx {
         & $nginxExe -s stop -p $NginxDir
         Start-Sleep -Seconds 2
     }
-    Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -WindowStyle Hidden
+    Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -ArgumentList @("-p", $NginxDir, "-c", $NginxConfigRel) -WindowStyle Hidden
     Write-Log "nginx reiniciado"
 }
 
