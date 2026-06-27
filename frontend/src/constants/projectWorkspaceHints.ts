@@ -34,7 +34,7 @@ export const PHASE_WORKSPACE_HINTS: Record<string, PhaseHint> = {
   },
   MANAGEMENT_APPROVAL: {
     title: 'Aprobación de gerencia',
-    body: 'El presupuesto interno está listo. Un usuario de Gerencia debe marcar la aprobación en Presupuesto — Checklist antes de avanzar.',
+    body: 'El presupuesto interno está listo. Un usuario de Gerencia debe marcar la revisión en Presupuesto — Checklist antes de avanzar.',
     tabId: 'presupuesto',
     cta: 'Ir a Presupuesto',
   },

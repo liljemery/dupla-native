@@ -282,7 +282,7 @@ def compute_phase_transition_hints(project: Project, data: ProjectSnapshotData) 
     elif current == WorkflowPhase.MANAGEMENT_APPROVAL and target == WorkflowPhase.BUDGET_APPROVED:
         bp = data.budget_pipeline
         if not bp.get("management_review_done"):
-            hints.append("Marca la aprobación de Gerencia en Presupuesto — Checklist.")
+            hints.append("Marca la revisión de Gerencia en Presupuesto — Checklist.")
 
     if not hints:
         hints.append("No hay bloqueos conocidos para avanzar al siguiente paso del flujo.")

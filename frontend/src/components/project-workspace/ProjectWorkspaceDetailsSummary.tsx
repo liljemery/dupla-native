@@ -1,3 +1,4 @@
+import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 
@@ -5,7 +6,6 @@ import { apiFetch } from '../../api/client'
 import { projectKindLabel } from '../../constants/projectKind'
 import { downloadBlob, filenameFromContentDisposition } from '../../lib/download'
 import type { Project } from '../../types/project'
-import { Card } from '../Card'
 
 type Props = {
   project: Project
@@ -31,9 +31,15 @@ export function ProjectWorkspaceDetailsSummary({ project, phaseLabel, token, onO
   }
 
   return (
-    <Card className="p-5">
-      <h3 className="text-sm font-semibold uppercase tracking-wide text-muted">Datos del proyecto</h3>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <details className="group rounded-xl border border-black/10 bg-white shadow-(--shadow-card)">
+      <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold uppercase tracking-wide text-muted marker:content-none [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center justify-between gap-2">
+          Datos del proyecto
+          <ChevronDown className="size-4 shrink-0 text-muted transition group-open:rotate-180" aria-hidden />
+        </span>
+      </summary>
+      <div className="border-t border-black/8 px-5 pb-5 pt-4">
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <dt className="du-meta">Cliente</dt>
           <dd className="mt-0.5 text-sm text-ink">{project.client_name ?? '—'}</dd>
@@ -82,6 +88,7 @@ export function ProjectWorkspaceDetailsSummary({ project, phaseLabel, token, onO
           {docBusy ? 'Generando…' : 'Informe PDF'}
         </button>
       </div>
-    </Card>
+      </div>
+    </details>
   )
 }

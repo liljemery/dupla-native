@@ -186,7 +186,7 @@ class ProjectLifecycleService:
             if not bp.get("management_review_done"):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Se requiere la aprobación de Gerencia en el checklist de presupuesto",
+                    detail="Se requiere la revisión de Gerencia en el checklist de presupuesto",
                 )
 
     async def _assert_transition_guards(
@@ -850,6 +850,16 @@ class ProjectLifecycleService:
             wants_mgmt = bool(incoming.get("management_review_done"))
             had_mgmt = bool(bp_old.get("management_review_done"))
             if wants_mgmt and not had_mgmt:
+                phase = normalize_workflow_phase(project.workflow_phase)
+                if phase not in (
+                    WorkflowPhase.MANAGEMENT_APPROVAL,
+                    WorkflowPhase.BUDGET_APPROVED,
+                    WorkflowPhase.COMPLETE,
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="La revisión de Gerencia solo puede marcarse en la fase de aprobación de gerencia",
+                    )
                 if not await self._perm_svc.has(user, "lifecycle.management_review"):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,

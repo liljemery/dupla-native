@@ -76,12 +76,13 @@ export function BudgetChecklistPanel({
     <Card className="space-y-4 p-6">
       <h3 className="text-base font-semibold text-ink">Checklist del presupuesto</h3>
       <p className="text-sm text-muted">
-        Marca los hitos del pipeline antes de enviar a gerencia. Control valida antes del envío; Gerencia aprueba en
-        la fase «Aprobación de gerencia».
+        {awaitingGerencia || afterGerencia
+          ? 'Gerencia valida el presupuesto en esta fase. Marca la revisión abajo y guarda antes de avanzar.'
+          : 'Marca los hitos del pipeline y la revisión de Control antes de enviar a gerencia.'}
       </p>
       {missingGerenciaGate ? (
         <div className="rounded-md border border-primary/25 bg-primary/6 px-3 py-2 text-sm text-ink">
-          Para avanzar en Flujo: marca la aprobación de Gerencia abajo y guarda el checklist.{' '}
+          Para avanzar en Flujo: marca la revisión de Gerencia abajo y guarda el checklist.{' '}
           <span className="font-medium text-primary">Falta revisión de Gerencia.</span>
         </div>
       ) : null}
@@ -129,20 +130,20 @@ export function BudgetChecklistPanel({
           {!canMarkControl ? <span className="text-xs text-muted">(solo Control o Gerencia)</span> : null}
         </label>
       </div>
-      {(awaitingGerencia || afterGerencia || phase === 'BUDGETING_PIPELINE') ? (
+      {awaitingGerencia || afterGerencia ? (
         <div className="space-y-2 border-l-2 border-primary/35 pl-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Gerencia</p>
           <label className={`flex items-center gap-2 text-sm ${!canMarkGerencia ? 'opacity-60' : ''}`}>
             <input
               type="checkbox"
-              disabled={!canMarkGerencia || phase === 'BUDGETING_PIPELINE'}
+              disabled={!canMarkGerencia || !awaitingGerencia}
               checked={!!bpDraft.management_review_done}
               onChange={(e) => setBpDraft((d) => ({ ...d, management_review_done: e.target.checked }))}
             />
-            Aprobación de Gerencia completada
+            Revisión de Gerencia completada
             {!canMarkGerencia ? <span className="text-xs text-muted">(solo Gerencia)</span> : null}
-            {phase === 'BUDGETING_PIPELINE' ? (
-              <span className="text-xs text-muted">(disponible en aprobación de gerencia)</span>
+            {afterGerencia && !awaitingGerencia ? (
+              <span className="text-xs text-muted">(registrada en aprobación de gerencia)</span>
             ) : null}
           </label>
         </div>

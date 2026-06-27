@@ -520,8 +520,9 @@ export function ProjectWorkspacePage() {
       }
     }
     if (next === 'BUDGET_APPROVED') {
-      if (!bpDraft.management_review_done) {
-        setFlowMsg('Marca la aprobación de Gerencia en Presupuesto — Checklist antes de avanzar.')
+      const bpSaved = budgetPipeline(project.workflow_meta ?? {})
+      if (!bpSaved.management_review_done) {
+        setFlowMsg('Marca la revisión de Gerencia en Presupuesto — Checklist y guarda antes de avanzar.')
         return false
       }
     }
