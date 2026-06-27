@@ -14,6 +14,7 @@ import {
   showBudgetPipelinePanel,
 } from '../BudgetPipelinePanel'
 import { BudgetSectionSwitch, type BudgetSectionId } from '../BudgetSectionSwitch'
+import { WorkspacePriceDatabaseTab } from './WorkspacePriceDatabaseTab'
 import { BudgetEditableTable, fmtDop } from '../BudgetEditableTable'
 
 const BUDGET_PHASE_LABELS: Record<string, string> = {
@@ -149,6 +150,9 @@ type Props = {
   setLinePrice: React.Dispatch<React.SetStateAction<string>>
   quotes: SubcontractQuoteRow[]
   onLoadAuxLists: () => Promise<void>
+  section: BudgetSectionId
+  onSectionChange: (section: BudgetSectionId) => void
+  flowMsg: string | null
 }
 
 export function WorkspacePresupuestoMaestroTab({
@@ -171,13 +175,15 @@ export function WorkspacePresupuestoMaestroTab({
   setLinePrice,
   quotes,
   onLoadAuxLists,
+  section,
+  onSectionChange,
+  flowMsg,
 }: Props) {
   const { job, result, isPolling, error, enqueue, refresh, saveRows } = useBudgetJob(
     projectUuid,
     token,
   )
   const [modalOpen, setModalOpen] = useState(false)
-  const [section, setSection] = useState<BudgetSectionId>('presupuesto')
   const [isEditing, setIsEditing] = useState(false)
   const [draftRows, setDraftRows] = useState<BudgetRow[]>([])
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -275,12 +281,19 @@ export function WorkspacePresupuestoMaestroTab({
     return <BudgetChecklistPanel {...pipelineSharedProps} />
   }
 
+  function renderSectionBody(body: ReactNode) {
+    if (section === 'basePrecios') {
+      return <WorkspacePriceDatabaseTab projectUuid={projectUuid} token={token} flowMsg={flowMsg} />
+    }
+    if (section === 'presupuesto') return body
+    return renderPipelineSection()
+  }
+
   function withSections(body: ReactNode) {
-    const content = section === 'presupuesto' ? body : renderPipelineSection()
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto">
-        <BudgetSectionSwitch value={section} onChange={setSection} />
-        {content}
+        <BudgetSectionSwitch value={section} onChange={onSectionChange} />
+        {renderSectionBody(body)}
       </div>
     )
   }

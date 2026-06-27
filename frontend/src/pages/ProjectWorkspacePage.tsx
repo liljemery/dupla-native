@@ -8,16 +8,13 @@ import {
   type WorkspaceConsoleTabId,
 } from '../components/project-workspace/ProjectWorkspaceConsoleHeader'
 import { ProjectWorkspaceDashboard } from '../components/project-workspace/ProjectWorkspaceDashboard'
-import { WorkspaceArchivosTab } from '../components/project-workspace/tabs/WorkspaceArchivosTab'
-import { WorkspacePriceDatabaseTab } from '../components/project-workspace/tabs/WorkspacePriceDatabaseTab'
-import { WorkspaceDetallesTab } from '../components/project-workspace/tabs/WorkspaceDetallesTab'
-import { WorkspaceEntregaPlanosTab } from '../components/project-workspace/tabs/WorkspaceEntregaPlanosTab'
+import { ProjectWorkspaceDetailsSummary } from '../components/project-workspace/ProjectWorkspaceDetailsSummary'
+import { WorkspacePlanosHallazgosTab } from '../components/project-workspace/tabs/WorkspacePlanosHallazgosTab'
+import { WorkspaceRevisionesEntregasTab } from '../components/project-workspace/tabs/WorkspaceRevisionesEntregasTab'
 import { WorkspaceEspecificacionesTab } from '../components/project-workspace/tabs/WorkspaceEspecificacionesTab'
 import { WorkspaceEventosTab } from '../components/project-workspace/tabs/WorkspaceEventosTab'
-import { WorkspaceHallazgosTab } from '../components/project-workspace/tabs/WorkspaceHallazgosTab'
 import { WorkspaceFlujoTab } from '../components/project-workspace/tabs/WorkspaceFlujoTab'
 import { WorkspacePresupuestoMaestroTab } from '../components/project-workspace/tabs/WorkspacePresupuestoMaestroTab'
-import { WorkspaceRevisionesTab } from '../components/project-workspace/tabs/WorkspaceRevisionesTab'
 import { WorkspaceTabsLayout } from '../components/project-workspace/WorkspaceTabsLayout'
 import {
   BUSINESS_PLIEGO_SECTION_KEYS,
@@ -52,6 +49,11 @@ import {
 } from '../lib/pliegoFormState'
 import { isPliegoReadyForApproval, buildPliegoDraftSpec, pliegoSectionsIncompleteMessage, isPliegoEditablePhase, pliegoReadOnlyMessage } from '../lib/pliegoApproval'
 import { hasElevatedAccess, canViewBudget, isBudgetWorkspaceTab, workflowPhaseLabelForRole, workflowStepTitleForRole, canApproveSpecifications } from '../lib/accessPermissions'
+import {
+  defaultSectionForTab,
+  normalizeWorkspaceRoute,
+  type PresupuestoSectionId,
+} from '../lib/workspaceNavigation'
 import { useAuthStore } from '../store/authStore'
 import type { ConstructionLineValue } from '../types/constructionPliego'
 import type { PlanDeliveryRow } from '../types/planDelivery'
@@ -112,8 +114,10 @@ export function ProjectWorkspacePage() {
 
   const workspaceTabs = useMemo(() => projectWorkspaceTabsForRole(permissions), [permissions])
 
+  const workspaceSection = searchParams.get('section')?.trim() ?? null
+
   const selectTab = useCallback(
-    (id: string) => {
+    (id: string, section?: string) => {
       if (!canViewBudget(permissions) && isBudgetWorkspaceTab(id)) return
       setTab(id)
       setSearchParams(
@@ -121,8 +125,12 @@ export function ProjectWorkspacePage() {
           const next = new URLSearchParams(prev)
           if (id === 'hub') {
             next.delete('tab')
+            next.delete('section')
           } else {
             next.set('tab', id)
+            const nextSection = section ?? defaultSectionForTab(id)
+            if (nextSection) next.set('section', nextSection)
+            else next.delete('section')
           }
           next.delete('focus')
           return next
@@ -131,6 +139,20 @@ export function ProjectWorkspacePage() {
       )
     },
     [permissions, setSearchParams],
+  )
+
+  const setWorkspaceSection = useCallback(
+    (section: string) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev)
+          next.set('section', section)
+          return next
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
   )
 
   const openBootstrapChecklist = useCallback(() => {
@@ -229,25 +251,29 @@ export function ProjectWorkspacePage() {
 
   useEffect(() => {
     if (projectUuid === TUTORIAL_PROJECT_UUID) {
-      setTab('detalles')
+      setTab('hub')
     }
   }, [projectUuid])
 
   useEffect(() => {
     const raw = searchParams.get('tab')?.trim()
-    const aliases: Record<string, string> = {
-      especificaciones: 'pliego',
-      pliegos: 'hub',
-      materiales: 'hub',
-      presupuesto: 'flujo',
-    }
-    const candidate = raw ? aliases[raw] ?? raw : null
-    if (candidate && workspaceTabs.some((t) => t.id === candidate)) {
-      if (!canViewBudget(permissions) && isBudgetWorkspaceTab(candidate)) {
+    const { tab: normalizedTab, section } = normalizeWorkspaceRoute(raw, searchParams.get('section'))
+    if (workspaceTabs.some((t) => t.id === normalizedTab)) {
+      if (!canViewBudget(permissions) && isBudgetWorkspaceTab(normalizedTab)) {
         setTab('hub')
         return
       }
-      setTab(candidate)
+      setTab(normalizedTab)
+      if (section && section !== searchParams.get('section')) {
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev)
+            next.set('section', section)
+            return next
+          },
+          { replace: true },
+        )
+      }
       return
     }
     if (raw) {
@@ -255,6 +281,7 @@ export function ProjectWorkspacePage() {
         (prev) => {
           const next = new URLSearchParams(prev)
           next.delete('tab')
+          next.delete('section')
           return next
         },
         { replace: true },
@@ -377,20 +404,20 @@ export function ProjectWorkspacePage() {
 
   useEffect(() => {
     if (!projectUuid || !token) return
-    if (tab === 'archivos' || tab === 'revisiones' || tab === 'flujo') {
+    if (tab === 'planosHallazgos' || tab === 'revisiones' || tab === 'flujo') {
       void loadAuxLists()
     }
   }, [tab, projectUuid, token, loadAuxLists])
 
   useEffect(() => {
     if (!projectUuid || !token) return
-    if (tab === 'hallazgos') void loadFindings()
-  }, [tab, projectUuid, token, loadFindings])
+    if (tab === 'planosHallazgos' && workspaceSection === 'hallazgos') void loadFindings()
+  }, [tab, workspaceSection, projectUuid, token, loadFindings])
 
   useEffect(() => {
-    if (tab !== 'entregaPlanos' || !projectUuid || !token) return
+    if (tab !== 'revisiones' || workspaceSection !== 'entregas' || !projectUuid || !token) return
     void loadPlanDelivery()
-  }, [tab, projectUuid, token, loadPlanDelivery])
+  }, [tab, workspaceSection, projectUuid, token, loadPlanDelivery])
 
   useEffect(() => {
     const ids = new Set(workspaceTabs.map((t) => t.id))
@@ -398,6 +425,12 @@ export function ProjectWorkspacePage() {
       setTab('hub')
     }
   }, [workspaceTabs, tab])
+
+  useEffect(() => {
+    if (tab === 'planosHallazgos' && workspaceSection === 'hallazgos' && !viewBudget) {
+      setWorkspaceSection('planos')
+    }
+  }, [tab, workspaceSection, viewBudget, setWorkspaceSection])
 
   useEffect(() => {
     if (!token || !projectUuid) return
@@ -893,9 +926,7 @@ export function ProjectWorkspacePage() {
         tab={tab}
         onSelectTab={(id: WorkspaceConsoleTabId) => selectTab(id)}
         onOpenConfig={() => setConfigOpen(true)}
-        role={role}
         viewBudget={viewBudget}
-        onGoPresupuesto={() => selectTab('presupuestoMaestro')}
         phaseLabel={phaseLabel}
         clientName={project?.client_name}
         deadline={project?.deadline}
@@ -918,29 +949,27 @@ export function ProjectWorkspacePage() {
           quotesCount={quotes.length}
           onAdvancePhase={advancePhase}
           onOpenChat={() => void openProjectChat()}
-          onOpenTab={selectTab}
+          onOpenTab={(id, section) => selectTab(id, section)}
           onOpenBootstrapChecklist={openBootstrapChecklist}
           bootstrapCriteria={bootstrapDraft}
           pliegoApproved={pliegoMeta.approved}
           pliegoReadyForApproval={pliegoReadyForApproval}
           canApprovePliego={canApprovePliego}
           onApprovePliego={approvePliego}
+          detailsSummary={
+            <ProjectWorkspaceDetailsSummary
+              project={project}
+              phaseLabel={phaseLabel}
+              token={token}
+              onOpenChat={() => void openProjectChat()}
+            />
+          }
         />
       ) : null}
 
       {tab !== 'hub' ? (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <WorkspaceTabsLayout tabs={workspaceTabs} activeId={tab} onSelect={selectTab} labelledBy="workspace-heading">
-          {tab === 'detalles' ? (
-            <WorkspaceDetallesTab
-              project={project}
-              projectError={projectError}
-              phaseLabel={phaseLabel}
-              token={token}
-              onOpenChat={() => void openProjectChat()}
-            />
-          ) : null}
-
           {tab === 'flujo' ? (
             <WorkspaceFlujoTab
               project={project}
@@ -960,38 +989,30 @@ export function ProjectWorkspacePage() {
               canApprovePliego={canApprovePliego}
               onApprovePliego={approvePliego}
               onOpenPliego={() => selectTab('pliego')}
-              onOpenPresupuesto={() => selectTab('presupuestoMaestro')}
+              onOpenPresupuesto={() => selectTab('presupuesto', 'presupuesto')}
             />
           ) : null}
 
-          {tab === 'archivos' ? (
-            <WorkspaceArchivosTab
+          {tab === 'planosHallazgos' ? (
+            <WorkspacePlanosHallazgosTab
+              section={workspaceSection ?? 'planos'}
+              onSectionChange={setWorkspaceSection}
+              viewBudget={viewBudget}
+              project={project}
               projectUuid={projectUuid}
               token={token}
               workflowPhase={project?.workflow_phase ?? 'BOOTSTRAPPING'}
               flowMsg={flowMsg}
-            />
-          ) : null}
-
-          {viewBudget && tab === 'basePrecios' ? (
-            <WorkspacePriceDatabaseTab projectUuid={projectUuid} token={token} flowMsg={flowMsg} />
-          ) : null}
-
-          {tab === 'entregaPlanos' ? (
-            <WorkspaceEntregaPlanosTab
-              projectUuid={projectUuid}
-              token={token}
-              planDeliveryRows={planDeliveryRows}
-              planDeliveryMsg={planDeliveryMsg}
-              setPlanDeliveryRows={setPlanDeliveryRows}
-              onAddRow={(payload) => addPlanDeliveryRow(payload)}
-              onPatchRow={(rowUuid, patch) => void patchPlanDeliveryRow(rowUuid, patch)}
-              onDeleteRow={(rowUuid) => void deletePlanDeliveryRow(rowUuid)}
+              findings={findings}
+              onRefreshFindings={loadFindings}
+              onContinueToPliego={() => selectTab('pliego')}
             />
           ) : null}
 
           {tab === 'revisiones' ? (
-            <WorkspaceRevisionesTab
+            <WorkspaceRevisionesEntregasTab
+              section={workspaceSection ?? 'revisiones'}
+              onSectionChange={setWorkspaceSection}
               flowMsg={flowMsg}
               revDecision={revDecision}
               setRevDecision={setRevDecision}
@@ -999,21 +1020,21 @@ export function ProjectWorkspacePage() {
               setRevNotes={setRevNotes}
               revisions={revisions}
               onSubmitRevision={submitRevision}
-            />
-          ) : null}
-
-          {viewBudget && tab === 'hallazgos' ? (
-            <WorkspaceHallazgosTab
-              project={project}
               projectUuid={projectUuid}
               token={token}
-              findings={findings}
-              onRefresh={() => loadFindings()}
-              onContinueToPliego={() => selectTab('pliego')}
+              planDeliveryRows={planDeliveryRows}
+              planDeliveryMsg={planDeliveryMsg}
+              setPlanDeliveryRows={setPlanDeliveryRows}
+              onAddRow={async (payload) => {
+                await addPlanDeliveryRow(payload)
+                return true
+              }}
+              onPatchRow={(rowUuid, patch) => void patchPlanDeliveryRow(rowUuid, patch)}
+              onDeleteRow={(rowUuid) => void deletePlanDeliveryRow(rowUuid)}
             />
           ) : null}
 
-          {viewBudget && tab === 'presupuestoMaestro' ? (
+          {viewBudget && tab === 'presupuesto' ? (
             <WorkspacePresupuestoMaestroTab
               project={project}
               projectUuid={projectUuid}
@@ -1034,6 +1055,9 @@ export function ProjectWorkspacePage() {
               setLinePrice={setLinePrice}
               quotes={quotes}
               onLoadAuxLists={loadAuxLists}
+              section={(workspaceSection ?? 'presupuesto') as PresupuestoSectionId}
+              onSectionChange={(s) => setWorkspaceSection(s)}
+              flowMsg={flowMsg}
             />
           ) : null}
 
@@ -1069,7 +1093,7 @@ export function ProjectWorkspacePage() {
               pliegoGeneratedAt={pliegoMeta.generatedAt}
               onExportPliegoPdf={() => void exportPliegoPdf()}
               onExportPliegoXlsx={() => void exportPliegoXlsx()}
-              onGoPresupuesto={() => selectTab('presupuestoMaestro')}
+              onGoPresupuesto={() => selectTab('presupuesto', 'presupuesto')}
             />
           ) : null}
 

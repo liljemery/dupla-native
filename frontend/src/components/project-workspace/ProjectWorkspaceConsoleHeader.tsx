@@ -1,10 +1,8 @@
 import { ArrowLeft, CircleHelp, Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-import { hasElevatedAccess } from '../../lib/accessPermissions'
-import { useAuthStore } from '../../store/authStore'
+import { resolveConsoleTabId } from '../../lib/workspaceNavigation'
 import { NotificationsBell } from '../NotificationsBell'
-import { PrimaryButton } from '../PrimaryButton'
 import { IconButton } from '../ui/IconButton'
 import { ViewTabs } from '../ui/ViewTabs'
 import { ProjectWorkspaceExportMenu } from './ProjectWorkspaceExportMenu'
@@ -12,17 +10,17 @@ import { ProjectWorkspaceExportMenu } from './ProjectWorkspaceExportMenu'
 export type WorkspaceConsoleTabId =
   | 'hub'
   | 'pliego'
-  | 'presupuestoMaestro'
+  | 'presupuesto'
+  | 'planosHallazgos'
   | 'revisiones'
-  | 'entregaPlanos'
   | 'eventos'
 
 const CONSOLE_TABS: { id: WorkspaceConsoleTabId; label: string }[] = [
   { id: 'hub', label: 'Resumen' },
   { id: 'pliego', label: 'Pliego' },
-  { id: 'presupuestoMaestro', label: 'Presupuesto' },
-  { id: 'revisiones', label: 'Revisiones' },
-  { id: 'entregaPlanos', label: 'Control de entregas' },
+  { id: 'presupuesto', label: 'Presupuesto' },
+  { id: 'planosHallazgos', label: 'Planos y hallazgos' },
+  { id: 'revisiones', label: 'Revisiones y entregas' },
   { id: 'eventos', label: 'Cronología' },
 ]
 
@@ -33,9 +31,7 @@ type ProjectWorkspaceConsoleHeaderProps = {
   tab: string
   onSelectTab: (id: WorkspaceConsoleTabId) => void
   onOpenConfig: () => void
-  role: string | null
   viewBudget: boolean
-  onGoPresupuesto: () => void
   phaseLabel?: string
   clientName?: string | null
   deadline?: string | null
@@ -56,14 +52,12 @@ export function ProjectWorkspaceConsoleHeader({
   onSelectTab,
   onOpenConfig,
   viewBudget,
-  onGoPresupuesto,
   phaseLabel,
   clientName,
   deadline,
 }: ProjectWorkspaceConsoleHeaderProps) {
-  const permissions = useAuthStore((s) => s.permissions)
-  const elevated = hasElevatedAccess(permissions)
-  const consoleTabs = CONSOLE_TABS.filter((t) => viewBudget || t.id !== 'presupuestoMaestro')
+  const consoleTabs = CONSOLE_TABS.filter((t) => viewBudget || t.id !== 'presupuesto')
+  const consoleActiveId = resolveConsoleTabId(tab)
 
   const metadataParts = [
     phaseLabel ? `Fase: ${phaseLabel}` : null,
@@ -91,15 +85,6 @@ export function ProjectWorkspaceConsoleHeader({
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {viewBudget && elevated ? (
-            <PrimaryButton
-              type="button"
-              className="hidden rounded-xl px-3 py-2 text-xs font-bold normal-case tracking-normal sm:inline-flex"
-              onClick={onGoPresupuesto}
-            >
-              Ir a presupuesto
-            </PrimaryButton>
-          ) : null}
           <ProjectWorkspaceExportMenu projectUuid={projectUuid} token={token} />
           <NotificationsBell token={token} />
           <IconButton label="Configuración del proyecto" onClick={onOpenConfig}>
@@ -120,7 +105,7 @@ export function ProjectWorkspaceConsoleHeader({
         data-tour="workspace-console-tabs"
         ariaLabel="Secciones principales"
         tabs={consoleTabs}
-        activeId={tab}
+        activeId={consoleActiveId}
         onChange={(id) => onSelectTab(id as WorkspaceConsoleTabId)}
       />
     </header>

@@ -6,11 +6,8 @@ import {
   FolderOpen,
   GitBranch,
   History,
-  Info,
   LayoutGrid,
   ScrollText,
-  SearchCheck,
-  Truck,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -18,14 +15,11 @@ export type WorkspaceTabItem = { id: string; label: string }
 
 const WORKSPACE_TAB_ICONS: Record<string, LucideIcon> = {
   hub: LayoutGrid,
-  detalles: Info,
   flujo: GitBranch,
-  archivos: FolderOpen,
-  entregaPlanos: Truck,
+  planosHallazgos: FolderOpen,
   revisiones: ClipboardCheck,
-  hallazgos: SearchCheck,
   pliego: ScrollText,
-  presupuestoMaestro: Calculator,
+  presupuesto: Calculator,
   eventos: History,
 }
 
