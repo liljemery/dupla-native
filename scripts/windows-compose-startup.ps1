@@ -56,11 +56,13 @@ function Start-OrReloadHostNginx {
     $nginxExe = Join-Path $NginxDir "nginx.exe"
     $nginxProc = Get-Process -Name nginx -ErrorAction SilentlyContinue
     if ($nginxProc) {
-        & $nginxExe -s stop -p $NginxDir
-        Start-Sleep -Seconds 2
+        foreach ($p in $nginxProc) {
+            Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Seconds 3
     }
     Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -ArgumentList @("-p", $NginxDir, "-c", $NginxConfigRel) -WindowStyle Hidden
-    Write-Log "nginx reiniciado"
+    Write-Log "nginx reiniciado (stop forzado + start)"
 }
 
 try {

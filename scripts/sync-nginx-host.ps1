@@ -1,9 +1,6 @@
 # Sincroniza deploy/nginx-host.conf al nginx de Windows y reinicia.
 #   cd C:\Users\sroa\Documents\dupla-native
 #   powershell -ExecutionPolicy Bypass -File scripts\sync-nginx-host.ps1
-#
-# Luego rebuild frontend:
-#   docker compose up -d --build
 
 $ErrorActionPreference = "Stop"
 
@@ -15,7 +12,6 @@ $ConfigRel = "conf\nginx.conf"
 
 function Invoke-NginxOutput {
     param([Parameter(Mandatory = $true)][string[]]$NginxArgs)
-    # nginx escribe "syntax is ok" en stderr; no tratarlo como error de PowerShell.
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
@@ -26,8 +22,26 @@ function Invoke-NginxOutput {
     }
 }
 
+function Stop-AllNginx {
+    $procs = Get-Process -Name nginx -ErrorAction SilentlyContinue
+    if (-not $procs) { return }
+    foreach ($p in $procs) {
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Seconds 3
+    $left = Get-Process -Name nginx -ErrorAction SilentlyContinue
+    if ($left) {
+        throw "Quedaron procesos nginx activos. Cierra DuplaStartup y ejecuta: taskkill /F /IM nginx.exe"
+    }
+}
+
 if (-not (Test-Path $Source)) { throw "No existe $Source. Haz git pull primero." }
 if (-not (Test-Path $nginxExe)) { throw "No existe $nginxExe" }
+
+$sourceText = Get-Content -Path $Source -Raw
+if ($sourceText -notmatch "2048m") {
+    throw "deploy/nginx-host.conf no tiene 2048m. Haz git pull."
+}
 
 $targets = @(
     (Join-Path $NginxDir $ConfigRel),
@@ -40,17 +54,14 @@ foreach ($target in $targets) {
     Write-Host "Copiado -> $target"
 }
 
+Stop-AllNginx
+
 Invoke-NginxOutput -NginxArgs @("-t", "-p", $NginxDir, "-c", $ConfigRel) | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "nginx -t fallo" }
 
-$nginxProc = Get-Process -Name nginx -ErrorAction SilentlyContinue
-if ($nginxProc) {
-    Invoke-NginxOutput -NginxArgs @("-s", "stop", "-p", $NginxDir) | Out-Null
-    Start-Sleep -Seconds 2
-}
 Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -ArgumentList @("-p", $NginxDir, "-c", $ConfigRel) -WindowStyle Hidden
-Start-Sleep -Seconds 1
-Write-Host "nginx reiniciado (-p $NginxDir -c $ConfigRel)"
+Start-Sleep -Seconds 2
+Write-Host "nginx iniciado (-p $NginxDir -c $ConfigRel)"
 
 $dump = Invoke-NginxOutput -NginxArgs @("-T", "-p", $NginxDir, "-c", $ConfigRel)
 if ($LASTEXITCODE -ne 0) { throw "nginx -T fallo" }
@@ -59,10 +70,17 @@ Write-Host "`n--- client_max_body_size activo ---"
 ($dump -split "`n") | Select-String "client_max_body_size"
 
 if ($dump -notmatch "2048m") {
-    throw "nginx sigue sin 2048m. Comprueba DuplaStartup u otro nginx en PATH."
+    throw "nginx activo NO tiene 2048m."
 }
 if ($dump -notmatch "location /api/") {
-    throw "nginx no tiene location /api/. /api sigue yendo al contenedor :5173."
+    throw "nginx activo NO tiene location /api/."
+}
+if ($dump -match "client_max_body_size 0") {
+    throw "nginx activo aun tiene client_max_body_size 0."
 }
 
-Write-Host "`nOK. Rebuild frontend: docker compose up -d --build"
+Write-Host "`n--- puerto 80 ---"
+netstat -ano | Select-String ":80 " | Select-Object -First 5
+
+Write-Host "`nOK. Prueba subida: powershell -File scripts\diagnose-upload.ps1"
+Write-Host "Rebuild frontend: docker compose up -d --build"
