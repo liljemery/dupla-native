@@ -276,9 +276,11 @@ def _invoke_runner(
     clash_report = output_dir / "clash_project_report.json"
 
     analysis_profile = _resolve_analysis_profile(budget_scope=budget_scope)
+    runner_profile = "standard" if analysis_profile == FAST_COMPARE_APS_PROFILE else analysis_profile
     logger.info(
-        "Clash analysis profile=%s aps=%s budget_scope=%s accore=%s workers=%d",
+        "Clash analysis profile=%s runner_profile=%s aps=%s budget_scope=%s accore=%s workers=%d",
         analysis_profile,
+        runner_profile,
         _aps_configured(),
         budget_scope,
         _accore_available(),
@@ -289,7 +291,7 @@ def _invoke_runner(
         sys.executable,
         str(script),
         "--analysis-profile",
-        analysis_profile,
+        runner_profile,
         "--nasas-root",
         str(inputs_dir),
         "--registry",

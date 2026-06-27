@@ -176,6 +176,10 @@ def stage_project_inputs(
 
     staged: list[dict[str, str]] = []
     analyzed_documents: list[dict[str, Any]] = []
+    has_explicit_pdf_entries = any(
+        str(entry.get("original_name") or "").lower().endswith(".pdf")
+        for entry in file_entries
+    )
 
     for idx, entry in enumerate(file_entries):
         original_name = str(entry.get("original_name") or f"file_{idx + 1}.dwg")
@@ -198,7 +202,7 @@ def stage_project_inputs(
         dest = dest_dir / safe_name
         dest.write_bytes(file_bytes)
         source_path = Path(file_path) if file_path and Path(file_path).is_file() else None
-        if safe_name.lower().endswith(".dwg") and source_path is not None:
+        if safe_name.lower().endswith(".dwg") and source_path is not None and not has_explicit_pdf_entries:
             _stage_companion_pdf(dest_dir, source_path, safe_name)
         staged.append({"file_name": safe_name, "path": str(dest), "discipline_bucket": bucket})
         analyzed_documents.append(
