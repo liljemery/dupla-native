@@ -32,6 +32,9 @@ function conversationRowKeyDown(e: KeyboardEvent, onSelect: () => void) {
   }
 }
 
+const sidebarSecondaryButtonClassName =
+  'flex-1 rounded-lg border border-black/12 bg-white px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-ink shadow-sm transition-colors hover:bg-black/3'
+
 export function ChatConversationSidebar({
   conversations,
   activeConversationUuid,
@@ -72,7 +75,7 @@ export function ChatConversationSidebar({
         </button>
         <button
           type="button"
-          className="flex-1 rounded-lg border border-black/12 bg-white px-2 py-2 text-[11px] font-bold uppercase tracking-wide text-ink shadow-sm hover:bg-black/3"
+          className={sidebarSecondaryButtonClassName}
           onClick={onNewGroup}
         >
           Grupo

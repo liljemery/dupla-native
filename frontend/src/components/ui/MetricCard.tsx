@@ -31,7 +31,14 @@ export function MetricCard({
 }: MetricCardProps) {
   return (
     <div
-      className={`rounded-2xl border px-5 py-4 shadow-(--shadow-toolbar) transition-all hover:-translate-y-0.5 hover:shadow-(--shadow-elevated) ${accentStyles[accent]} ${className}`}
+      className={[
+        'rounded-2xl border px-5 py-4 shadow-(--shadow-toolbar) transition-all',
+        'hover:-translate-y-0.5 hover:shadow-(--shadow-elevated)',
+        accentStyles[accent],
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <p className="text-[11px] font-bold uppercase tracking-wider text-muted">{label}</p>
       <p className={`du-kpi-value mt-2 ${valueStyles[accent]}`}>{value}</p>
