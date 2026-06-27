@@ -23,12 +23,13 @@ Los usuarios se autentican con **JWT**; las capacidades dependen del **rol** (Ge
 | Datos | PostgreSQL |
 | Caché / sync chat | Redis |
 | Frontend | Vite, React, TypeScript, Tailwind, Zustand, Zod |
-| Despliegue | Scripts nativos (`scripts/dev.sh`); adaptable a VPS con systemd o similar |
+| Despliegue | Scripts nativos (`scripts/dev.sh`); Docker Compose; prod Windows — ver [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
 
 ## Mapa de documentación
 
 | Documento | Contenido |
 |-----------|-----------|
+| Despliegue | [DEPLOYMENT.md](./DEPLOYMENT.md) — Docker, prod Windows, nginx, migraciones, scripts, troubleshooting |
 | [README del repositorio](../README.md) | Cómo levantar el entorno, seed, pruebas, estructura de carpetas de código |
 | [Informe funcional completo](./INFORME_ESTRUCTURA_FUNCIONAL_COMPLETO.md) | Estado actual del producto (~74%), clashes, presupuesto, integraciones |
 | [Roadmap hacia 100%](./ROADMAP_COMPLETITUD_100.md) | Problemas pendientes, Grupo A (prioridades) y Grupo B (resto), hitos M1–M4 |

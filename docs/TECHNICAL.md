@@ -128,6 +128,8 @@ El proxy de desarrollo en Vite reenvía `/api` al backend local.
 
 Puertos: frontend `5173`, backend `8000`, processor `8001`, coordination `8002`.
 
+Despliegue con Docker, producción Windows (nginx + Compose), variables de entorno y scripts: **[docs/DEPLOYMENT.md](./DEPLOYMENT.md)**.
+
 ## 5. Seguridad
 
 - Contraseñas hasheadas (no almacenar en claro).

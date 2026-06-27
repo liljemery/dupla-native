@@ -144,6 +144,8 @@ find var/artifacts -path "*/vision/*" -delete 2>/dev/null
 
 ## Producción (checklist mínimo)
 
+Documentación completa: **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** (Docker Compose, nginx host Windows, migraciones, scripts, troubleshooting).
+
 | Variable | Requisito |
 |----------|-----------|
 | `APP_ENV` | `staging` o `production` |
