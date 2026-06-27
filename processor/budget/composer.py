@@ -964,7 +964,7 @@ def compose_budget_rows(
                 else:
                     source_type = "bc3_catalog"
 
-            primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "USD").strip() or "USD"
+            primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "DOP").strip() or "DOP"
             if source_type == "constructor_apu":
                 line_metadata["price_currency"] = primary_currency
             elif source_type in {"construcosto", "estimated"}:
@@ -1085,7 +1085,7 @@ def compose_budget(
         "Budget composed: %d chapters, %d lines (%d via constructor APU), %d rows",
         len(chapters), len(lines), apu_lines, len(rows),
     )
-    primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "USD").strip() or "USD"
+    primary_currency = (os.getenv("DUPLA_PRICING_CURRENCY") or "DOP").strip() or "DOP"
     uncertain_lines = sum(1 for line in lines if line.metadata.get("price_currency_uncertain"))
     if uncertain_lines:
         logger.warning(

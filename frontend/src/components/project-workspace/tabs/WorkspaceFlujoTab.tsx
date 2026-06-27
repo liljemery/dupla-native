@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 import { apiFetch } from '../../../api/client'
-import { hasElevatedAccess, canMarkControlReview, canViewBudget, isBudgetWorkflowPhase, workflowPhaseLabelForRole } from '../../../lib/accessPermissions'
+import { hasElevatedAccess, canViewBudget, isBudgetWorkflowPhase, workflowPhaseLabelForRole } from '../../../lib/accessPermissions'
 import { bootstrapRequiredPercent } from '../../../lib/bootstrapCriteria'
 import { useAuthStore } from '../../../store/authStore'
 import { WORKFLOW_DOC_PHASE_HINTS } from '../../../constants/workflowDocMapping'
 import { downloadBlob, filenameFromContentDisposition } from '../../../lib/download'
-import type { SubcontractQuoteRow } from '../../../types/projectWorkspace'
 import type { BootstrapCriterion, Project } from '../../../types/project'
 import { BootstrapChecklistCard } from '../BootstrapChecklistCard'
 import { Card } from '../../Card'
@@ -26,7 +25,6 @@ type WorkspaceFlujoTabProps = {
   bootstrapDraft: BootstrapCriterion[]
   setBootstrapDraft: React.Dispatch<React.SetStateAction<BootstrapCriterion[]>>
   nextPhase: string | undefined
-  role: string | null
   onSaveBootstrap: () => boolean | void | Promise<boolean | void>
   onAdvancePhase: () => boolean | void | Promise<boolean | void>
   pliegoApproved: boolean
@@ -34,21 +32,7 @@ type WorkspaceFlujoTabProps = {
   canApprovePliego: boolean
   onApprovePliego: () => boolean | void | Promise<boolean | void>
   onOpenPliego: () => void
-  bpDraft: Record<string, unknown>
-  setBpDraft: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
-  clientVersion: string
-  setClientVersion: React.Dispatch<React.SetStateAction<string>>
-  onSaveBudgetPipeline: () => boolean | void | Promise<boolean | void>
-  newQuoteTitle: string
-  setNewQuoteTitle: React.Dispatch<React.SetStateAction<string>>
-  activeQuote: string
-  setActiveQuote: React.Dispatch<React.SetStateAction<string>>
-  lineItem: string
-  setLineItem: React.Dispatch<React.SetStateAction<string>>
-  linePrice: string
-  setLinePrice: React.Dispatch<React.SetStateAction<string>>
-  quotes: SubcontractQuoteRow[]
-  onLoadAuxLists: () => Promise<void>
+  onOpenPresupuesto: () => void
 }
 
 export function WorkspaceFlujoTab({
@@ -62,7 +46,6 @@ export function WorkspaceFlujoTab({
   bootstrapDraft,
   setBootstrapDraft,
   nextPhase,
-  role,
   onSaveBootstrap,
   onAdvancePhase,
   pliegoApproved,
@@ -70,21 +53,7 @@ export function WorkspaceFlujoTab({
   canApprovePliego,
   onApprovePliego,
   onOpenPliego,
-  bpDraft,
-  setBpDraft,
-  clientVersion,
-  setClientVersion,
-  onSaveBudgetPipeline,
-  newQuoteTitle,
-  setNewQuoteTitle,
-  activeQuote,
-  setActiveQuote,
-  lineItem,
-  setLineItem,
-  linePrice,
-  setLinePrice,
-  quotes,
-  onLoadAuxLists,
+  onOpenPresupuesto,
 }: WorkspaceFlujoTabProps) {
   const [searchParams, setSearchParams] = useSearchParams()
   const [fileTotal, setFileTotal] = useState<number | null>(null)
@@ -126,15 +95,11 @@ export function WorkspaceFlujoTab({
   const docHintRaw = project ? WORKFLOW_DOC_PHASE_HINTS[project.workflow_phase] : undefined
   const docHint =
     viewBudget && docHintRaw && !isBudgetWorkflowPhase(project?.workflow_phase ?? '') ? docHintRaw : null
-  const showBudgetPanel =
+  const showBudgetPipelineHint =
     viewBudget &&
     !!project &&
     ['BUDGETING_PIPELINE', 'MANAGEMENT_APPROVAL', 'BUDGET_APPROVED', 'COMPLETE'].includes(project.workflow_phase)
   const elevated = hasElevatedAccess(permissions)
-  const canMarkControl = canMarkControlReview(permissions)
-  const awaitingBudgetApproval = project?.workflow_phase === 'MANAGEMENT_APPROVAL'
-  const missingControlGate = awaitingBudgetApproval && !bpDraft.control_review_done
-  const missingClientVersion = awaitingBudgetApproval && !clientVersion.trim()
 
   useEffect(() => {
     if (!token || !projectUuid) return
@@ -280,178 +245,18 @@ export function WorkspaceFlujoTab({
             </p>
           ) : null}
 
-          {showBudgetPanel ? (
-            <div className="space-y-6 border-t border-black/10 pt-6">
-              <Card className="space-y-4 p-6">
-                <h3 className="text-base font-semibold text-ink">Pipeline de presupuesto</h3>
-                <p className="text-sm text-muted">
-                  Hitos y revisión de Control se registran aquí antes de avanzar a «Presupuesto aprobado por cliente».
-                </p>
-                {awaitingBudgetApproval && (missingControlGate || missingClientVersion) ? (
-                  <div className="rounded-md border border-primary/25 bg-primary/6 px-3 py-2 text-sm text-ink">
-                    Para avanzar: marca la revisión de Control y la etiqueta de versión aprobada por el cliente (guarda
-                    abajo).{' '}
-                    {missingControlGate ? <span className="font-medium text-primary">Falta revisión de Control.</span> : null}{' '}
-                    {missingClientVersion ? (
-                      <span className="font-medium text-primary">Falta versión del cliente.</span>
-                    ) : null}
-                  </div>
-                ) : null}
-                <div className="space-y-3 border-t border-black/10 pt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Hitos del pipeline</p>
-                  {(
-                    [
-                      ['subcontracts_done', 'Cotizaciones de subcontratación listas'],
-                      ['volumetry_done', 'Volumetría completada'],
-                      ['cost_analysis_done', 'Análisis de costo completado'],
-                      ['budget_marked_complete', 'Presupuesto interno completado'],
-                    ] as const
-                  ).map(([key, label]) => {
-                    const isVolumetry = key === 'volumetry_done'
-                    const volumetryLocked = isVolumetry && role !== 'GERENCIA'
-                    return (
-                    <label key={key} className={`flex items-center gap-2 text-sm ${volumetryLocked ? 'opacity-80' : ''}`}>
-                      <input
-                        type="checkbox"
-                        checked={!!bpDraft[key]}
-                        disabled={volumetryLocked}
-                        title={
-                          volumetryLocked
-                            ? 'Se marca automáticamente al completar presupuesto maestro con partidas'
-                            : undefined
-                        }
-                        onChange={(e) => setBpDraft((d) => ({ ...d, [key]: e.target.checked }))}
-                      />
-                      {label}
-                      {volumetryLocked ? (
-                        <span className="text-xs text-muted">(automático)</span>
-                      ) : null}
-                    </label>
-                    )
-                  })}
-                </div>
-                <div className="space-y-2 border-l-2 border-primary/35 pl-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Control</p>
-                  <label className={`flex items-center gap-2 text-sm ${!canMarkControl ? 'opacity-60' : ''}`}>
-                    <input
-                      type="checkbox"
-                      disabled={!canMarkControl}
-                      checked={!!bpDraft.control_review_done}
-                      onChange={(e) => setBpDraft((d) => ({ ...d, control_review_done: e.target.checked }))}
-                    />
-                    Revisión de Control completada
-                    {!canMarkControl ? (
-                      <span className="text-xs text-muted">(solo Control o Gerencia)</span>
-                    ) : null}
-                  </label>
-                </div>
-                <div className="space-y-2 border-t border-black/10 pt-4">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted">Cliente</p>
-                  <label className="block text-sm text-muted">
-                    Etiqueta de versión aprobada por el cliente
-                    <input
-                      className="du-input mt-1"
-                      value={clientVersion}
-                      onChange={(e) => setClientVersion(e.target.value)}
-                      placeholder="ej. v2"
-                    />
-                  </label>
-                </div>
-                <WorkspaceActionButton type="button" onAction={onSaveBudgetPipeline} successLabel="Pipeline guardado">
-                  Guardar estado del pipeline
-                </WorkspaceActionButton>
-              </Card>
-              <Card className="space-y-4 p-6">
-                <h3 className="text-base font-semibold text-ink">Cotizaciones</h3>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    className="du-input min-w-[160px] flex-1"
-                    placeholder="Título de cotización"
-                    value={newQuoteTitle}
-                    onChange={(e) => setNewQuoteTitle(e.target.value)}
-                  />
-                  <WorkspaceActionButton
-                    type="button"
-                    onAction={async () => {
-                      if (!token) return false
-                      const res = await apiFetch(`/api/projects/${projectUuid}/subcontracts`, {
-                        method: 'POST',
-                        token,
-                        body: JSON.stringify({ title: newQuoteTitle.trim() || null }),
-                      })
-                      if (!res.ok) return false
-                      setNewQuoteTitle('')
-                      await onLoadAuxLists()
-                      return true
-                    }}
-                    successLabel="Cotización creada"
-                  >
-                    Nueva cotización
-                  </WorkspaceActionButton>
-                </div>
-                <label className="block text-sm text-muted">
-                  Cotización activa para líneas
-                  <select className="du-input mt-1" value={activeQuote} onChange={(e) => setActiveQuote(e.target.value)}>
-                    <option value="">—</option>
-                    {quotes.map((q) => (
-                      <option key={q.uuid} value={q.uuid}>
-                        {q.title ?? q.uuid.slice(0, 8)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    className="du-input min-w-[120px] flex-1"
-                    placeholder="Ítem"
-                    value={lineItem}
-                    onChange={(e) => setLineItem(e.target.value)}
-                  />
-                  <input
-                    className="du-input w-28"
-                    placeholder="Precio"
-                    type="number"
-                    value={linePrice}
-                    onChange={(e) => setLinePrice(e.target.value)}
-                  />
-                  <WorkspaceActionButton
-                    type="button"
-                    disabled={!activeQuote}
-                    onAction={async () => {
-                      if (!token || !activeQuote) return false
-                      const res = await apiFetch(`/api/projects/${projectUuid}/subcontracts/${activeQuote}/lines`, {
-                        method: 'POST',
-                        token,
-                        body: JSON.stringify({
-                          item_label: lineItem.trim(),
-                          price: Number(linePrice),
-                          currency: 'MXN',
-                        }),
-                      })
-                      if (!res.ok) return false
-                      setLineItem('')
-                      setLinePrice('')
-                      await onLoadAuxLists()
-                      return true
-                    }}
-                    successLabel="Línea agregada"
-                  >
-                    Agregar línea
-                  </WorkspaceActionButton>
-                </div>
-                {quotes.map((q) => (
-                  <div key={q.uuid} className="rounded border border-black/5 p-3 text-sm">
-                    <div className="font-medium">{q.title ?? 'Sin título'}</div>
-                    <ul className="mt-2 list-disc pl-5 text-muted">
-                      {q.lines.map((l) => (
-                        <li key={l.uuid}>
-                          {l.item_label} — {l.price} {l.currency}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </Card>
+          {showBudgetPipelineHint ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-black/15 bg-black/4 px-3 py-2.5">
+              <p className="min-w-0 flex-1 text-sm text-ink">
+                Pipeline de presupuesto, cotizaciones e hitos: pestaña Presupuesto.
+              </p>
+              <button
+                type="button"
+                className="rounded-lg border border-black/15 bg-white px-3 py-2 text-xs font-semibold text-ink shadow-sm hover:bg-black/3"
+                onClick={onOpenPresupuesto}
+              >
+                Ir a Presupuesto
+              </button>
             </div>
           ) : null}
         </>

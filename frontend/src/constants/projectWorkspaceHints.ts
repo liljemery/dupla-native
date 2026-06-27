@@ -3,7 +3,7 @@ import { canViewBudget, isBudgetWorkflowPhase } from '../lib/accessPermissions'
 export type PhaseHint = {
   title: string
   body: string
-  tabId: 'resumen' | 'flujo' | 'documentos' | 'revisiones' | 'historial' | 'pliego' | 'hub'
+  tabId: 'resumen' | 'flujo' | 'documentos' | 'revisiones' | 'historial' | 'pliego' | 'hub' | 'presupuestoMaestro'
   cta: string
 }
 
@@ -34,15 +34,15 @@ export const PHASE_WORKSPACE_HINTS: Record<string, PhaseHint> = {
   },
   BUDGETING_PIPELINE: {
     title: 'Pipeline de presupuesto',
-    body: 'Con el pliego de condiciones cerrado, trabaja cotizaciones, volumetría y análisis; registra subcontratos si aplica.',
-    tabId: 'flujo',
-    cta: 'Ir a Flujo — presupuesto',
+    body: 'Cotizaciones, hitos del pipeline y presupuesto maestro en la misma pestaña.',
+    tabId: 'presupuestoMaestro',
+    cta: 'Ir a Presupuesto',
   },
   MANAGEMENT_APPROVAL: {
     title: 'Aprobación de gerencia',
     body: 'El presupuesto interno está listo: validación formal de gerencia antes de registrar la versión aprobada por el cliente.',
-    tabId: 'flujo',
-    cta: 'Ir a Flujo',
+    tabId: 'presupuestoMaestro',
+    cta: 'Ir a Presupuesto',
   },
   BUDGET_APPROVED: {
     title: 'Presupuesto aprobado',

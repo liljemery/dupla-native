@@ -48,7 +48,7 @@ class SubcontractQuoteLine(Base):
     item_label: Mapped[str] = mapped_column(String(512), nullable=False)
     provider: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="MXN")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, default="DOP")
     external_ref: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
     quote: Mapped["SubcontractQuote"] = relationship(back_populates="lines")

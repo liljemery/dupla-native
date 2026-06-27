@@ -1426,7 +1426,7 @@ class ProjectLifecycleService:
             item_label=item_label.strip(),
             provider=provider,
             price=price,
-            currency=currency or "MXN",
+            currency=currency or "DOP",
             external_ref=external_ref,
         )
         self._session.add(line)

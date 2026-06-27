@@ -498,13 +498,13 @@ export function ProjectWorkspacePage() {
     if (next === 'BUDGET_APPROVED') {
       if (!bpDraft.control_review_done) {
         setFlowMsg(
-          'Completa la revisión de Control en la pestaña Flujo (pipeline de presupuesto) antes de avanzar a presupuesto aprobado.',
+          'Completa la revisión de Control en la pestaña Presupuesto (pipeline) antes de avanzar a presupuesto aprobado.',
         )
         return false
       }
       if (!clientVersion.trim()) {
         setFlowMsg(
-          'Indica la etiqueta de versión aprobada por el cliente en Flujo — pipeline de presupuesto antes de avanzar.',
+          'Indica la etiqueta de versión aprobada por el cliente en Presupuesto — pipeline antes de avanzar.',
         )
         return false
       }
@@ -953,7 +953,6 @@ export function ProjectWorkspacePage() {
               bootstrapDraft={bootstrapDraft}
               setBootstrapDraft={setBootstrapDraft}
               nextPhase={nextPhase}
-              role={role}
               onSaveBootstrap={saveBootstrap}
               onAdvancePhase={advancePhase}
               pliegoApproved={pliegoMeta.approved}
@@ -961,21 +960,7 @@ export function ProjectWorkspacePage() {
               canApprovePliego={canApprovePliego}
               onApprovePliego={approvePliego}
               onOpenPliego={() => selectTab('pliego')}
-              bpDraft={bpDraft}
-              setBpDraft={setBpDraft}
-              clientVersion={clientVersion}
-              setClientVersion={setClientVersion}
-              onSaveBudgetPipeline={saveBudgetPipeline}
-              newQuoteTitle={newQuoteTitle}
-              setNewQuoteTitle={setNewQuoteTitle}
-              activeQuote={activeQuote}
-              setActiveQuote={setActiveQuote}
-              lineItem={lineItem}
-              setLineItem={setLineItem}
-              linePrice={linePrice}
-              setLinePrice={setLinePrice}
-              quotes={quotes}
-              onLoadAuxLists={loadAuxLists}
+              onOpenPresupuesto={() => selectTab('presupuestoMaestro')}
             />
           ) : null}
 
@@ -1033,6 +1018,22 @@ export function ProjectWorkspacePage() {
               project={project}
               projectUuid={projectUuid}
               token={token}
+              role={role}
+              bpDraft={bpDraft}
+              setBpDraft={setBpDraft}
+              clientVersion={clientVersion}
+              setClientVersion={setClientVersion}
+              onSaveBudgetPipeline={saveBudgetPipeline}
+              newQuoteTitle={newQuoteTitle}
+              setNewQuoteTitle={setNewQuoteTitle}
+              activeQuote={activeQuote}
+              setActiveQuote={setActiveQuote}
+              lineItem={lineItem}
+              setLineItem={setLineItem}
+              linePrice={linePrice}
+              setLinePrice={setLinePrice}
+              quotes={quotes}
+              onLoadAuxLists={loadAuxLists}
             />
           ) : null}
 

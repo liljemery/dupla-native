@@ -1,11 +1,13 @@
 import { AlertCircle, Cpu, Loader2, Play, RefreshCw } from 'lucide-react'
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useState, type ReactNode } from 'react'
 
 import { useBudgetJob } from '../../../hooks/useBudgetJob'
 import type { BudgetRow } from '../../../types/budget'
 import type { Project } from '../../../types/project'
+import type { SubcontractQuoteRow } from '../../../types/projectWorkspace'
 import { PrimaryButton } from '../../PrimaryButton'
 import { WorkspaceActionButton } from '../WorkspaceActionButton'
+import { BudgetPipelinePanel, showBudgetPipelinePanel } from '../BudgetPipelinePanel'
 
 const BUDGET_PHASE_LABELS: Record<string, string> = {
   extraction: 'Extrayendo planos y volumetría…',
@@ -178,9 +180,45 @@ type Props = {
   project: Project | null
   projectUuid: string
   token: string | null
+  role: string | null
+  bpDraft: Record<string, unknown>
+  setBpDraft: React.Dispatch<React.SetStateAction<Record<string, unknown>>>
+  clientVersion: string
+  setClientVersion: React.Dispatch<React.SetStateAction<string>>
+  onSaveBudgetPipeline: () => boolean | void | Promise<boolean | void>
+  newQuoteTitle: string
+  setNewQuoteTitle: React.Dispatch<React.SetStateAction<string>>
+  activeQuote: string
+  setActiveQuote: React.Dispatch<React.SetStateAction<string>>
+  lineItem: string
+  setLineItem: React.Dispatch<React.SetStateAction<string>>
+  linePrice: string
+  setLinePrice: React.Dispatch<React.SetStateAction<string>>
+  quotes: SubcontractQuoteRow[]
+  onLoadAuxLists: () => Promise<void>
 }
 
-export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: Props) {
+export function WorkspacePresupuestoMaestroTab({
+  project,
+  projectUuid,
+  token,
+  role,
+  bpDraft,
+  setBpDraft,
+  clientVersion,
+  setClientVersion,
+  onSaveBudgetPipeline,
+  newQuoteTitle,
+  setNewQuoteTitle,
+  activeQuote,
+  setActiveQuote,
+  lineItem,
+  setLineItem,
+  linePrice,
+  setLinePrice,
+  quotes,
+  onLoadAuxLists,
+}: Props) {
   const { job, result, isPolling, error, enqueue, refresh } = useBudgetJob(projectUuid, token)
   const [modalOpen, setModalOpen] = useState(false)
   const elapsed = useElapsedSeconds(
@@ -244,9 +282,43 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
     return ok
   }
 
+  const pipelinePanel =
+    project && showBudgetPipelinePanel(project.workflow_phase) ? (
+      <BudgetPipelinePanel
+        project={project}
+        projectUuid={projectUuid}
+        token={token}
+        role={role}
+        bpDraft={bpDraft}
+        setBpDraft={setBpDraft}
+        clientVersion={clientVersion}
+        setClientVersion={setClientVersion}
+        onSaveBudgetPipeline={onSaveBudgetPipeline}
+        newQuoteTitle={newQuoteTitle}
+        setNewQuoteTitle={setNewQuoteTitle}
+        activeQuote={activeQuote}
+        setActiveQuote={setActiveQuote}
+        lineItem={lineItem}
+        setLineItem={setLineItem}
+        linePrice={linePrice}
+        setLinePrice={setLinePrice}
+        quotes={quotes}
+        onLoadAuxLists={onLoadAuxLists}
+      />
+    ) : null
+
+  function withPipeline(body: ReactNode) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-auto">
+        {pipelinePanel}
+        {body}
+      </div>
+    )
+  }
+
   // ── No job yet (idle) ──
   if (!job && !error) {
-    return (
+    return withPipeline(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -272,13 +344,13 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
           <Play className="size-4" strokeWidth={2.5} aria-hidden />
           Iniciar presupuesto
         </PrimaryButton>
-      </div>
+      </div>,
     )
   }
 
   // ── Processing / queued ──
   if (job?.status === 'queued' || job?.status === 'processing') {
-    return (
+    return withPipeline(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         <div className="relative flex size-20 items-center justify-center rounded-full bg-primary/10">
           <Loader2 className="size-10 animate-spin text-primary" strokeWidth={1.5} />
@@ -312,13 +384,13 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
         >
           Verificar estado
         </button>
-      </div>
+      </div>,
     )
   }
 
   // ── Partial (base extraction only) ──
   if (job?.status === 'completed_partial' || (job?.status === 'completed' && !result && !isPolling)) {
-    return (
+    return withPipeline(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -347,13 +419,13 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
           <RefreshCw className="size-4" strokeWidth={2.5} aria-hidden />
           Re-procesar con disciplina
         </PrimaryButton>
-      </div>
+      </div>,
     )
   }
 
   // ── Failed ──
   if (job?.status === 'failed' || error) {
-    return (
+    return withPipeline(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -377,12 +449,12 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
           <RefreshCw className="size-4" strokeWidth={2.5} aria-hidden />
           Re-procesar
         </PrimaryButton>
-      </div>
+      </div>,
     )
   }
 
   if (isBaseExtractionOnly) {
-    return (
+    return withPipeline(
       <div className="flex flex-1 flex-col items-center justify-center gap-6 py-20 text-center">
         {modalOpen && (
           <EnqueueModal
@@ -409,12 +481,12 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
           <RefreshCw className="size-4" strokeWidth={2.5} aria-hidden />
           Generar presupuesto
         </PrimaryButton>
-      </div>
+      </div>,
     )
   }
 
   // ── Completed — render real budget ──
-  return (
+  return withPipeline(
     <div className="flex min-h-0 flex-1 flex-col gap-6 pb-10">
       {modalOpen && (
         <EnqueueModal
@@ -541,6 +613,6 @@ export function WorkspacePresupuestoMaestroTab({ project, projectUuid, token }: 
           </div>
         </div>
       </div>
-    </div>
+    </div>,
   )
 }

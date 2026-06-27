@@ -305,7 +305,7 @@ class SubcontractLineCreateRequest(BaseModel):
     item_label: str = Field(..., min_length=1, max_length=512)
     provider: Optional[str] = Field(default=None, max_length=255)
     price: Decimal = Field(..., ge=Decimal("0"))
-    currency: str = Field(default="MXN", max_length=8)
+    currency: str = Field(default="DOP", max_length=8)
     external_ref: Optional[str] = Field(default=None, max_length=255)
 
 
