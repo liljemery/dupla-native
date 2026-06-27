@@ -29,6 +29,7 @@ import { projectWorkspaceTabsForRole } from '../constants/projectWorkspaceTabs'
 import { NEXT_WORKFLOW_PHASE } from '../constants/workflowPhases'
 import { downloadBlob, filenameFromContentDisposition } from '../lib/download'
 import { budgetPipeline } from '../lib/budgetPipeline'
+import { hasGerenciaRevisionSinceManagementPhase } from '../lib/managementApprovalReview'
 import {
   emptyConstructionLineValues,
   isConstructionPliegoFullyComplete,
@@ -520,9 +521,16 @@ export function ProjectWorkspacePage() {
       }
     }
     if (next === 'BUDGET_APPROVED') {
-      const bpSaved = budgetPipeline(project.workflow_meta ?? {})
-      if (!bpSaved.management_review_done) {
-        setFlowMsg('Marca la revisión de Gerencia en Presupuesto — Checklist y guarda antes de avanzar.')
+      if (
+        !hasGerenciaRevisionSinceManagementPhase(
+          revisions,
+          project.workflow_meta ?? {},
+          project.workflow_phase,
+        )
+      ) {
+        setFlowMsg(
+          'Registra una revisión con rol Gerencia en la pestaña Revisiones (después de entrar en aprobación de gerencia).',
+        )
         return false
       }
     }
@@ -843,6 +851,17 @@ export function ProjectWorkspacePage() {
       : workflowPhaseLabelForRole(project.workflow_phase, permissions)
     : ''
   const nextPhase = project ? NEXT_WORKFLOW_PHASE[project.workflow_phase] : undefined
+  const gerenciaReviewDone = useMemo(
+    () =>
+      project
+        ? hasGerenciaRevisionSinceManagementPhase(
+            revisions,
+            project.workflow_meta ?? {},
+            project.workflow_phase,
+          )
+        : false,
+    [project, revisions],
+  )
   const pliegoReadyForApproval = useMemo(() => {
     const spec = project?.specifications_document
     const specObj = spec && typeof spec === 'object' ? (spec as Record<string, unknown>) : undefined
@@ -1017,6 +1036,7 @@ export function ProjectWorkspacePage() {
               section={(workspaceSection ?? 'presupuesto') as PresupuestoSectionId}
               onSectionChange={(s) => setWorkspaceSection(s)}
               flowMsg={flowMsg}
+              gerenciaReviewDone={gerenciaReviewDone}
             />
           ) : null}
 

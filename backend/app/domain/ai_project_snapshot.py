@@ -168,9 +168,9 @@ def _budget_section(data: ProjectSnapshotData) -> list[str]:
 
 
 def _management_section(data: ProjectSnapshotData) -> list[str]:
-    bp = data.budget_pipeline
     return [
-        f"- Aprobación de Gerencia: {'sí' if bp.get('management_review_done') else 'no'}",
+        f"- Revisión de Gerencia (desde fase aprobación): "
+        f"{'sí' if data.gerencia_review_since_management else 'no'}",
     ]
 
 

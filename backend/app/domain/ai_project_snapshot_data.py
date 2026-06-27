@@ -19,6 +19,7 @@ from app.domain.ga_fo_01_arquitectura import (
     expected_ga_fo_item_ids,
     ga_fo_block_approved,
 )
+from app.domain.management_approval_review import project_has_gerencia_review_for_current_phase
 from app.domain.workflow_automation_tasks import automation_card_uuids, legacy_automation_titles
 from app.domain.workflow_phase import LINEAR_NEXT, WorkflowPhase, normalize_workflow_phase
 from app.models.architecture_revision import ArchitectureRevision, ArchitectureRevisionDecision
@@ -130,6 +131,7 @@ class ProjectSnapshotData:
     plan_delivery: PlanDeliverySummary
     technical_findings_count: int
     pending_tasks: int
+    gerencia_review_since_management: bool = False
     transition_hints: list[str] = field(default_factory=list)
 
 
@@ -280,9 +282,11 @@ def compute_phase_transition_hints(project: Project, data: ProjectSnapshotData) 
                     + "."
                 )
     elif current == WorkflowPhase.MANAGEMENT_APPROVAL and target == WorkflowPhase.BUDGET_APPROVED:
-        bp = data.budget_pipeline
-        if not bp.get("management_review_done"):
-            hints.append("Marca la revisión de Gerencia en Presupuesto — Checklist.")
+        if not data.gerencia_review_since_management:
+            hints.append(
+                "Registra una revisión con rol Gerencia en la pestaña Revisiones "
+                "(después de entrar en aprobación de gerencia)."
+            )
 
     if not hints:
         hints.append("No hay bloqueos conocidos para avanzar al siguiente paso del flujo.")
@@ -485,6 +489,13 @@ async def load_project_snapshot_data(session: AsyncSession, project: Project) ->
 
     pending_tasks = await _count_pending_tasks(session, project)
     settings = get_settings()
+    meta = project.workflow_meta if isinstance(project.workflow_meta, dict) else {}
+    gerencia_review_ok = await project_has_gerencia_review_for_current_phase(
+        session,
+        project_id,
+        meta,
+        project.workflow_phase,
+    )
 
     data = ProjectSnapshotData(
         members=members,
@@ -505,6 +516,7 @@ async def load_project_snapshot_data(session: AsyncSession, project: Project) ->
         plan_delivery=PlanDeliverySummary(total=len(plan_rows), pending=plan_pending),
         technical_findings_count=findings_count,
         pending_tasks=pending_tasks,
+        gerencia_review_since_management=gerencia_review_ok,
     )
     data.transition_hints = compute_phase_transition_hints(project, data)
     return data

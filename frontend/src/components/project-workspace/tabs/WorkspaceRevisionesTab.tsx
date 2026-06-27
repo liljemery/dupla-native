@@ -35,7 +35,9 @@ export function WorkspaceRevisionesTab({
         Cada registro queda asociado a tu rol (arquitectura, control, presupuesto o gerencia). Para pasar del paso de{' '}
         <span className="font-medium text-ink">revisión de arquitectura</span> al paso de{' '}
         <span className="font-medium text-ink">pliego de condiciones</span>, la última revisión pertinente debe estar{' '}
-        <span className="font-medium text-ink">aprobada</span>.
+        <span className="font-medium text-ink">aprobada</span>. En{' '}
+        <span className="font-medium text-ink">aprobación de gerencia</span>, un usuario Gerencia debe registrar al
+        menos una revisión aquí antes de avanzar de fase.
       </p>
       {flowMsg ? <p className="text-sm text-primary">{flowMsg}</p> : null}
       <div className="space-y-3 border-b border-black/10 pb-4">

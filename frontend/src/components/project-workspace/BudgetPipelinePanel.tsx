@@ -1,8 +1,5 @@
 import { apiFetch } from '../../api/client'
-import {
-  canMarkControlReview,
-  canMarkManagementReview,
-} from '../../lib/accessPermissions'
+import { canMarkControlReview } from '../../lib/accessPermissions'
 import { useAuthStore } from '../../store/authStore'
 import type { SubcontractQuoteRow } from '../../types/projectWorkspace'
 import type { Project } from '../../types/project'
@@ -31,6 +28,7 @@ type BudgetPipelineSharedProps = {
   setLinePrice: React.Dispatch<React.SetStateAction<string>>
   quotes: SubcontractQuoteRow[]
   onLoadAuxLists: () => Promise<void>
+  gerenciaReviewDone?: boolean
 }
 
 function fmtLinePrice(price: unknown, currency: string): string {
@@ -54,6 +52,7 @@ export function BudgetChecklistPanel({
   clientVersion,
   setClientVersion,
   onSaveBudgetPipeline,
+  gerenciaReviewDone = false,
 }: Pick<
   BudgetPipelineSharedProps,
   | 'project'
@@ -63,27 +62,25 @@ export function BudgetChecklistPanel({
   | 'clientVersion'
   | 'setClientVersion'
   | 'onSaveBudgetPipeline'
+  | 'gerenciaReviewDone'
 >) {
   const permissions = useAuthStore((s) => s.permissions)
   const canMarkControl = canMarkControlReview(permissions)
-  const canMarkGerencia = canMarkManagementReview(permissions)
   const phase = project.workflow_phase
   const awaitingGerencia = phase === 'MANAGEMENT_APPROVAL'
   const afterGerencia = phase === 'BUDGET_APPROVED' || phase === 'COMPLETE'
-  const missingGerenciaGate = awaitingGerencia && !bpDraft.management_review_done
+  const missingGerenciaReview = awaitingGerencia && !gerenciaReviewDone
 
   return (
     <Card className="space-y-4 p-6">
       <h3 className="text-base font-semibold text-ink">Checklist del presupuesto</h3>
       <p className="text-sm text-muted">
-        {awaitingGerencia || afterGerencia
-          ? 'Gerencia valida el presupuesto en esta fase. Marca la revisión abajo y guarda antes de avanzar.'
-          : 'Marca los hitos del pipeline y la revisión de Control antes de enviar a gerencia.'}
+        Marca los hitos del pipeline y la revisión de Control antes de enviar a gerencia.
       </p>
-      {missingGerenciaGate ? (
+      {missingGerenciaReview ? (
         <div className="rounded-md border border-primary/25 bg-primary/6 px-3 py-2 text-sm text-ink">
-          Para avanzar en Flujo: marca la revisión de Gerencia abajo y guarda el checklist.{' '}
-          <span className="font-medium text-primary">Falta revisión de Gerencia.</span>
+          Para avanzar en Flujo: un usuario con rol Gerencia debe registrar una revisión en la pestaña{' '}
+          <span className="font-medium text-primary">Revisiones</span>.
         </div>
       ) : null}
       <div className="space-y-3 border-t border-black/10 pt-4">
@@ -130,24 +127,6 @@ export function BudgetChecklistPanel({
           {!canMarkControl ? <span className="text-xs text-muted">(solo Control o Gerencia)</span> : null}
         </label>
       </div>
-      {awaitingGerencia || afterGerencia ? (
-        <div className="space-y-2 border-l-2 border-primary/35 pl-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Gerencia</p>
-          <label className={`flex items-center gap-2 text-sm ${!canMarkGerencia ? 'opacity-60' : ''}`}>
-            <input
-              type="checkbox"
-              disabled={!canMarkGerencia || !awaitingGerencia}
-              checked={!!bpDraft.management_review_done}
-              onChange={(e) => setBpDraft((d) => ({ ...d, management_review_done: e.target.checked }))}
-            />
-            Revisión de Gerencia completada
-            {!canMarkGerencia ? <span className="text-xs text-muted">(solo Gerencia)</span> : null}
-            {afterGerencia && !awaitingGerencia ? (
-              <span className="text-xs text-muted">(registrada en aprobación de gerencia)</span>
-            ) : null}
-          </label>
-        </div>
-      ) : null}
       {afterGerencia ? (
         <div className="space-y-2 border-t border-black/10 pt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted">Cliente (opcional)</p>

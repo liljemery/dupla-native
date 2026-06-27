@@ -110,6 +110,7 @@ def test_budgeting_pipeline_partial_flags():
     data = _empty_data(
         budget_pipeline={
             "subcontracts_done": True,
+            "control_review_done": True,
             "volumetry_done": False,
             "cost_analysis_done": False,
             "budget_marked_complete": False,
@@ -117,6 +118,13 @@ def test_budgeting_pipeline_partial_flags():
     )
     hints = compute_phase_transition_hints(project, data)
     assert any("volumetría" in h.lower() for h in hints)
+
+
+def test_management_approval_needs_gerencia_revision():
+    project = _project("MANAGEMENT_APPROVAL")
+    data = _empty_data(gerencia_review_since_management=False)
+    hints = compute_phase_transition_hints(project, data)
+    assert any("Gerencia" in h and "Revisiones" in h for h in hints)
 
 
 def test_complete_phase_hint():

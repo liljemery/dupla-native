@@ -154,6 +154,7 @@ type Props = {
   section: BudgetSectionId
   onSectionChange: (section: BudgetSectionId) => void
   flowMsg: string | null
+  gerenciaReviewDone: boolean
 }
 
 export function WorkspacePresupuestoMaestroTab({
@@ -179,6 +180,7 @@ export function WorkspacePresupuestoMaestroTab({
   section,
   onSectionChange,
   flowMsg,
+  gerenciaReviewDone,
 }: Props) {
   const { job, result, isPolling, error, enqueue, refresh, saveRows } = useBudgetJob(
     projectUuid,
@@ -272,7 +274,7 @@ export function WorkspacePresupuestoMaestroTab({
     if (section === 'cotizaciones') {
       return <BudgetQuotesPanel {...pipelineSharedProps} />
     }
-    return <BudgetChecklistPanel {...pipelineSharedProps} />
+    return <BudgetChecklistPanel {...pipelineSharedProps} gerenciaReviewDone={gerenciaReviewDone} />
   }
 
   function renderSectionBody(body: ReactNode) {

@@ -43,7 +43,11 @@ from app.domain.business_pliego import (
     sections_dict,
     transition_blockers_for_business_pliego,
 )
-from app.domain.ga_fo_01_arquitectura import GA_FO_SPEC_KEY, apply_ga_fo_approval, clear_ga_fo_approval
+from app.domain.management_approval_review import (
+    clear_management_approval_entered,
+    project_has_gerencia_review_for_current_phase,
+    stamp_management_approval_entered,
+)
 from app.domain.workflow_template_phase import (
     effective_workflow_phase_for_step,
     workflow_phase_from_template_step_index,
@@ -181,12 +185,16 @@ class ProjectLifecycleService:
                     detail="Completa el pipeline de presupuesto y la revisión de Control antes de enviar a gerencia",
                 )
         if current == WorkflowPhase.MANAGEMENT_APPROVAL and target == WorkflowPhase.BUDGET_APPROVED:
-            meta = dict(project.workflow_meta or {})
-            bp = _budget_pipeline(meta)
-            if not bp.get("management_review_done"):
+            meta = project.workflow_meta if isinstance(project.workflow_meta, dict) else {}
+            if not await project_has_gerencia_review_for_current_phase(
+                self._session,
+                project.id,
+                meta,
+                project.workflow_phase,
+            ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Se requiere la revisión de Gerencia en el checklist de presupuesto",
+                    detail="Se requiere una revisión registrada por Gerencia en la pestaña Revisiones",
                 )
 
     async def _assert_transition_guards(
@@ -454,6 +462,17 @@ class ProjectLifecycleService:
 
         project.current_workflow_step_id = target_step.id
         self._sync_workflow_phase_denorm(project, target_step, step_index=tgt_i)
+
+        meta = dict(project.workflow_meta or {})
+        tgt_eff = workflow_phase_from_template_step_index(tgt_i)
+        cur_eff = workflow_phase_from_template_step_index(cur_i)
+        if is_forward and tgt_eff == WorkflowPhase.MANAGEMENT_APPROVAL.value:
+            meta = stamp_management_approval_entered(meta)
+        elif not is_forward and cur_eff == WorkflowPhase.MANAGEMENT_APPROVAL.value:
+            meta = clear_management_approval_entered(meta)
+        if meta != (project.workflow_meta or {}):
+            project.workflow_meta = meta
+            flag_modified(project, "workflow_meta")
 
         await self._projects.record_event(
             project_id=project.id,
@@ -847,25 +866,8 @@ class ProjectLifecycleService:
                         status_code=status.HTTP_403_FORBIDDEN,
                         detail="Solo Control, Gerencia o Líder de equipo pueden marcar la revisión de Control",
                     )
-            wants_mgmt = bool(incoming.get("management_review_done"))
-            had_mgmt = bool(bp_old.get("management_review_done"))
-            if wants_mgmt and not had_mgmt:
-                phase = normalize_workflow_phase(project.workflow_phase)
-                if phase not in (
-                    WorkflowPhase.MANAGEMENT_APPROVAL,
-                    WorkflowPhase.BUDGET_APPROVED,
-                    WorkflowPhase.COMPLETE,
-                ):
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="La revisión de Gerencia solo puede marcarse en la fase de aprobación de gerencia",
-                    )
-                if not await self._perm_svc.has(user, "lifecycle.management_review"):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Solo Gerencia puede marcar la aprobación de gerencia",
-                    )
             bp = dict(bp_old)
+            incoming.pop("management_review_done", None)
             bp.update(incoming)
             _set_budget_pipeline(meta, bp)
         project.workflow_meta = meta
