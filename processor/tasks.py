@@ -58,6 +58,24 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+def _extend_master_rows(master_rows: list[dict[str, Any]], rows: list[dict[str, Any]] | None) -> None:
+    """Append per-discipline budget rows to the master list, rebasing indices.
+
+    Each discipline's rows are composed independently, so subtotal/chapter rows
+    carry array indices (``metadata.source_row_indices`` and
+    ``metadata.subtotal_row_index``) that are 0-based *within that discipline's
+    own rows*. Concatenating without rebasing makes those indices point at rows
+    from an earlier discipline, so subtotals sum the wrong lines (e.g. a HORMIGON
+    subtotal showing RD$46M against ~RD$2M of visible lines). Offset them by the
+    current master length so the merged tree totals correctly.
+    """
+    if not rows:
+        return
+    from budget.composer import rebase_budget_row_indices
+
+    master_rows.extend(rebase_budget_row_indices(rows, len(master_rows)))
+
+
 def _local_extractor_signature() -> str:
     try:
         from coordination.extraction.libredwg_convert import libredwg_version
@@ -1334,7 +1352,7 @@ def _run_dupla_pipeline_legacy(
                 all_domain_validations.append(domain_validation_summary)
 
             if budget.get("rows"):
-                master_rows.extend(budget["rows"])
+                _extend_master_rows(master_rows, budget["rows"])
 
             # 6. Persist individual deliverables to run directory
             budget_json_path = run_dir.discipline_budget_json(disc_id)
@@ -2005,7 +2023,7 @@ def run_dupla_pipeline(
         validation_summary = result.get("domain_validation")
         if validation_summary is not None:
             all_domain_validations.append(validation_summary)
-        master_rows.extend(result.get("rows") or [])
+        _extend_master_rows(master_rows, result.get("rows") or [])
         master_artifacts.update(result.get("artifacts") or {})
         discipline_budgets[disc_id] = result.get("budget") or {"rows": result.get("rows") or []}
 

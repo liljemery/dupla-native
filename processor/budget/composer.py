@@ -390,6 +390,39 @@ def _is_dwg_structural_aggregate(item_key: str) -> bool:
     return str(item_key or "").startswith(_DWG_STRUCTURAL_KEY_PREFIXES)
 
 
+def rebase_budget_row_indices(
+    rows: Iterable[Mapping[str, Any]], offset: int
+) -> list[dict[str, Any]]:
+    """Return copies of *rows* with array-index metadata shifted by *offset*.
+
+    Subtotal/chapter rows carry indices into their own discipline's rows array
+    (``metadata.source_row_indices`` for subtotals, ``metadata.subtotal_row_index``
+    for chapters). When several disciplines' row arrays are concatenated into one
+    master list these indices must be offset by the position where the discipline
+    is appended, otherwise subtotals sum rows from the wrong discipline (the cause
+    of HORMIGON subtotals showing ~RD$46M against ~RD$2M of visible lines, and of
+    chapter headers displaying unrelated values). Rows are copied so the source
+    payload (e.g. the per-discipline Excel export) keeps its own indices.
+    """
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        new_row = dict(row)
+        meta = row.get("metadata")
+        if isinstance(meta, dict):
+            new_meta = dict(meta)
+            sri = new_meta.get("source_row_indices")
+            if isinstance(sri, list):
+                new_meta["source_row_indices"] = [
+                    i + offset for i in sri if isinstance(i, int)
+                ]
+            sidx = new_meta.get("subtotal_row_index")
+            if isinstance(sidx, int):
+                new_meta["subtotal_row_index"] = sidx + offset
+            new_row["metadata"] = new_meta
+        out.append(new_row)
+    return out
+
+
 def takeoff_budget_eligibility(
     takeoff: QuantityTakeoff,
     *,

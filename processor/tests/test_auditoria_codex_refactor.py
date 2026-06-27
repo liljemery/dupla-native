@@ -216,6 +216,36 @@ def test_layer_mapping_keyword_fallback_classifies_structural_layers():
     assert classify_layer("muros") == DisciplineCode.S
 
 
+def test_rebase_budget_row_indices_across_disciplines():
+    """Merging disciplines must offset subtotal/chapter array indices.
+
+    Regression: concatenating per-discipline rows without rebasing made
+    subtotals sum the wrong discipline's lines (HORMIGON RD$46M vs ~RD$2M).
+    """
+    from budget.composer import rebase_budget_row_indices
+
+    # One discipline's rows: [chapter, line, line, subtotal] (local indices 0..3)
+    disc = [
+        {"row_type": "chapter", "metadata": {"subtotal_row_index": 3}},
+        {"row_type": "line", "metadata": {}},
+        {"row_type": "line", "metadata": {}},
+        {"row_type": "subtotal", "metadata": {"source_row_indices": [1, 2]}},
+    ]
+
+    master: list[dict] = []
+    master.extend(rebase_budget_row_indices(disc, len(master)))  # offset 0
+    master.extend(rebase_budget_row_indices(disc, len(master)))  # offset 4
+
+    # First block keeps local indices
+    assert master[0]["metadata"]["subtotal_row_index"] == 3
+    assert master[3]["metadata"]["source_row_indices"] == [1, 2]
+    # Second block is rebased by +4 and points at its own rows, not the first
+    assert master[4]["metadata"]["subtotal_row_index"] == 7
+    assert master[7]["metadata"]["source_row_indices"] == [5, 6]
+    # Source payload not mutated
+    assert disc[3]["metadata"]["source_row_indices"] == [1, 2]
+
+
 def test_dwg_structural_aggregates_excluded_from_budget(monkeypatch):
     """Nivel 1: DWG bbox-aggregate structural takeoffs must not reach the budget.
 
