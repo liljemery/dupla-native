@@ -1,4 +1,4 @@
-import { ImageIcon, Send, X, Zap } from 'lucide-react'
+import { Bot, ImageIcon, Send, X, Zap } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 
@@ -208,7 +208,7 @@ export function DuplaAssistantChat() {
             aria-label="Abrir Dupla Assistant"
             onClick={() => setOpen(true)}
           >
-            <Zap className="h-7 w-7 text-amber-300" />
+            <Bot className="h-6 w-6 text-white" strokeWidth={2} aria-hidden />
           </button>
         )}
       </div>
