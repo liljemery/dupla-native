@@ -125,7 +125,7 @@ body {
     @apply mt-0.5 truncate text-sm font-normal leading-snug text-white/45;
   }
   .du-folder-card-heading {
-    @apply absolute left-4 top-[6%] z-10 min-w-0 max-w-[calc(100%-2.75rem)];
+    @apply relative z-20 min-w-0 max-w-[calc(100%-2.75rem)] pt-3 pl-4;
   }
   .du-project-folder-card {
     @apply relative h-64 overflow-hidden rounded-4xl border-[3px] border-ink bg-ink outline-none;

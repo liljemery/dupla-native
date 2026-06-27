@@ -9,8 +9,6 @@ const gerenciaRev: RevisionRow = {
   revision_role: 'GERENCIA',
   decision: 'APPROVED',
   notes: null,
-  checklist: {},
-  checked_by_uuid: null,
   created_at: '2026-06-15T10:00:00.000Z',
 }
 

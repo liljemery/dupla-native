@@ -76,8 +76,9 @@ export function ProjectFolderCard({
         <p className="text-sm font-bold leading-tight">{projectKindLabel(project.project_kind)}</p>
       </div>
 
-      <div className="du-folder-tab-clip absolute bottom-0 left-0 right-0 h-[56%] bg-black/35 backdrop-blur-3xl">
-        <div className="relative h-full pb-4 pr-4">
+      <div className="du-folder-tab-clip absolute bottom-0 left-0 right-0 z-10 h-[56%]">
+        <div className="absolute inset-0 bg-black/35 backdrop-blur-3xl" aria-hidden />
+        <div className="relative z-10 h-full pb-4 pr-4">
           <button
             type="button"
             className="absolute right-3 top-3 z-20 rounded-lg p-1.5 text-white/45 outline-none transition-colors duration-200 hover:bg-white/10 hover:text-white"
