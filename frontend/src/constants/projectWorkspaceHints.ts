@@ -3,7 +3,7 @@ import { canViewBudget, isBudgetWorkflowPhase } from '../lib/accessPermissions'
 export type PhaseHint = {
   title: string
   body: string
-  tabId: 'resumen' | 'flujo' | 'documentos' | 'revisiones' | 'historial' | 'pliego' | 'hub' | 'presupuestoMaestro'
+  tabId: 'hub' | 'flujo' | 'planosHallazgos' | 'revisiones' | 'eventos' | 'pliego' | 'presupuesto'
   cta: string
 }
 
@@ -16,9 +16,9 @@ export const PHASE_WORKSPACE_HINTS: Record<string, PhaseHint> = {
   },
   AWAITING_FILES: {
     title: 'Subir archivos',
-    body: 'Carga planos (DWG/DXF), PDF, IFC u otros adjuntos permitidos en Archivos. Con al menos un archivo cargado, puedes avanzar a revisión de arquitectura.',
-    tabId: 'documentos',
-    cta: 'Ir a Archivos',
+    body: 'Carga planos (DWG/DXF), PDF, IFC u otros adjuntos permitidos. Con al menos un archivo cargado, puedes avanzar a revisión de arquitectura.',
+    tabId: 'planosHallazgos',
+    cta: 'Ir a Planos',
   },
   ARCHITECTURE_REVIEW: {
     title: 'Revisión de arquitectura',
@@ -34,27 +34,27 @@ export const PHASE_WORKSPACE_HINTS: Record<string, PhaseHint> = {
   },
   BUDGETING_PIPELINE: {
     title: 'Pipeline de presupuesto',
-    body: 'Cotizaciones, hitos del pipeline y presupuesto maestro en la misma pestaña.',
-    tabId: 'presupuestoMaestro',
+    body: 'Cotizaciones, hitos del pipeline y presupuesto maestro en la pestaña Presupuesto.',
+    tabId: 'presupuesto',
     cta: 'Ir a Presupuesto',
   },
   MANAGEMENT_APPROVAL: {
     title: 'Aprobación de gerencia',
     body: 'El presupuesto interno está listo: validación formal de gerencia antes de registrar la versión aprobada por el cliente.',
-    tabId: 'presupuestoMaestro',
+    tabId: 'presupuesto',
     cta: 'Ir a Presupuesto',
   },
   BUDGET_APPROVED: {
     title: 'Presupuesto aprobado',
-    body: 'Continúa con archivos, el pliego y el control de entregas; cuando el proyecto esté cerrado, avanza a la fase final «Completo».',
-    tabId: 'documentos',
-    cta: 'Ir a Archivos',
+    body: 'Continúa con planos, el pliego y el control de entregas; cuando el proyecto esté cerrado, avanza a la fase final «Completo».',
+    tabId: 'planosHallazgos',
+    cta: 'Ir a Planos',
   },
   COMPLETE: {
     title: 'Proyecto completo',
-    body: 'Fase final. Puedes consultar archivos, exportaciones e historial del proyecto.',
-    tabId: 'flujo',
-    cta: 'Ir a Flujo',
+    body: 'Fase final. Puedes consultar planos, exportaciones e historial del proyecto.',
+    tabId: 'eventos',
+    cta: 'Ir a Cronología',
   },
 }
 

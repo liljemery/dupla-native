@@ -1,42 +1,27 @@
-export type BudgetSectionId = 'presupuesto' | 'cotizaciones' | 'checklist'
+import type { PresupuestoSectionId } from '../../lib/workspaceNavigation'
+import { WorkspaceSectionSwitch } from './WorkspaceSectionSwitch'
 
-const SECTIONS: { id: BudgetSectionId; label: string }[] = [
+const SECTIONS = [
   { id: 'presupuesto', label: 'Presupuesto' },
   { id: 'cotizaciones', label: 'Cotizaciones' },
   { id: 'checklist', label: 'Checklist' },
+  { id: 'basePrecios', label: 'Base de precios' },
 ]
 
 type BudgetSectionSwitchProps = {
-  value: BudgetSectionId
-  onChange: (id: BudgetSectionId) => void
+  value: PresupuestoSectionId
+  onChange: (id: PresupuestoSectionId) => void
 }
 
 export function BudgetSectionSwitch({ value, onChange }: BudgetSectionSwitchProps) {
   return (
-    <div
-      className="grid w-full grid-cols-3 gap-1 rounded-xl border border-black/10 bg-black/4 p-1"
-      role="tablist"
-      aria-label="Secciones de presupuesto"
-    >
-      {SECTIONS.map(({ id, label }) => {
-        const active = value === id
-        return (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            className={`rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
-              active
-                ? 'bg-white text-ink shadow-sm'
-                : 'text-muted hover:bg-white/60 hover:text-ink'
-            }`}
-            onClick={() => onChange(id)}
-          >
-            {label}
-          </button>
-        )
-      })}
-    </div>
+    <WorkspaceSectionSwitch
+      sections={SECTIONS}
+      value={value}
+      onChange={(id) => onChange(id as PresupuestoSectionId)}
+      ariaLabel="Secciones de presupuesto"
+    />
   )
 }
+
+export type { PresupuestoSectionId as BudgetSectionId }

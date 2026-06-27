@@ -1,22 +1,20 @@
 /**
  * Pestañas del workspace de proyecto (`ProjectWorkspacePage`).
- * `hub` es la vista de inicio (rejilla); no tiene formulario propio.
+ * `hub` es la vista de inicio (resumen); `flujo` solo se abre desde resumen.
  */
-import { BUDGET_WORKSPACE_TAB_IDS, canViewBudget } from '../lib/accessPermissions'
+import { canViewBudget } from '../lib/accessPermissions'
 
 const TAB_DEFS: { id: string; label: string }[] = [
-  { id: 'hub', label: 'Inicio' },
-  { id: 'detalles', label: 'Detalles' },
-  { id: 'flujo', label: 'Arranque y flujo' },
-  { id: 'archivos', label: 'Archivos' },
-  { id: 'basePrecios', label: 'Base de precios' },
-  { id: 'entregaPlanos', label: 'Control de entregas' },
-  { id: 'revisiones', label: 'Revisiones' },
-  { id: 'hallazgos', label: 'Hallazgos' },
+  { id: 'hub', label: 'Resumen' },
   { id: 'pliego', label: 'Pliego' },
-  { id: 'presupuestoMaestro', label: 'Presupuesto maestro' },
-  { id: 'eventos', label: 'Eventos' },
+  { id: 'presupuesto', label: 'Presupuesto' },
+  { id: 'planosHallazgos', label: 'Planos y hallazgos' },
+  { id: 'revisiones', label: 'Revisiones y entregas' },
+  { id: 'eventos', label: 'Cronología' },
+  { id: 'flujo', label: 'Flujo del proyecto' },
 ]
+
+const BUDGET_ONLY_TAB_IDS = new Set(['presupuesto'])
 
 export function projectWorkspaceTabs(): { id: string; label: string }[] {
   return TAB_DEFS.map(({ id, label }) => ({ id, label }))
@@ -24,13 +22,7 @@ export function projectWorkspaceTabs(): { id: string; label: string }[] {
 
 export function projectWorkspaceTabsForRole(permissions: readonly string[] | null | undefined): { id: string; label: string }[] {
   if (canViewBudget(permissions)) return projectWorkspaceTabs()
-  const hidden = new Set<string>(BUDGET_WORKSPACE_TAB_IDS)
-  return TAB_DEFS.filter((t) => !hidden.has(t.id)).map(({ id, label }) => ({ id, label }))
-}
-
-/** Pestañas con panel de contenido (excluye inicio). */
-export function projectWorkspaceSectionTabs(): { id: string; label: string }[] {
-  return TAB_DEFS.filter((t) => t.id !== 'hub').map(({ id, label }) => ({ id, label }))
+  return TAB_DEFS.filter((t) => !BUDGET_ONLY_TAB_IDS.has(t.id)).map(({ id, label }) => ({ id, label }))
 }
 
 export function projectWorkspaceSectionTabsForRole(permissions: readonly string[] | null | undefined): { id: string; label: string }[] {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
   ArrowRight,
   Check,
@@ -16,6 +16,7 @@ import { useAuthStore } from '../../store/authStore'
 import { apiFetch } from '../../api/client'
 import { WORKFLOW_PHASE_ORDER } from '../../constants/workflowPhases'
 import { phaseWorkspaceHintForRole } from '../../constants/projectWorkspaceHints'
+import { hintNavigationTarget } from '../../lib/workspaceNavigation'
 import type { DirectoryUserRow } from '../../lib/directoryUsers'
 import { formatPersonFullName } from '../../lib/personDisplay'
 import { userDisplayInitials } from '../../lib/taskboard'
@@ -61,13 +62,14 @@ type ProjectWorkspaceDashboardProps = {
   quotesCount: number
   onAdvancePhase: () => boolean | void | Promise<boolean | void>
   onOpenChat: () => void
-  onOpenTab: (tab: string) => void
+  onOpenTab: (tab: string, section?: string) => void
   onOpenBootstrapChecklist: () => void
   bootstrapCriteria: BootstrapCriterion[]
   pliegoApproved: boolean
   pliegoReadyForApproval: boolean
   canApprovePliego: boolean
   onApprovePliego: () => boolean | void | Promise<boolean | void>
+  detailsSummary: ReactNode
 }
 
 function formatBudgetPipelineSummary(bp: Record<string, unknown>): string {
@@ -106,6 +108,7 @@ export function ProjectWorkspaceDashboard({
   pliegoReadyForApproval,
   canApprovePliego,
   onApprovePliego,
+  detailsSummary,
 }: ProjectWorkspaceDashboardProps) {
   const permissions = useAuthStore((s) => s.permissions)
   const elevated = hasElevatedAccess(permissions)
@@ -270,101 +273,32 @@ export function ProjectWorkspaceDashboard({
           </div>
         </Card>
       ) : null}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap gap-2">
-          {showBootstrapBanner ? (
-            <button
-              type="button"
-              className="rounded-full border border-primary/35 bg-primary px-3 py-1.5 text-xs font-bold text-white shadow-sm hover:opacity-95"
-              onClick={onOpenBootstrapChecklist}
-            >
-              Checklist de arranque
-            </button>
-          ) : null}
+      {detailsSummary}
+      {viewBudget ? (
+        <div className="grid gap-3 sm:grid-cols-3">
           <button
             type="button"
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-            onClick={() => onOpenTab('detalles')}
+            className="text-left"
+            onClick={() => onOpenTab('presupuesto', 'presupuesto')}
           >
-            Detalles
+            <MetricCard label="Presupuesto" value={formatBudgetPipelineSummary(bpDraft)} footer={<span className="text-xs text-muted">Hitos completados</span>} />
           </button>
           <button
             type="button"
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-            onClick={() => onOpenTab('archivos')}
+            className="text-left"
+            onClick={() => onOpenTab('presupuesto', 'cotizaciones')}
           >
-            Archivos
-          </button>
-          {viewBudget ? (
-            <button
-              type="button"
-              className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-              onClick={() => onOpenTab('basePrecios')}
-            >
-              Base de precios
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-            onClick={() => onOpenTab('flujo')}
-          >
-            Flujo
+            <MetricCard label="Cotizaciones" value={quotesCount} />
           </button>
           <button
             type="button"
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-            onClick={() => onOpenTab('revisiones')}
+            className="text-left"
+            onClick={() => onOpenTab('planosHallazgos', 'hallazgos')}
           >
-            Revisiones
-          </button>
-          <button
-            type="button"
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-            onClick={() => onOpenTab('entregaPlanos')}
-          >
-            Control de entregas
-          </button>
-          {viewBudget ? (
-            <button
-              type="button"
-              className="rounded-full border border-primary/25 bg-primary/6 px-3 py-1.5 text-xs font-semibold text-primary shadow-sm hover:border-primary/40"
-              onClick={() => onOpenTab('presupuestoMaestro')}
-            >
-              Presupuesto maestro
-            </button>
-          ) : null}
-          {viewBudget ? (
-            <button
-              type="button"
-              className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-              onClick={() => onOpenTab('hallazgos')}
-            >
-              Hallazgos
-            </button>
-          ) : null}
-          <Link
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink no-underline shadow-sm hover:border-primary/25"
-            to={`/app/tasks?mine=true&project_uuid=${encodeURIComponent(projectUuid)}`}
-          >
-            Tareas
-          </Link>
-          <button
-            type="button"
-            className="rounded-full border border-black/12 bg-white px-3 py-1.5 text-xs font-semibold text-ink shadow-sm hover:border-primary/25"
-            onClick={onOpenChat}
-          >
-            Chat
+            <MetricCard label="Hallazgos críticos" value={criticalFindings.length} />
           </button>
         </div>
-        {viewBudget ? (
-          <div className="grid gap-3 sm:grid-cols-3">
-            <MetricCard label="Presupuesto" value={formatBudgetPipelineSummary(bpDraft)} footer={<span className="text-xs text-muted">Hitos completados</span>} />
-            <MetricCard label="Cotizaciones" value={quotesCount} />
-            <MetricCard label="Hallazgos críticos" value={criticalFindings.length} />
-          </div>
-        ) : null}
-      </div>
+      ) : null}
 
       <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-5">
         <Card rounded2xl elevated className="border-black/10 p-5 lg:col-span-3">
@@ -422,21 +356,13 @@ export function ProjectWorkspaceDashboard({
                               type="button"
                               className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline"
                               onClick={() => {
-                                const targetTab =
-                                  hint.tabId === 'documentos'
-                                    ? 'archivos'
-                                    : hint.tabId === 'resumen' || hint.tabId === 'hub'
-                                      ? 'hub'
-                                      : hint.tabId === 'historial'
-                                        ? 'eventos'
-                                        : hint.tabId === 'flujo' && project.workflow_phase === 'BOOTSTRAPPING'
-                                          ? 'flujo-bootstrap'
-                                          : hint.tabId
-                                if (targetTab === 'flujo-bootstrap') {
+                                if (!hint) return
+                                if (hint.tabId === 'flujo' && project.workflow_phase === 'BOOTSTRAPPING') {
                                   onOpenBootstrapChecklist()
-                                } else {
-                                  onOpenTab(targetTab)
+                                  return
                                 }
+                                const target = hintNavigationTarget(hint.tabId)
+                                onOpenTab(target.tab, target.section)
                               }}
                             >
                               {hint.cta}
@@ -549,16 +475,13 @@ export function ProjectWorkspaceDashboard({
                         </button>
                         {teamMenu === m.uuid ? (
                           <div className="absolute right-0 top-full z-10 mt-1 w-36 rounded-lg border border-black/10 bg-white py-1 shadow-lg">
-                            <button
-                              type="button"
-                              className="block w-full px-3 py-2 text-left text-xs text-ink hover:bg-black/4"
-                              onClick={() => {
-                                setTeamMenu(null)
-                                onOpenTab('detalles')
-                              }}
+                            <Link
+                              className="block w-full px-3 py-2 text-left text-xs text-ink no-underline hover:bg-black/4"
+                              to={`/app/tasks?project_uuid=${encodeURIComponent(projectUuid)}&assignee=${encodeURIComponent(m.uuid)}`}
+                              onClick={() => setTeamMenu(null)}
                             >
-                              Ver detalles
-                            </button>
+                              Ver tareas
+                            </Link>
                           </div>
                         ) : null}
                       </div>
@@ -620,9 +543,9 @@ export function ProjectWorkspaceDashboard({
           <button
             type="button"
             className="rounded-lg border border-black/15 bg-white px-4 py-2.5 text-sm font-semibold text-ink shadow-sm hover:bg-black/3"
-            onClick={() => onOpenTab('detalles')}
+            onClick={() => onOpenTab('flujo')}
           >
-            Ver detalles
+            Abrir flujo
           </button>
           {nextPhase ? (
             <WorkspaceActionButton

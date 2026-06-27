@@ -1,7 +1,7 @@
 import type { UserRole } from '../constants/userRoles'
 import { WORKFLOW_PHASE_LABELS } from '../constants/workflowPhases'
 
-export const BUDGET_WORKSPACE_TAB_IDS = ['presupuestoMaestro', 'basePrecios', 'hallazgos'] as const
+export const BUDGET_WORKSPACE_TAB_IDS = ['presupuesto'] as const
 
 export const BUDGET_WORKFLOW_PHASES = new Set([
   'BUDGETING_PIPELINE',
