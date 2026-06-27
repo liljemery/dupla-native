@@ -13,6 +13,19 @@ $Source = Join-Path $DuplaDir "deploy\nginx-host.conf"
 $nginxExe = Join-Path $NginxDir "nginx.exe"
 $ConfigRel = "conf\nginx.conf"
 
+function Invoke-NginxOutput {
+    param([Parameter(Mandatory = $true)][string[]]$NginxArgs)
+    # nginx escribe "syntax is ok" en stderr; no tratarlo como error de PowerShell.
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $lines = & $nginxExe @NginxArgs 2>&1
+        return ($lines | Out-String)
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
 if (-not (Test-Path $Source)) { throw "No existe $Source. Haz git pull primero." }
 if (-not (Test-Path $nginxExe)) { throw "No existe $nginxExe" }
 
@@ -27,19 +40,21 @@ foreach ($target in $targets) {
     Write-Host "Copiado -> $target"
 }
 
-& $nginxExe -t -p $NginxDir -c $ConfigRel
+Invoke-NginxOutput -NginxArgs @("-t", "-p", $NginxDir, "-c", $ConfigRel) | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "nginx -t fallo" }
 
 $nginxProc = Get-Process -Name nginx -ErrorAction SilentlyContinue
 if ($nginxProc) {
-    & $nginxExe -s stop -p $NginxDir
+    Invoke-NginxOutput -NginxArgs @("-s", "stop", "-p", $NginxDir) | Out-Null
     Start-Sleep -Seconds 2
 }
 Start-Process -FilePath $nginxExe -WorkingDirectory $NginxDir -ArgumentList @("-p", $NginxDir, "-c", $ConfigRel) -WindowStyle Hidden
 Start-Sleep -Seconds 1
 Write-Host "nginx reiniciado (-p $NginxDir -c $ConfigRel)"
 
-$dump = & $nginxExe -T -p $NginxDir -c $ConfigRel 2>&1 | Out-String
+$dump = Invoke-NginxOutput -NginxArgs @("-T", "-p", $NginxDir, "-c", $ConfigRel)
+if ($LASTEXITCODE -ne 0) { throw "nginx -T fallo" }
+
 Write-Host "`n--- client_max_body_size activo ---"
 ($dump -split "`n") | Select-String "client_max_body_size"
 
